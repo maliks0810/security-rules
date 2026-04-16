@@ -24,11 +24,11 @@ variables:
   #################################################################################################
 
   ## Workload Identity Configurations #############################################################
-  ENABLE_WORKLOAD_IDENTITY: 'false'
-  NONPROD_AZURE_CLIENT_ID: 
-  NONPROD_K8S_SERVICE_ACCT: 
-  PROD_AZURE_CLIENT_ID: 
-  PROD_K8S_SERVICE_ACCT: 
+  ENABLE_WORKLOAD_IDENTITY: 'true'
+  NONPROD_AZURE_CLIENT_ID: 'b14585d8-d095-4815-b320-d625f98ae9f7'
+  NONPROD_K8S_SERVICE_ACCT: 'sa-np-desecurityrules'
+  PROD_AZURE_CLIENT_ID: 'f7b6ad6f-a0a9-4512-bd07-2b10b9bd3c15'
+  PROD_K8S_SERVICE_ACCT: 'sa-pd-desecurityrules'
   #################################################################################################
 
   ## Authorization Configurations #################################################################
