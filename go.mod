@@ -25,6 +25,8 @@ require (
 	go.uber.org/zap v1.27.1
 )
 
+require github.com/lib/pq v1.12.3 // indirect
+
 require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect

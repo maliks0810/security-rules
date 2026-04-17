@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata"
 
 	"github.com/gofiber/fiber/v2"
+	_ "github.com/lib/pq"
 	"go.opentelemetry.io/otel"
 	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
@@ -27,6 +29,7 @@ import (
 	"securityrules/security-rules/internal/utils/azure"
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/net"
+	pg "securityrules/security-rules/internal/utils/postgres"
 	sf "securityrules/security-rules/internal/utils/snowflake"
 	"securityrules/security-rules/internal/utils/types"
 )
@@ -39,6 +42,7 @@ type Facade struct {
 	Snowflake             sf.Snowflake
 	DBConnection          *sql.DB
 	DBConnectionExpiresOn *time.Time
+	PostgresDBConnection  *sql.DB
 }
 
 func main() {
@@ -61,10 +65,20 @@ func main() {
 	log.Logger.Info("main.go: main - initializing the interface facade...")
 	facade := initializeFacade()
 
-	if err := openSnowflakeConnection(&facade); err != nil {
-		log.Logger.Error(fmt.Sprintf("main.go: main - unable to open snowflake connection at startup: %v", err))
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("main.go: main - DATABASE is set to SNOWFLAKE, opening Snowflake connection...")
+		if err := openSnowflakeConnection(&facade); err != nil {
+			log.Logger.Error(fmt.Sprintf("main.go: main - unable to open snowflake connection at startup: %v", err))
+		} else {
+			sf.DB = facade.DBConnection
+		}
 	} else {
-		sf.DB = facade.DBConnection
+		log.Logger.Info("main.go: main - DATABASE is set to POSTGRES, opening Postgres connection...")
+		if err := openPostgresConnection(&facade); err != nil {
+			log.Logger.Error(fmt.Sprintf("main.go: main - unable to open postgres connection at startup: %v", err))
+		} else {
+			pg.DB = facade.PostgresDBConnection
+		}
 	}
 
 	prepare()
@@ -243,7 +257,74 @@ func closeSnowflakeConnection(facade *Facade) error {
 	return nil
 }
 
+func openPostgresConnection(facade *Facade) error {
+	log.Logger.Debug("main.go: openPostgresConnection - checking to see if the DB connection needs to be opened...")
+	if facade.PostgresDBConnection != nil {
+		if err := facade.PostgresDBConnection.Ping(); err == nil {
+			log.Logger.Debug("main.go: openPostgresConnection - connection reference is available")
+			return nil
+		}
+		facade.PostgresDBConnection.Close()
+		facade.PostgresDBConnection = nil
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		configs.EnvConfigs.PostgresHost,
+		configs.EnvConfigs.PostgresPort,
+		configs.EnvConfigs.PostgresUser,
+		configs.EnvConfigs.PostgresPassword,
+		configs.EnvConfigs.PostgresDatabase,
+	)
+
+	log.Logger.Info("main.go: openPostgresConnection - opening a new connection...")
+
+	maxRetries := 2
+	retries := 0
+	var db *sql.DB
+	var err error
+
+	for retries < maxRetries {
+		db, err = sql.Open("postgres", connStr)
+		if err != nil {
+			msg := fmt.Sprintf("main.go: openPostgresConnection - unable to open postgres connection with error: %v", err)
+			log.Logger.Error(msg)
+			return errors.Join(err, errors.New(msg))
+		}
+
+		err = db.Ping()
+		if err == nil {
+			facade.PostgresDBConnection = db
+			log.Logger.Info(fmt.Sprintf("try [%d]: openPostgresConnection - DB connection successfully opened.", retries))
+			return nil
+		}
+
+		log.Logger.Warn(fmt.Sprintf("try [%d]: %s", retries, err.Error()))
+		retries++
+	}
+
+	return err
+}
+
+func closePostgresConnection(facade *Facade) error {
+	log.Logger.Debug("main.go: closePostgresConnection - checking to see if a connection exists and should be closed...")
+	if facade.PostgresDBConnection == nil {
+		log.Logger.Debug("main.go: closePostgresConnection - connection does not exist.  do not need to close the connection.")
+		return nil
+	}
+
+	if err := facade.PostgresDBConnection.Close(); err != nil {
+		msg := fmt.Sprintf("main.go: closePostgresConnection - unable to close postgres connection with error: %v", err)
+		log.Logger.Error(msg)
+		return errors.Join(err, errors.New(msg))
+	}
+
+	log.Logger.Info("main.go: closePostgresConnection - DB connection has been successfully closed.")
+	facade.PostgresDBConnection = nil
+	return nil
+}
+
 func releaseResources(facade *Facade, sig os.Signal) {
 	log.Logger.Info(fmt.Sprintf("main.go: releaseResources - received shutdown signal: %v", sig))
 	_ = closeSnowflakeConnection(facade)
+	_ = closePostgresConnection(facade)
 }
