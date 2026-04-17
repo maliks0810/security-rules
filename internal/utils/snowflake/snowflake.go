@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/snowflakedb/gosnowflake"
-	"github.com/youmark/pkcs8"
 	"securityrules/security-rules/internal/utils/log"
 
+	"github.com/snowflakedb/gosnowflake"
+	"github.com/youmark/pkcs8"
 )
 
 // DB is the package-level Snowflake database connection, initialized by main.go
