@@ -26,6 +26,12 @@ type envConfigs struct {
 	KeyVaultDerKey                          string `mapstructure:"AZ_SF_DEF_KEY"`
 	KeyVaultPwdKey                          string `mapstructure:"AZ_SF_PWD_KEY"`
 	SnowflakeConnectionTtlInMin             int    `mapstructure:"SNOWFLAKE_CONNECTION_TTL_IN_MIN"`
+	Database                                string `mapstructure:"DATABASE"`
+	PostgresHost                            string `mapstructure:"POSTGRES_HOST"`
+	PostgresPort                            int    `mapstructure:"POSTGRES_PORT"`
+	PostgresUser                            string `mapstructure:"POSTGRES_USER"`
+	PostgresPassword                        string `mapstructure:"POSTGRES_PASSWORD"`
+	PostgresDatabase                        string `mapstructure:"POSTGRES_DATABASE"`
 }
 
 var EnvConfigs *envConfigs
@@ -71,6 +77,22 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.BindEnv("AZ_KEY_VAULT_VELOCITY_URL")
 	viper.BindEnv("AZ_SF_DEF_KEY")
 	viper.BindEnv("AZ_SF_PWD_KEY")
+
+	// Database Selection
+	viper.SetDefault("DATABASE", "SNOWFLAKE")
+	viper.BindEnv("DATABASE")
+
+	// Postgres Configurations
+	viper.SetDefault("POSTGRES_HOST", "localhost")
+	viper.SetDefault("POSTGRES_PORT", 5432)
+	viper.SetDefault("POSTGRES_USER", "postgres")
+	viper.SetDefault("POSTGRES_PASSWORD", "1010data")
+	viper.SetDefault("POSTGRES_DATABASE", "DATA_QUALITY")
+	viper.BindEnv("POSTGRES_HOST")
+	viper.BindEnv("POSTGRES_PORT")
+	viper.BindEnv("POSTGRES_USER")
+	viper.BindEnv("POSTGRES_PASSWORD")
+	viper.BindEnv("POSTGRES_DATABASE")
 
 	golangEnv := viper.GetString("GOLANG_ENVIRONMENT")
 
