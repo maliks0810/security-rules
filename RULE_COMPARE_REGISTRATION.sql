@@ -1,0 +1,64 @@
+
+CREATE OR REPLACE PROCEDURE TCW_CORE_QA.DATA_QUALITY.RULE_COMPARE_REGISTRATION("ALADDIN_ID" VARCHAR(15)
+, "ID_BB_GLOBAL" VARCHAR(15))
+RETURNS TABLE(  "ALADDIN_ID" VARCHAR
+, "ID_BB_GLOBAL" VARCHAR
+, "BBG_REGISTRATION" VARCHAR
+, "ALADDIN_REGISTRATION" VARCHAR
+ , "ISSUE_DESCRIPTION" VARCHAR)
+LANGUAGE SQL
+execute as CALLER
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    
+
+    res := (
+    WITH BBG AS (
+         SELECT
+         HDRID
+        , ID_BB_GLOBAL
+         , CASE
+                WHEN bb.Z144A_FLAG = 'Y' AND bb.IS_REG_S = 'Y' THEN 'Dual 144a|Reg-S'
+                WHEN bb.Z144A_FLAG = 'Y' THEN '144a'
+                WHEN bb.IS_REG_S = 'Y' THEN 'Reg-S'
+                WHEN bb.REGULATION_D_INDICATOR = 'Y' THEN 'Reg-D'
+                WHEN bb.Z144A_REG_RIGHTS = 'Y' THEN 'Dual 144a|Reg-S'
+                ELSE 'Public'
+            END  AS BBG_REGISTRATION
+        FROM TCW_CORE.COMMON.BBG_INTRADAY_SECURITY_VW bb
+        WHERE ID_BB_GLOBAL = 'BBG0217199K4' AND HDRID = 75
+        
+        )
+    ,
+        ALADDIN AS (
+         SELECT 
+         ALADDIN_ID
+         ,REGISTRATION AS ALADDIN_REGISTRATION
+         FROM
+            TCW_CORE_QA.TDC.SECURITY_CURRENT_VW 
+         WHERE ALADDIN_ID = '36173JAC7'
+         )
+
+         
+         
+        SELECT ALADDIN_ID
+        , ID_BB_GLOBAL
+        ,   BBG_REGISTRATION
+          ,  ALADDIN_REGISTRATION
+       ,  'BBG Vs ALADDIN Registration : ALADDIN Registration:' || ALADDIN_REGISTRATION || ' BBG Registration:' || BBG_REGISTRATION   AS ISSUE_DESCRIPTION   
+         FROM
+        BBG b
+        CROSS JOIN ALADDIN a
+       
+    );
+
+    RETURN TABLE(res);
+END;
+$$;
+
+--CALL TCW_CORE_QA.DATA_QUALITY.GET_REGISTRATION('36173JAC7', 'BBG0217199K4');
+
+
