@@ -23,3 +23,12 @@ func GetSecurityExceptions(ctx *fiber.Ctx) error {
 
 	return ctx.Status(fiber.StatusOK).JSON(exceptions)
 }
+
+func GetAssets(ctx *fiber.Ctx) error {
+	assets, err := services.GetAssets()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query assets"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(assets)
+}

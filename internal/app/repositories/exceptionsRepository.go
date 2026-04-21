@@ -37,19 +37,59 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 
 	var exceptions []models.SecurityException
 	for rows.Next() {
-		var e models.SecurityException
+		var (
+			securityExceptionID sql.NullInt64
+			ruleID              sql.NullInt64
+			aladdinIDCol        sql.NullString
+			runDate             sql.NullTime
+			runStart            sql.NullTime
+			resultTypeID        sql.NullInt64
+			exceptionSourceID   sql.NullInt64
+			exceptionStatusID   sql.NullInt64
+			severityTypeID      sql.NullInt64
+			processTypeID       sql.NullInt64
+			categoryTypeID      sql.NullInt64
+			assignTo            sql.NullString
+			assignedBy          sql.NullString
+			issueDescription    sql.NullString
+			createdDate         sql.NullTime
+			createdBy           sql.NullString
+			modifiedDate        sql.NullTime
+			modifiedBy          sql.NullString
+		)
+
 		if err := rows.Scan(
-			&e.SecurityExceptionID, &e.RuleID, &e.AladdinID,
-			&e.RunDate, &e.RunStart, &e.ResultTypeID,
-			&e.ExceptionSourceID, &e.ExceptionStatusID, &e.SeverityTypeID,
-			&e.ProcessTypeID, &e.CategoryTypeID, &e.AssignTo,
-			&e.AssignedBy,
-			&e.IssueDescription,
-			&e.CreatedDate, &e.CreatedBy, &e.ModifiedDate, &e.ModifiedBy,
+			&securityExceptionID, &ruleID, &aladdinIDCol,
+			&runDate, &runStart, &resultTypeID,
+			&exceptionSourceID, &exceptionStatusID, &severityTypeID,
+			&processTypeID, &categoryTypeID, &assignTo,
+			&assignedBy,
+			&issueDescription,
+			&createdDate, &createdBy, &modifiedDate, &modifiedBy,
 		); err != nil {
 			return nil, err
 		}
-		exceptions = append(exceptions, e)
+
+		exceptions = append(exceptions, models.SecurityException{
+			SecurityExceptionID: nullInt(securityExceptionID),
+			RuleID:              nullInt(ruleID),
+			AladdinID:           nullStr(aladdinIDCol),
+			RunDate:             nullTime(runDate),
+			RunStart:            nullTime(runStart),
+			ResultTypeID:        nullInt(resultTypeID),
+			ExceptionSourceID:   nullInt(exceptionSourceID),
+			ExceptionStatusID:   nullInt(exceptionStatusID),
+			SeverityTypeID:      nullInt(severityTypeID),
+			ProcessTypeID:       nullInt(processTypeID),
+			CategoryTypeID:      nullInt(categoryTypeID),
+			AssignTo:            nullStr(assignTo),
+			AssignedBy:          nullStr(assignedBy),
+			IssueDescription:    nullStr(issueDescription),
+			CreatedDate:         nullTime(createdDate),
+			CreatedBy:           nullStr(createdBy),
+			ModifiedDate:        nullTime(modifiedDate),
+			ModifiedBy:          nullStr(modifiedBy),
+		})
 	}
 
 	if exceptions == nil {

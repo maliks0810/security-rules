@@ -10,5 +10,6 @@ func PublicRoutes(app *fiber.App) {
 	route := app.Group(route_prefix + "v1/api")
 
 	route.Get("/info", handlers.GetInformation)
-route.Get("/getSecurityExceptions", handlers.GetSecurityExceptions)
+	route.Get("/getSecurityExceptions", handlers.GetSecurityExceptions)
+	route.Get("/getAssets", handlers.GetAssets)
 }
