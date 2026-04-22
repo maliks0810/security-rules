@@ -2,34 +2,22 @@ package repositories
 
 import (
 	"database/sql"
-	"strings"
 
-	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/utils/log"
-	"securityrules/security-rules/internal/utils/postgres"
-	"securityrules/security-rules/internal/utils/snowflake"
 )
 
 func GetAssets() ([]models.Asset, error) {
-	var db *sql.DB
 	var query string
-
-	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+	if snowflakeSelected() {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
-		db = snowflake.DB
 		query = "CALL GET_ASSETS()"
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
-		db = postgres.DB
 		query = "SELECT * FROM public.\"GET_ASSETS\"()"
 	}
 
-	if db == nil {
-		return nil, sql.ErrConnDone
-	}
-
-	rows, err := db.Query(query)
+	rows, err := runQuery(query)
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,22 @@ import (
 // at startup and consumed by handlers.
 var DB *sql.DB
 
+// Reopen is a hook registered by main.go that force-closes DB and opens a fresh
+// connection. Callers invoke it after detecting an expired auth token.
+var Reopen func() error
+
+// IsAuthTokenExpired reports whether err looks like Snowflake's expired-token
+// signal. Snowflake returns error code 390114 with a message containing
+// "Authentication token has expired".
+func IsAuthTokenExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authentication token has expired") ||
+		strings.Contains(msg, "390114")
+}
+
 /*
 Representation of properties required to connect/communicate with TCW Data Cloud
 via the Snowflake driver (https://github.com/snowflakedb/gosnowflake)

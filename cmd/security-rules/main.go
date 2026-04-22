@@ -72,6 +72,20 @@ func main() {
 		} else {
 			sf.DB = facade.DBConnection
 		}
+		sf.Reopen = func() error {
+			log.Logger.Info("main.go: sf.Reopen - force-closing and reopening Snowflake connection...")
+			if facade.DBConnection != nil {
+				_ = facade.DBConnection.Close()
+			}
+			facade.DBConnection = nil
+			facade.DBConnectionExpiresOn = nil
+			sf.DB = nil
+			if err := openSnowflakeConnection(&facade); err != nil {
+				return err
+			}
+			sf.DB = facade.DBConnection
+			return nil
+		}
 	} else {
 		log.Logger.Info("main.go: main - DATABASE is set to POSTGRES, opening Postgres connection...")
 		if err := openPostgresConnection(&facade); err != nil {
