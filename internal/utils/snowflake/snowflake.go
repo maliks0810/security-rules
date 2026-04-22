@@ -33,6 +33,38 @@ func IsAuthTokenExpired(err error) bool {
 		strings.Contains(msg, "390114")
 }
 
+// Query runs a query against DB and, if the auth token has expired, calls
+// Reopen and retries once. Callers that need Snowflake-specific reauth should
+// use this instead of DB.Query directly.
+func Query(query string, args ...any) (*sql.Rows, error) {
+	if DB == nil {
+		if Reopen == nil {
+			return nil, sql.ErrConnDone
+		}
+		if err := Reopen(); err != nil {
+			return nil, err
+		}
+	}
+
+	rows, err := DB.Query(query, args...)
+	if err == nil {
+		return rows, nil
+	}
+
+	if !IsAuthTokenExpired(err) || Reopen == nil {
+		return nil, err
+	}
+
+	log.Logger.Warn("snowflake: auth token expired, reopening connection and retrying query")
+	if rerr := Reopen(); rerr != nil {
+		return nil, errors.Join(err, rerr)
+	}
+	if DB == nil {
+		return nil, errors.Join(err, sql.ErrConnDone)
+	}
+	return DB.Query(query, args...)
+}
+
 /*
 Representation of properties required to connect/communicate with TCW Data Cloud
 via the Snowflake driver (https://github.com/snowflakedb/gosnowflake)

@@ -2,22 +2,30 @@ package repositories
 
 import (
 	"database/sql"
+	"strings"
 
+	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/utils/log"
+	"securityrules/security-rules/internal/utils/postgres"
+	"securityrules/security-rules/internal/utils/snowflake"
 )
 
 func GetAssets() ([]models.Asset, error) {
-	var query string
-	if snowflakeSelected() {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
-		query = "CALL GET_ASSETS()"
+		// snowflake.Query reopens the connection and retries once if the auth token has expired.
+		rows, err = snowflake.Query("CALL GET_ASSETS()")
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
-		query = "SELECT * FROM public.\"GET_ASSETS\"()"
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_ASSETS\"()")
 	}
-
-	rows, err := runQuery(query)
 	if err != nil {
 		return nil, err
 	}

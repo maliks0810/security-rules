@@ -2,22 +2,30 @@ package repositories
 
 import (
 	"database/sql"
+	"strings"
 
+	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/utils/log"
+	"securityrules/security-rules/internal/utils/postgres"
+	"securityrules/security-rules/internal/utils/snowflake"
 )
 
 func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error) {
-	var query string
-	if snowflakeSelected() {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using SNOWFLAKE database environment")
-		query = "CALL GET_EXCEPTIONS(?)"
+		// snowflake.Query reopens the connection and retries once if the auth token has expired.
+		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?)", aladdinID)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using POSTGRES database environment")
-		query = "SELECT * FROM public.\"GET_EXCEPTIONS\"($1)"
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_EXCEPTIONS\"($1)", aladdinID)
 	}
-
-	rows, err := runQuery(query, aladdinID)
 	if err != nil {
 		return nil, err
 	}
