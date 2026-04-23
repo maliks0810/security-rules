@@ -9,7 +9,7 @@ import (
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/postgres"
 	"securityrules/security-rules/internal/utils/snowflake"
-	"securityrules/security-rules/internal/utils/sql"
+	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
 func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error) {
@@ -36,7 +36,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 	for rows.Next() {
 		var (
 			securityExceptionID sql.NullInt64
-			ruleID              sql.NullInt64
+			ruleName            sql.NullString
 			aladdinIDCol        sql.NullString
 			runDate             sql.NullTime
 			runStart            sql.NullTime
@@ -56,7 +56,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 		)
 
 		if err := rows.Scan(
-			&securityExceptionID, &ruleID, &aladdinIDCol,
+			&securityExceptionID, &ruleName, &aladdinIDCol,
 			&runDate, &runStart, &resultTypeID,
 			&exceptionSourceID, &exceptionStatusID, &severityTypeID,
 			&processTypeID, &categoryTypeID, &assignTo,
@@ -69,7 +69,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 
 		exceptions = append(exceptions, models.SecurityException{
 			SecurityExceptionID: sqlutil.NullInt(securityExceptionID),
-			RuleID:              sqlutil.NullInt(ruleID),
+			RuleName:            sqlutil.NullStr(ruleName),
 			AladdinID:           sqlutil.NullStr(aladdinIDCol),
 			RunDate:             sqlutil.NullTime(runDate),
 			RunStart:            sqlutil.NullTime(runStart),

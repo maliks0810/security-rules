@@ -2,7 +2,7 @@ package models
 
 type SecurityException struct {
 	SecurityExceptionID int    `json:"security_exception_id"`
-	RuleID              int    `json:"rule_id"`
+	RuleName              string    `json:"rule_name"`
 	AladdinID           string `json:"aladdin_id"`
 	RunDate             string `json:"run_date"`
 	RunStart            string `json:"run_start"`
