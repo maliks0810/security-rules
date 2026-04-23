@@ -9,6 +9,7 @@ import (
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/postgres"
 	"securityrules/security-rules/internal/utils/snowflake"
+	"securityrules/security-rules/internal/utils/sql"
 )
 
 func GetAssets() ([]models.Asset, error) {
@@ -57,17 +58,17 @@ func GetAssets() ([]models.Asset, error) {
 		}
 
 		assets = append(assets, models.Asset{
-			ExceptionDate:       nullTime(exceptionDate),
-			Priority:            nullStr(priority),
-			Type:                nullStr(typeCol),
-			AssignTo:            nullStr(assignTo),
-			AssetID:             nullStr(assetID),
-			Figi:                nullStr(figi),
-			SecurityDescription: nullStr(securityDescription),
-			Trader:              nullStr(trader),
-			TradingTeam:         nullStr(tradingTeam),
-			ExceptionCount:      nullInt(exceptionCount),
-			BbgLastRefresh:      nullStr(bbgLastRefresh),
+			ExceptionDate:       sqlutil.NullTime(exceptionDate),
+			Priority:            sqlutil.NullStr(priority),
+			Type:                sqlutil.NullStr(typeCol),
+			AssignTo:            sqlutil.NullStr(assignTo),
+			AssetID:             sqlutil.NullStr(assetID),
+			Figi:                sqlutil.NullStr(figi),
+			SecurityDescription: sqlutil.NullStr(securityDescription),
+			Trader:              sqlutil.NullStr(trader),
+			TradingTeam:         sqlutil.NullStr(tradingTeam),
+			ExceptionCount:      sqlutil.NullInt(exceptionCount),
+			BbgLastRefresh:      sqlutil.NullStr(bbgLastRefresh),
 		})
 	}
 

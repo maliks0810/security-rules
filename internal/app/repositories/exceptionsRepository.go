@@ -9,6 +9,7 @@ import (
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/postgres"
 	"securityrules/security-rules/internal/utils/snowflake"
+	"securityrules/security-rules/internal/utils/sql"
 )
 
 func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error) {
@@ -67,24 +68,24 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 		}
 
 		exceptions = append(exceptions, models.SecurityException{
-			SecurityExceptionID: nullInt(securityExceptionID),
-			RuleID:              nullInt(ruleID),
-			AladdinID:           nullStr(aladdinIDCol),
-			RunDate:             nullTime(runDate),
-			RunStart:            nullTime(runStart),
-			ResultTypeID:        nullInt(resultTypeID),
-			ExceptionSourceID:   nullInt(exceptionSourceID),
-			ExceptionStatusID:   nullInt(exceptionStatusID),
-			SeverityTypeID:      nullInt(severityTypeID),
-			ProcessTypeID:       nullInt(processTypeID),
-			CategoryTypeID:      nullInt(categoryTypeID),
-			AssignTo:            nullStr(assignTo),
-			AssignedBy:          nullStr(assignedBy),
-			IssueDescription:    nullStr(issueDescription),
-			CreatedDate:         nullTime(createdDate),
-			CreatedBy:           nullStr(createdBy),
-			ModifiedDate:        nullTime(modifiedDate),
-			ModifiedBy:          nullStr(modifiedBy),
+			SecurityExceptionID: sqlutil.NullInt(securityExceptionID),
+			RuleID:              sqlutil.NullInt(ruleID),
+			AladdinID:           sqlutil.NullStr(aladdinIDCol),
+			RunDate:             sqlutil.NullTime(runDate),
+			RunStart:            sqlutil.NullTime(runStart),
+			ResultTypeID:        sqlutil.NullInt(resultTypeID),
+			ExceptionSourceID:   sqlutil.NullInt(exceptionSourceID),
+			ExceptionStatusID:   sqlutil.NullInt(exceptionStatusID),
+			SeverityTypeID:      sqlutil.NullInt(severityTypeID),
+			ProcessTypeID:       sqlutil.NullInt(processTypeID),
+			CategoryTypeID:      sqlutil.NullInt(categoryTypeID),
+			AssignTo:            sqlutil.NullStr(assignTo),
+			AssignedBy:          sqlutil.NullStr(assignedBy),
+			IssueDescription:    sqlutil.NullStr(issueDescription),
+			CreatedDate:         sqlutil.NullTime(createdDate),
+			CreatedBy:           sqlutil.NullStr(createdBy),
+			ModifiedDate:        sqlutil.NullTime(modifiedDate),
+			ModifiedBy:          sqlutil.NullStr(modifiedBy),
 		})
 	}
 
