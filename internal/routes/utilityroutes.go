@@ -32,7 +32,12 @@ func envHandler(ctx *fiber.Ctx) error {
 func UtilityRoutes(app *fiber.App) {
 	app.Get(route_prefix + "v1/api/echo", echoHandler)
 	app.Get(route_prefix + "v1/api/env", envHandler)
-	app.Get(route_prefix + "v1/api/swagger", swagger.HandlerDefault)
+	if !configs.EnvConfigs.GolangEnvironment.IsProduction() {
+		app.Get(route_prefix+"v1/api/swagger/*", swagger.HandlerDefault)
+		app.Get("/", func(ctx *fiber.Ctx) error {
+			return ctx.Redirect(route_prefix+"v1/api/swagger/index.html", fiber.StatusFound)
+		})
+	}
 
 	// RB: isolate the health check on a separate goroutine to ensure it is never blocked
 

@@ -94,3 +94,57 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 	}
 	return exceptions, nil
 }
+
+func InsertSecurityExceptions(exceptions []models.SecurityException) error {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: InsertSecurityExceptions - using SNOWFLAKE database environment")
+		for _, e := range exceptions {
+			rows, err := snowflake.Query(
+				"CALL INSERT_SECURITY_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+				e.SecurityExceptionID, nilIfEmpty(e.RuleName),
+				nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
+				e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
+				e.AssignTo, e.AssignToDate, e.ResolveDate,
+				nil, e.IssueDescription, nil,
+				nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
+				e.ExceptionSourceID, nil, nil, nil,
+				nil, nil, e.AssignedBy, nil, e.AladdinID,
+			)
+			if err != nil {
+				return err
+			}
+			rows.Close()
+		}
+		return nil
+	}
+
+	log.Logger.Info("exceptionsRepository: InsertSecurityExceptions - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return sql.ErrConnDone
+	}
+
+	for _, e := range exceptions {
+		_, err := postgres.DB.Exec(
+			`SELECT public."INSERT_SECURITY_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+			e.SecurityExceptionID, nilIfEmpty(e.RuleName),
+			nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
+			e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
+			e.AssignTo, e.AssignToDate, e.ResolveDate,
+			nil, e.IssueDescription, nil,
+			nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
+			e.ExceptionSourceID, nil, nil, nil,
+			nil, nil, e.AssignedBy, nil, e.AladdinID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -23,6 +23,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
 	"securityrules/security-rules/configs"
+	_ "securityrules/security-rules/docs"
 	"securityrules/security-rules/internal/app/handlers"
 	"securityrules/security-rules/internal/middleware"
 	"securityrules/security-rules/internal/routes"
@@ -45,6 +46,10 @@ type Facade struct {
 	PostgresDBConnection  *sql.DB
 }
 
+// @title           Security Rules API
+// @version         1.0
+// @description     REST API for managing security rules, assets, and SECURITY_EXCEPTION rows.
+// @BasePath        /de/securities/rules
 func main() {
 	log.Logger.Info("main.go: main - initialize the environment configurations - reading from environment files and environment values...")
 	configs.Load()

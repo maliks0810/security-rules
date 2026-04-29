@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/contrib/otelfiber"
@@ -13,9 +14,23 @@ import (
 )
 
 func FiberMiddleware(application *fiber.App) {
+	// otelfiber and compress drain streaming response bodies (they read
+	// ctx.Response().Body() to record size / compress), which deadlocks SSE.
+	// Skip both for the events path.
+	otel := otelfiber.Middleware()
+	compressMW := compress.New(compressionConfig())
+	skipForEvents := func(next fiber.Handler) fiber.Handler {
+		return func(c *fiber.Ctx) error {
+			if strings.HasSuffix(c.Path(), "/v1/api/events") {
+				return c.Next()
+			}
+			return next(c)
+		}
+	}
+
 	application.Use(
-		otelfiber.Middleware(),
-		compress.New(compressionConfig()),
+		skipForEvents(otel),
+		skipForEvents(compressMW),
 		cors.New(corsConfig()),
 		limiter.New(limiterConfig()),
 		logger.New(loggerConfig()),
@@ -26,8 +41,10 @@ func FiberMiddleware(application *fiber.App) {
 func compressionConfig() compress.Config {
 	return compress.Config{
 		Level: compress.LevelBestSpeed,
+		Next: func(ctx *fiber.Ctx) bool {
+			return strings.HasSuffix(ctx.Path(), "/v1/api/events")
+		},
 	}
-
 }
 
 func corsConfig() cors.Config {

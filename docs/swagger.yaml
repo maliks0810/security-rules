@@ -1,0 +1,231 @@
+basePath: /de/securities/rules
+definitions:
+  models.Asset:
+    properties:
+      asset_id:
+        type: string
+      assign_to:
+        type: string
+      bbg_last_refresh:
+        type: string
+      exception_count:
+        type: integer
+      exception_date:
+        type: string
+      figi:
+        type: string
+      priority:
+        type: string
+      security_description:
+        type: string
+      trader:
+        type: string
+      trading_team:
+        type: string
+      type:
+        type: string
+    type: object
+  models.SecurityException:
+    properties:
+      aladdin_id:
+        type: string
+      assign_to:
+        type: string
+      assign_to_date:
+        type: string
+      assigned_by:
+        type: string
+      category_type_id:
+        type: integer
+      created_by:
+        type: string
+      created_date:
+        type: string
+      exception_source_id:
+        type: integer
+      exception_status_id:
+        type: integer
+      issue_description:
+        type: string
+      modified_by:
+        type: string
+      modified_date:
+        type: string
+      process_type_id:
+        type: integer
+      resolve_date:
+        type: string
+      result_type_id:
+        type: integer
+      rule_id:
+        type: integer
+      run_date:
+        type: string
+      run_start:
+        type: string
+      security_exception_id:
+        type: integer
+      severity_type_id:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: REST API for managing security rules, assets, and SECURITY_EXCEPTION
+    rows.
+  title: Security Rules API
+  version: "1.0"
+paths:
+  /v1/api/events:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.
+        Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.
+      parameters:
+      - description: Security exceptions to insert
+        in: body
+        name: exceptions
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/models.SecurityException'
+          type: array
+      produces:
+      - application/json
+      - text/event-stream
+      responses:
+        "200":
+          description: stream of SSE-formatted events
+          schema:
+            type: string
+        "201":
+          description: Created
+        "400":
+          description: invalid request body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to insert security exceptions
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Server-Sent Events stream of domain changes
+      tags:
+      - security-exceptions
+      - events
+  /v1/api/getAssets:
+    get:
+      description: Returns the deduplicated set of assets along with their latest
+        exception metadata.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Asset'
+            type: array
+        "500":
+          description: failed to query assets
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List assets with exception summary
+      tags:
+      - assets
+  /v1/api/getSecurityExceptions:
+    get:
+      description: Returns all SECURITY_EXCEPTION rows for the given Aladdin asset
+        ID.
+      parameters:
+      - description: Aladdin asset ID
+        in: query
+        name: aladdin_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.SecurityException'
+            type: array
+        "400":
+          description: aladdin_id query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query security exceptions
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List security exceptions for an asset
+      tags:
+      - security-exceptions
+  /v1/api/info:
+    get:
+      description: Returns a static welcome string used as a basic liveness check.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Welcome to Go microservices using Fiber
+          schema:
+            type: string
+      summary: Service welcome message
+      tags:
+      - info
+  /v1/api/insertSecurityExceptions:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.
+        Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.
+      parameters:
+      - description: Security exceptions to insert
+        in: body
+        name: exceptions
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/models.SecurityException'
+          type: array
+      produces:
+      - application/json
+      - text/event-stream
+      responses:
+        "200":
+          description: stream of SSE-formatted events
+          schema:
+            type: string
+        "201":
+          description: Created
+        "400":
+          description: invalid request body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to insert security exceptions
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Server-Sent Events stream of domain changes
+      tags:
+      - security-exceptions
+      - events
+swagger: "2.0"
