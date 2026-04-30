@@ -25,6 +25,7 @@ import (
 	"securityrules/security-rules/configs"
 	_ "securityrules/security-rules/docs"
 	"securityrules/security-rules/internal/app/handlers"
+	"securityrules/security-rules/internal/app/notify"
 	"securityrules/security-rules/internal/middleware"
 	"securityrules/security-rules/internal/routes"
 	"securityrules/security-rules/internal/utils/azure"
@@ -102,6 +103,9 @@ func main() {
 
 	prepare()
 
+	notifyCtx, cancelNotify := context.WithCancel(context.Background())
+	notify.Start(notifyCtx, postgresConnString())
+
 	app := fiber.New()
 	middleware.FiberMiddleware(app)
 
@@ -111,11 +115,22 @@ func main() {
 
 	go func() {
 		sig := <-shutdownChannel
+		cancelNotify()
 		releaseResources(&facade, sig)
 		_ = app.Shutdown()
 	}()
 
 	net.StartServer(app)
+}
+
+func postgresConnString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		configs.EnvConfigs.PostgresHost,
+		configs.EnvConfigs.PostgresPort,
+		configs.EnvConfigs.PostgresUser,
+		configs.EnvConfigs.PostgresPassword,
+		configs.EnvConfigs.PostgresDatabase,
+	)
 }
 
 func initializeFacade() Facade {
