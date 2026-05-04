@@ -38,7 +38,7 @@ func pollSnowflake(ctx context.Context) {
 			return
 		case <-ticker.C:
 			rows, err := snowflake.Query(
-				`SELECT "SECURITY_EXCEPTION_ID", "ALADDIN_ID" FROM SECURITY_EXCEPTION WHERE "SECURITY_EXCEPTION_ID" > ? ORDER BY "SECURITY_EXCEPTION_ID"`,
+				`SELECT "SECURITY_EXCEPTION_ID", "ASSET_ID" FROM SECURITY_EXCEPTION WHERE "SECURITY_EXCEPTION_ID" > ? ORDER BY "SECURITY_EXCEPTION_ID"`,
 				watermark.Int64,
 			)
 			if err != nil {
