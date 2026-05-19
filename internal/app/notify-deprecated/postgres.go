@@ -1,4 +1,4 @@
-package notify
+package notifydeprecated
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func listenPostgres(ctx context.Context, connStr string) {
 				}
 			}
 			if len(parts) >= 2 {
-				payload["aladdin_id"] = parts[1]
+				payload["asset_id"] = parts[1]
 			}
 			if len(parts) >= 3 {
 				payload["rule_id"] = parts[2]

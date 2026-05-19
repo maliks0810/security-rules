@@ -12,6 +12,8 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/info", handlers.GetInformation)
 	route.Get("/getSecurityExceptions", handlers.GetSecurityExceptions)
 	route.Get("/getAssets", handlers.GetAssets)
+	route.Get("/getRules", handlers.GetRules)
+	route.Post("/executeRules", handlers.ExecuteRules)
 	route.Post("/insertSecurityExceptions", handlers.InsertSecurityExceptions)
 	route.Get("/events", handlers.StreamEvents)
 }

@@ -12,20 +12,20 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error) {
+func GetSecurityExceptions(assetID string) ([]models.SecurityException, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?)", aladdinID)
+		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?)", assetID)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_EXCEPTIONS\"($1)", aladdinID)
+		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_EXCEPTIONS\"($1)", assetID)
 	}
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 		var (
 			securityExceptionID sql.NullInt64
 			ruleName            sql.NullString
-			aladdinIDCol        sql.NullString
+			assetIDCol          sql.NullString
 			runDate             sql.NullTime
 			runStart            sql.NullTime
 			resultTypeID        sql.NullInt64
@@ -56,7 +56,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 		)
 
 		if err := rows.Scan(
-			&securityExceptionID, &ruleName, &aladdinIDCol,
+			&securityExceptionID, &ruleName, &assetIDCol,
 			&runDate, &runStart, &resultTypeID,
 			&exceptionSourceID, &exceptionStatusID, &severityTypeID,
 			&processTypeID, &categoryTypeID, &assignTo,
@@ -70,7 +70,7 @@ func GetSecurityExceptions(aladdinID string) ([]models.SecurityException, error)
 		exceptions = append(exceptions, models.SecurityException{
 			SecurityExceptionID: sqlutil.NullInt(securityExceptionID),
 			RuleName:            sqlutil.NullStr(ruleName),
-			AladdinID:           sqlutil.NullStr(aladdinIDCol),
+			AssetID:             sqlutil.NullStr(assetIDCol),
 			RunDate:             sqlutil.NullTime(runDate),
 			RunStart:            sqlutil.NullTime(runStart),
 			ResultTypeID:        sqlutil.NullInt(resultTypeID),
@@ -108,14 +108,14 @@ func InsertSecurityExceptions(exceptions []models.SecurityException) error {
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
 				"CALL INSERT_SECURITY_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-				e.SecurityExceptionID, nilIfEmpty(e.RuleName),
+				e.SecurityExceptionID, e.RuleID,
 				nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
 				e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
 				e.AssignTo, e.AssignToDate, e.ResolveDate,
 				nil, e.IssueDescription, nil,
 				nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
 				e.ExceptionSourceID, nil, nil, nil,
-				nil, nil, e.AssignedBy, nil, e.AladdinID,
+				nil, nil, e.AssignedBy, nil, e.AssetID,
 			)
 			if err != nil {
 				return err
@@ -133,14 +133,14 @@ func InsertSecurityExceptions(exceptions []models.SecurityException) error {
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
 			`SELECT public."INSERT_SECURITY_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
-			e.SecurityExceptionID, nilIfEmpty(e.RuleName),
+			e.SecurityExceptionID, e.RuleID,
 			nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
 			e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
 			e.AssignTo, e.AssignToDate, e.ResolveDate,
 			nil, e.IssueDescription, nil,
 			nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
 			e.ExceptionSourceID, nil, nil, nil,
-			nil, nil, e.AssignedBy, nil, e.AladdinID,
+			nil, nil, e.AssignedBy, nil, e.AssetID,
 		)
 		if err != nil {
 			return err

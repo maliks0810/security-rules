@@ -2,7 +2,7 @@
 // rows and publishes a security_exception.inserted event on the in-process
 // broker. It branches on the DATABASE env var so a Postgres listener or a
 // Snowflake poller is started, but never both.
-package notify
+package notifydeprecated
 
 import (
 	"context"

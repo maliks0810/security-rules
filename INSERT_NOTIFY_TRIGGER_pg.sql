@@ -8,13 +8,13 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Payload is "<security_exception_id>|<aladdin_id>|<rule_id>" rather than JSON
+    -- Payload is "<security_exception_id>|<asset_id>|<rule_id>" rather than JSON
     -- because some lib/pq + payload-shape combinations don't deliver braces+quotes
     -- reliably from a trigger context.
     PERFORM pg_notify(
         'security_exception_inserted',
         NEW."SECURITY_EXCEPTION_ID" || '|' ||
-        COALESCE(NEW."ALADDIN_ID", '') || '|' ||
+        COALESCE(NEW."ASSET_ID", '') || '|' ||
         COALESCE(NEW."RULE_ID"::text, '')
     );
     RETURN NEW;

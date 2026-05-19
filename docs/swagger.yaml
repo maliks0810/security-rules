@@ -1,6 +1,6 @@
 basePath: /de/securities/rules
 definitions:
-  models.Asset:
+  securityrules_security-rules_internal_app_models.Asset:
     properties:
       asset_id:
         type: string
@@ -25,9 +25,20 @@ definitions:
       type:
         type: string
     type: object
-  models.SecurityException:
+  securityrules_security-rules_internal_app_models.Rule:
     properties:
-      aladdin_id:
+      environment:
+        type: string
+      rule_command:
+        type: string
+      rule_id:
+        type: integer
+      rule_name:
+        type: string
+    type: object
+  securityrules_security-rules_internal_app_models.SecurityException:
+    properties:
+      asset_id:
         type: string
       assign_to:
         type: string
@@ -57,8 +68,8 @@ definitions:
         type: string
       result_type_id:
         type: integer
-      rule_id:
-        type: integer
+      rule_name:
+        type: string
       run_date:
         type: string
       run_start:
@@ -89,7 +100,7 @@ paths:
         required: true
         schema:
           items:
-            $ref: '#/definitions/models.SecurityException'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
           type: array
       produces:
       - application/json
@@ -117,6 +128,49 @@ paths:
       tags:
       - security-exceptions
       - events
+  /v1/api/executeRules:
+    post:
+      description: Runs every rule for the given process_type against the asset and
+        inserts any returned rows as security exceptions.
+      parameters:
+      - description: Process type
+        in: query
+        name: process_type
+        required: true
+        type: string
+      - description: Asset ID
+        in: query
+        name: asset_id
+        required: true
+        type: string
+      - description: Bloomberg global ID
+        in: query
+        name: id_bb_global
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rules executed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: process_type and asset_id are required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to execute rules
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Execute rules for an asset
+      tags:
+      - rules
   /v1/api/getAssets:
     get:
       description: Returns the deduplicated set of assets along with their latest
@@ -128,7 +182,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Asset'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Asset'
             type: array
         "500":
           description: failed to query assets
@@ -139,14 +193,39 @@ paths:
       summary: List assets with exception summary
       tags:
       - assets
+  /v1/api/getRules:
+    get:
+      description: Returns rules from LIST_RULES, optionally filtered by process type.
+      parameters:
+      - description: Process type filter
+        in: query
+        name: process_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Rule'
+            type: array
+        "500":
+          description: failed to query rules
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rules
+      tags:
+      - rules
   /v1/api/getSecurityExceptions:
     get:
-      description: Returns all SECURITY_EXCEPTION rows for the given Aladdin asset
-        ID.
+      description: Returns all SECURITY_EXCEPTION rows for the given asset ID.
       parameters:
-      - description: Aladdin asset ID
+      - description: Asset ID
         in: query
-        name: aladdin_id
+        name: asset_id
         required: true
         type: string
       produces:
@@ -156,10 +235,10 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.SecurityException'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
             type: array
         "400":
-          description: aladdin_id query parameter is required
+          description: asset_id query parameter is required
           schema:
             additionalProperties:
               type: string
@@ -200,7 +279,7 @@ paths:
         required: true
         schema:
           items:
-            $ref: '#/definitions/models.SecurityException'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
           type: array
       produces:
       - application/json

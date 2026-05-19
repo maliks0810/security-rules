@@ -39,7 +39,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.SecurityException"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
                             }
                         }
                     }
@@ -75,6 +75,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/executeRules": {
+            "post": {
+                "description": "Runs every rule for the given process_type against the asset and inserts any returned rows as security exceptions.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Execute rules for an asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Process type",
+                        "name": "process_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "asset_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bloomberg global ID",
+                        "name": "id_bb_global",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rules executed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "process_type and asset_id are required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to execute rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getAssets": {
             "get": {
                 "description": "Returns the deduplicated set of assets along with their latest exception metadata.",
@@ -91,7 +154,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Asset"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Asset"
                             }
                         }
                     },
@@ -107,9 +170,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/getRules": {
+            "get": {
+                "description": "Returns rules from LIST_RULES, optionally filtered by process type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "List rules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Process type filter",
+                        "name": "process_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Rule"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getSecurityExceptions": {
             "get": {
-                "description": "Returns all SECURITY_EXCEPTION rows for the given Aladdin asset ID.",
+                "description": "Returns all SECURITY_EXCEPTION rows for the given asset ID.",
                 "produces": [
                     "application/json"
                 ],
@@ -120,8 +223,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Aladdin asset ID",
-                        "name": "aladdin_id",
+                        "description": "Asset ID",
+                        "name": "asset_id",
                         "in": "query",
                         "required": true
                     }
@@ -132,12 +235,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.SecurityException"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
                             }
                         }
                     },
                     "400": {
-                        "description": "aladdin_id query parameter is required",
+                        "description": "asset_id query parameter is required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -201,7 +304,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.SecurityException"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
                             }
                         }
                     }
@@ -239,7 +342,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "models.Asset": {
+        "securityrules_security-rules_internal_app_models.Asset": {
             "type": "object",
             "properties": {
                 "asset_id": {
@@ -277,10 +380,27 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SecurityException": {
+        "securityrules_security-rules_internal_app_models.Rule": {
             "type": "object",
             "properties": {
-                "aladdin_id": {
+                "environment": {
+                    "type": "string"
+                },
+                "rule_command": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "rule_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "securityrules_security-rules_internal_app_models.SecurityException": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
                     "type": "string"
                 },
                 "assign_to": {
@@ -325,8 +445,8 @@ const docTemplate = `{
                 "result_type_id": {
                     "type": "integer"
                 },
-                "rule_id": {
-                    "type": "integer"
+                "rule_name": {
+                    "type": "string"
                 },
                 "run_date": {
                     "type": "string"

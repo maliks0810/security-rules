@@ -1,3 +1,14 @@
+-- DROP IF EXISTS so renaming parameters works (PG can't rename via CREATE OR REPLACE).
+DROP FUNCTION IF EXISTS public."INSERT_SECURITY_EXCEPTION"(
+    numeric, numeric,
+    timestamp, timestamp, timestamp,
+    numeric, numeric, numeric, numeric, numeric,
+    text, text, text, numeric, text, text,
+    timestamp, text, text, timestamp,
+    numeric, numeric, numeric, numeric, text, text, text, text,
+    varchar
+);
+
 CREATE OR REPLACE FUNCTION public."INSERT_SECURITY_EXCEPTION"(
     "SECURITY_EXCEPTION_ID" numeric,
     "RULE_ID"               numeric,
@@ -27,7 +38,7 @@ CREATE OR REPLACE FUNCTION public."INSERT_SECURITY_EXCEPTION"(
     "CUSIP_TYPE_CODE"       text,
     "ASSIGNED_BY"           text,
     "COMMENTS"              text,
-    "ALADDIN_ID"            varchar(30)
+    "ASSET_ID"            varchar(30)
 )
 RETURNS void
 LANGUAGE sql
@@ -39,7 +50,7 @@ AS $$
         "BUS_TERM_SOURCE_ID", "ISSUE_DESCRIPTION", "SOURCE_SYSTEM_CODE",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_BY", "MODIFIED_DATE",
         "EXCEPTION_SOURCE_ID", "EXCEPTION_TYPE_ID", "DQM_APP_ID", "ASSET_TYPE_ID",
-        "ASSET", "CUSIP_TYPE_CODE", "ASSIGNED_BY", "COMMENTS", "ALADDIN_ID"
+        "ASSET", "CUSIP_TYPE_CODE", "ASSIGNED_BY", "COMMENTS", "ASSET_ID"
     ) VALUES (
         "SECURITY_EXCEPTION_ID", "RULE_ID", "RUN_DATE", "RUN_START", "RUN_END",
         "RESULT_TYPE_ID", "EXCEPTION_STATUS_ID", "SEVERITY_TYPE_ID", "PROCESS_TYPE_ID",
@@ -47,6 +58,6 @@ AS $$
         "BUS_TERM_SOURCE_ID", "ISSUE_DESCRIPTION", "SOURCE_SYSTEM_CODE",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_BY", "MODIFIED_DATE",
         "EXCEPTION_SOURCE_ID", "EXCEPTION_TYPE_ID", "DQM_APP_ID", "ASSET_TYPE_ID",
-        "ASSET", "CUSIP_TYPE_CODE", "ASSIGNED_BY", "COMMENTS", "ALADDIN_ID"
+        "ASSET", "CUSIP_TYPE_CODE", "ASSIGNED_BY", "COMMENTS", "ASSET_ID"
     );
 $$;

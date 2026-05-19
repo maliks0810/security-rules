@@ -1,4 +1,4 @@
-package notify
+package notifydeprecated
 
 import (
 	"context"
@@ -48,10 +48,10 @@ func pollSnowflake(ctx context.Context) {
 
 			for rows.Next() {
 				var (
-					id        sql.NullInt64
-					aladdinID sql.NullString
+					id      sql.NullInt64
+					assetID sql.NullString
 				)
-				if err := rows.Scan(&id, &aladdinID); err != nil {
+				if err := rows.Scan(&id, &assetID); err != nil {
 					log.Logger.Error(fmt.Sprintf("notify: snowflake scan failed: %v", err))
 					continue
 				}
@@ -59,7 +59,7 @@ func pollSnowflake(ctx context.Context) {
 					Type: "security_exception.inserted",
 					Payload: map[string]any{
 						"security_exception_id": id.Int64,
-						"aladdin_id":            aladdinID.String,
+						"asset_id":              assetID.String,
 					},
 				})
 				if id.Int64 > watermark.Int64 {

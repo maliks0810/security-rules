@@ -14,12 +14,12 @@ RETURNS TABLE(
 )
 LANGUAGE sql
 AS $$
-    SELECT DISTINCT ON (se."ALADDIN_ID")
+    SELECT DISTINCT ON (se."ASSET_ID")
            se."RUN_DATE"      AS "EXCEPTION_DATE",
            st."CODE"          AS "PRIORITY",
            'Security Set up'  AS "TYPE",
            se."ASSIGN_TO"     AS "ASSIGN_TO",
-           se."ALADDIN_ID"    AS "ASSET_ID",
+           se."ASSET_ID"      AS "ASSET_ID",
            'BBG00G6M2LZ2'     AS "FIGI",
            'XYZ'              AS "SECURITY_DESCRIPTION",
            'Colman Slain'     AS "TRADER",
@@ -29,5 +29,5 @@ AS $$
     FROM public."SECURITY_EXCEPTION" se
     JOIN public."SEVERITY_TYPE" st
       ON st."SEVERITY_TYPE_ID" = se."SEVERITY_TYPE_ID"
-    ORDER BY se."ALADDIN_ID", se."RUN_DATE" DESC;
+    ORDER BY se."ASSET_ID", se."RUN_DATE" DESC;
 $$;

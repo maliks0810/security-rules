@@ -27,21 +27,21 @@ func GetInformation(ctx *fiber.Ctx) error {
 
 // GetSecurityExceptions godoc
 // @Summary      List security exceptions for an asset
-// @Description  Returns all SECURITY_EXCEPTION rows for the given Aladdin asset ID.
+// @Description  Returns all SECURITY_EXCEPTION rows for the given asset ID.
 // @Tags         security-exceptions
 // @Produce      json
-// @Param        aladdin_id  query     string  true  "Aladdin asset ID"
+// @Param        asset_id    query     string  true  "Asset ID"
 // @Success      200         {array}   models.SecurityException
-// @Failure      400         {object}  map[string]string  "aladdin_id query parameter is required"
+// @Failure      400         {object}  map[string]string  "asset_id query parameter is required"
 // @Failure      500         {object}  map[string]string  "failed to query security exceptions"
 // @Router       /v1/api/getSecurityExceptions [get]
 func GetSecurityExceptions(ctx *fiber.Ctx) error {
-	aladdinID := ctx.Query("aladdin_id")
-	if aladdinID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "aladdin_id query parameter is required"})
+	assetID := ctx.Query("asset_id")
+	if assetID == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id query parameter is required"})
 	}
 
-	exceptions, err := services.GetSecurityExceptions(aladdinID)
+	exceptions, err := services.GetSecurityExceptions(assetID)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query security exceptions"})
 	}
@@ -64,6 +64,60 @@ func GetAssets(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(assets)
+}
+
+// GetRules godoc
+// @Summary      List rules
+// @Description  Returns rules from LIST_RULES, optionally filtered by process type.
+// @Tags         rules
+// @Produce      json
+// @Param        process_type  query     string  false  "Process type filter"
+// @Success      200           {array}   models.Rule
+// @Failure      500           {object}  map[string]string  "failed to query rules"
+// @Router       /v1/api/getRules [get]
+func GetRules(ctx *fiber.Ctx) error {
+	processType := ctx.Query("process_type")
+
+	rules, err := services.GetRules(processType)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(rules)
+}
+
+// ExecuteRules godoc
+// @Summary      Execute rules for an asset
+// @Description  Runs every rule for the given process_type against the asset and inserts any returned rows as security exceptions.
+// @Tags         rules
+// @Produce      json
+// @Param        process_type  query     string  true   "Process type"
+// @Param        asset_id      query     string  true   "Asset ID"
+// @Param        id_bb_global  query     string  false  "Bloomberg global ID"
+// @Success      200           {object}  map[string]string  "rules executed"
+// @Failure      400           {object}  map[string]string  "process_type and asset_id are required"
+// @Failure      500           {object}  map[string]string  "failed to execute rules"
+// @Router       /v1/api/executeRules [post]
+func ExecuteRules(ctx *fiber.Ctx) error {
+	processType := ctx.Query("process_type")
+	assetID := ctx.Query("asset_id")
+	if processType == "" || assetID == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "process_type and asset_id are required"})
+	}
+
+	idBbGlobal := ctx.Query("id_bb_global")
+
+	var err error
+	if idBbGlobal == "" {
+		err = services.ExecuteRules(processType, assetID)
+	} else {
+		err = services.ExecuteRules(processType, assetID, idBbGlobal)
+	}
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 
 // InsertSecurityExceptions godoc
