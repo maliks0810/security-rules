@@ -5,9 +5,9 @@
 -- hardcoded ID_BB_GLOBAL/ALADDIN_ID filters that look like leftover debug
 -- values; this conversion uses the function parameters instead.
 
-DROP FUNCTION IF EXISTS public."RULE_COMPARE_REGISTRATION"(varchar, varchar);
+DROP FUNCTION IF EXISTS public."RULE_BBG_COMPARE_REGISTRATION"(varchar, varchar);
 
-CREATE OR REPLACE FUNCTION public."RULE_COMPARE_REGISTRATION"(
+CREATE OR REPLACE FUNCTION public."RULE_BBG_COMPARE_REGISTRATION"(
     "ALADDIN_ID"   varchar(15),
     "ID_BB_GLOBAL" varchar(15)
 )
