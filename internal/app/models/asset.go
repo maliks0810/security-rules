@@ -3,6 +3,7 @@ package models
 type Asset struct {
 	ExceptionDate       string `json:"exception_date"`
 	Priority            string `json:"priority"`
+	Severity            string `json:"severity"`
 	Type                string `json:"type"`
 	AssignTo            string `json:"assign_to"`
 	AssetID             string `json:"asset_id"`

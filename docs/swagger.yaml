@@ -18,6 +18,8 @@ definitions:
         type: string
       security_description:
         type: string
+      severity:
+        type: string
       trader:
         type: string
       trading_team:
@@ -62,11 +64,15 @@ definitions:
         type: string
       modified_date:
         type: string
+      priority:
+        type: string
       process_type_id:
         type: integer
       resolve_date:
         type: string
       result_type_id:
+        type: integer
+      rule_id:
         type: integer
       rule_name:
         type: string
@@ -173,8 +179,17 @@ paths:
       - rules
   /v1/api/getAssets:
     get:
-      description: Returns the deduplicated set of assets along with their latest
-        exception metadata.
+      description: Returns the deduplicated set of assets, optionally filtered by
+        exception type CODE and severity (CATEGORY_TYPE.CODE).
+      parameters:
+      - description: EXCEPTION_TYPE.CODE filter
+        in: query
+        name: exception_type
+        type: string
+      - description: CATEGORY_TYPE.CODE filter
+        in: query
+        name: severity
+        type: string
       produces:
       - application/json
       responses:
@@ -193,6 +208,48 @@ paths:
       summary: List assets with exception summary
       tags:
       - assets
+  /v1/api/getExceptionTypes:
+    get:
+      description: Returns EXCEPTION_TYPE.CODE values ordered by EXCEPTIONTYPERANK.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query exception types
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List exception type codes
+      tags:
+      - exception-types
+  /v1/api/getPriorityType:
+    get:
+      description: Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query priority types
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List priority codes
+      tags:
+      - priority-types
   /v1/api/getRules:
     get:
       description: Returns rules from LIST_RULES, optionally filtered by process type.
@@ -221,12 +278,25 @@ paths:
       - rules
   /v1/api/getSecurityExceptions:
     get:
-      description: Returns all SECURITY_EXCEPTION rows for the given asset ID.
+      description: Returns SECURITY_EXCEPTION rows for the given asset ID, optionally
+        filtered by exception type, severity (CATEGORY_TYPE.CODE), and priority (SEVERITY_TYPE.CODE).
       parameters:
       - description: Asset ID
         in: query
         name: asset_id
         required: true
+        type: string
+      - description: EXCEPTION_TYPE.CODE filter
+        in: query
+        name: exception_type
+        type: string
+      - description: CATEGORY_TYPE.CODE filter
+        in: query
+        name: severity
+        type: string
+      - description: SEVERITY_TYPE.CODE filter
+        in: query
+        name: priority
         type: string
       produces:
       - application/json
@@ -252,6 +322,27 @@ paths:
       summary: List security exceptions for an asset
       tags:
       - security-exceptions
+  /v1/api/getSeverityType:
+    get:
+      description: Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query severity types
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List severity codes
+      tags:
+      - severity-types
   /v1/api/info:
     get:
       description: Returns a static welcome string used as a basic liveness check.

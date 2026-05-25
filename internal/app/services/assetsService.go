@@ -5,6 +5,6 @@ import (
 	"securityrules/security-rules/internal/app/repositories"
 )
 
-func GetAssets() ([]models.Asset, error) {
-	return repositories.GetAssets()
+func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error) {
+	return repositories.GetAssets(exceptionType, severity, priority)
 }

@@ -4,6 +4,7 @@ type SecurityException struct {
 	SecurityExceptionID int    `json:"security_exception_id"`
 	RuleID                int       `json:"rule_id"`
 	RuleName              string    `json:"rule_name"`
+	Priority              string    `json:"priority"`
 	AssetID             string `json:"asset_id"`
 	RunDate             string `json:"run_date"`
 	RunStart            string `json:"run_start"`

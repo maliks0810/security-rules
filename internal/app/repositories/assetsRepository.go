@@ -12,20 +12,30 @@ import (
 	"securityrules/security-rules/internal/utils/sql"
 )
 
-func GetAssets() ([]models.Asset, error) {
+func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error) {
 	var rows *sql.Rows
 	var err error
+
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	typeArg := nilIfEmpty(exceptionType)
+	severityArg := nilIfEmpty(severity)
+	priorityArg := nilIfEmpty(priority)
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_ASSETS()")
+		rows, err = snowflake.Query("CALL GET_ASSETS(?, ?, ?)", typeArg, severityArg, priorityArg)
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_ASSETS\"()")
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_ASSETS"($1, $2, $3)`, typeArg, severityArg, priorityArg)
 	}
 	if err != nil {
 		return nil, err
@@ -37,6 +47,7 @@ func GetAssets() ([]models.Asset, error) {
 		var (
 			exceptionDate       sql.NullTime
 			priority            sql.NullString
+			severity            sql.NullString
 			typeCol             sql.NullString
 			assignTo            sql.NullString
 			assetID             sql.NullString
@@ -49,7 +60,7 @@ func GetAssets() ([]models.Asset, error) {
 		)
 
 		if err := rows.Scan(
-			&exceptionDate, &priority, &typeCol,
+			&exceptionDate, &priority, &severity, &typeCol,
 			&assignTo, &assetID, &figi,
 			&securityDescription, &trader, &tradingTeam,
 			&exceptionCount, &bbgLastRefresh,
@@ -60,6 +71,7 @@ func GetAssets() ([]models.Asset, error) {
 		assets = append(assets, models.Asset{
 			ExceptionDate:       sqlutil.NullTime(exceptionDate),
 			Priority:            sqlutil.NullStr(priority),
+			Severity:            sqlutil.NullStr(severity),
 			Type:                sqlutil.NullStr(typeCol),
 			AssignTo:            sqlutil.NullStr(assignTo),
 			AssetID:             sqlutil.NullStr(assetID),

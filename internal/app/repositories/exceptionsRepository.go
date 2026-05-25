@@ -12,20 +12,120 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetSecurityExceptions(assetID string) ([]models.SecurityException, error) {
+func GetSeverityType() ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetSeverityType - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_SEVERITY_TYPE()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetSeverityType - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_SEVERITY_TYPE"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	codes := []string{}
+	for rows.Next() {
+		var code sql.NullString
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, sqlutil.NullStr(code))
+	}
+	return codes, nil
+}
+
+func GetPriorityType() ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetPriorityType - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_PRIORITY_TYPE()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetPriorityType - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_PRIORITY_TYPE"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	codes := []string{}
+	for rows.Next() {
+		var code sql.NullString
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, sqlutil.NullStr(code))
+	}
+	return codes, nil
+}
+
+func GetExceptionTypes() ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionTypes - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_EXCEPTION_TYPE()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionTypes - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTION_TYPE"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	codes := []string{}
+	for rows.Next() {
+		var code sql.NullString
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, sqlutil.NullStr(code))
+	}
+	return codes, nil
+}
+
+func GetSecurityExceptions(assetID, exceptionType, severity, priority string) ([]models.SecurityException, error) {
+	var rows *sql.Rows
+	var err error
+
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	typeArg := nilIfEmpty(exceptionType)
+	severityArg := nilIfEmpty(severity)
+	priorityArg := nilIfEmpty(priority)
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?)", assetID)
+		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?, ?, ?, ?)", assetID, typeArg, severityArg, priorityArg)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query("SELECT * FROM public.\"GET_EXCEPTIONS\"($1)", assetID)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTIONS"($1, $2, $3, $4)`, assetID, typeArg, severityArg, priorityArg)
 	}
 	if err != nil {
 		return nil, err
@@ -36,7 +136,9 @@ func GetSecurityExceptions(assetID string) ([]models.SecurityException, error) {
 	for rows.Next() {
 		var (
 			securityExceptionID sql.NullInt64
+			ruleID              sql.NullInt64
 			ruleName            sql.NullString
+			priority            sql.NullString
 			assetIDCol          sql.NullString
 			runDate             sql.NullTime
 			runStart            sql.NullTime
@@ -56,7 +158,7 @@ func GetSecurityExceptions(assetID string) ([]models.SecurityException, error) {
 		)
 
 		if err := rows.Scan(
-			&securityExceptionID, &ruleName, &assetIDCol,
+			&securityExceptionID, &ruleID, &ruleName, &priority, &assetIDCol,
 			&runDate, &runStart, &resultTypeID,
 			&exceptionSourceID, &exceptionStatusID, &severityTypeID,
 			&processTypeID, &categoryTypeID, &assignTo,
@@ -69,7 +171,9 @@ func GetSecurityExceptions(assetID string) ([]models.SecurityException, error) {
 
 		exceptions = append(exceptions, models.SecurityException{
 			SecurityExceptionID: sqlutil.NullInt(securityExceptionID),
-			RuleName:            sqlutil.NullStr(ruleName),
+			RuleID:              sqlutil.NullInt(ruleID),
+			RuleName:            strings.TrimSpace(sqlutil.NullStr(ruleName)),
+			Priority:            sqlutil.NullStr(priority),
 			AssetID:             sqlutil.NullStr(assetIDCol),
 			RunDate:             sqlutil.NullTime(runDate),
 			RunStart:            sqlutil.NullTime(runStart),

@@ -140,7 +140,7 @@ const docTemplate = `{
         },
         "/v1/api/getAssets": {
             "get": {
-                "description": "Returns the deduplicated set of assets along with their latest exception metadata.",
+                "description": "Returns the deduplicated set of assets, optionally filtered by exception type CODE and severity (CATEGORY_TYPE.CODE).",
                 "produces": [
                     "application/json"
                 ],
@@ -148,6 +148,20 @@ const docTemplate = `{
                     "assets"
                 ],
                 "summary": "List assets with exception summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_TYPE.CODE filter",
+                        "name": "exception_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CATEGORY_TYPE.CODE filter",
+                        "name": "severity",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -160,6 +174,70 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "failed to query assets",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getExceptionTypes": {
+            "get": {
+                "description": "Returns EXCEPTION_TYPE.CODE values ordered by EXCEPTIONTYPERANK.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exception-types"
+                ],
+                "summary": "List exception type codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception types",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getPriorityType": {
+            "get": {
+                "description": "Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "priority-types"
+                ],
+                "summary": "List priority codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query priority types",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -212,7 +290,7 @@ const docTemplate = `{
         },
         "/v1/api/getSecurityExceptions": {
             "get": {
-                "description": "Returns all SECURITY_EXCEPTION rows for the given asset ID.",
+                "description": "Returns SECURITY_EXCEPTION rows for the given asset ID, optionally filtered by exception type, severity (CATEGORY_TYPE.CODE), and priority (SEVERITY_TYPE.CODE).",
                 "produces": [
                     "application/json"
                 ],
@@ -227,6 +305,24 @@ const docTemplate = `{
                         "name": "asset_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_TYPE.CODE filter",
+                        "name": "exception_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CATEGORY_TYPE.CODE filter",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SEVERITY_TYPE.CODE filter",
+                        "name": "priority",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -250,6 +346,38 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "failed to query security exceptions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getSeverityType": {
+            "get": {
+                "description": "Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "severity-types"
+                ],
+                "summary": "List severity codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query severity types",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -369,6 +497,9 @@ const docTemplate = `{
                 "security_description": {
                     "type": "string"
                 },
+                "severity": {
+                    "type": "string"
+                },
                 "trader": {
                     "type": "string"
                 },
@@ -436,6 +567,9 @@ const docTemplate = `{
                 "modified_date": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "string"
+                },
                 "process_type_id": {
                     "type": "integer"
                 },
@@ -443,6 +577,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result_type_id": {
+                    "type": "integer"
+                },
+                "rule_id": {
                     "type": "integer"
                 },
                 "rule_name": {
