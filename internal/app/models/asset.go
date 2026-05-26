@@ -13,4 +13,5 @@ type Asset struct {
 	TradingTeam         string `json:"trading_team"`
 	ExceptionCount      int    `json:"exception_count"`
 	BbgLastRefresh      string `json:"bbg_last_refresh"`
+	AllComplete         bool   `json:"all_complete"`
 }

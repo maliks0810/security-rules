@@ -9,12 +9,20 @@ import (
 	"securityrules/security-rules/internal/utils/log"
 )
 
-func GetRules(processType string) ([]models.Rule, error) {
-	return repositories.GetRules(processType)
+func GetRules(processType, ruleType string) ([]models.Rule, error) {
+	return repositories.GetRules(processType, ruleType)
+}
+
+func GetRuleGroups() ([]string, error) {
+	return repositories.GetRuleGroups()
+}
+
+func GetRuleTypes(ruleGroup string) ([]string, error) {
+	return repositories.GetRuleTypes(ruleGroup)
 }
 
 func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
-	rules, err := repositories.GetRules(processType)
+	rules, err := repositories.GetRules(processType, "")
 	if err != nil {
 		return err
 	}

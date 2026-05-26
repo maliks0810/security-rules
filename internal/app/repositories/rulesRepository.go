@@ -12,20 +12,88 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetRules(processType string) ([]models.Rule, error) {
+func GetRuleGroups() ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetRuleGroups - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_RULE_GROUPS()")
+	} else {
+		log.Logger.Info("rulesRepository: GetRuleGroups - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_GROUPS"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := []string{}
+	for rows.Next() {
+		var name sql.NullString
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, sqlutil.NullStr(name))
+	}
+	return names, nil
+}
+
+func GetRuleTypes(ruleGroup string) ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetRuleTypes - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_RULE_TYPES(?)", ruleGroup)
+	} else {
+		log.Logger.Info("rulesRepository: GetRuleTypes - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_TYPES"($1)`, ruleGroup)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := []string{}
+	for rows.Next() {
+		var name sql.NullString
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, sqlutil.NullStr(name))
+	}
+	return names, nil
+}
+
+func GetRules(processType, ruleType string) ([]models.Rule, error) {
+	var rows *sql.Rows
+	var err error
+
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	ruleTypeArg := nilIfEmpty(ruleType)
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRules - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL LIST_RULES(?)", processType)
+		rows, err = snowflake.Query("CALL GET_RULES(?, ?)", processType, ruleTypeArg)
 	} else {
 		log.Logger.Info("rulesRepository: GetRules - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query("SELECT * FROM public.\"LIST_RULES\"($1)", processType)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULES"($1, $2)`, processType, ruleTypeArg)
 	}
 	if err != nil {
 		return nil, err

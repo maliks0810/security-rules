@@ -2,8 +2,9 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
-	
+
 	"securityrules/security-rules/configs"
+	"securityrules/security-rules/internal/app/handlers"
 	"securityrules/security-rules/internal/middleware"
 )
 
@@ -23,7 +24,7 @@ type Handlers struct {
 // app - *fiber.App : The Fiber application instance
 //
 // handlers - Handlers : A struct holding references to specific handlers - useful to override specific handlers with simulator handlers
-func PrivateRoutes(app *fiber.App, handlers Handlers) {
+func PrivateRoutes(app *fiber.App, h Handlers) {
 	oktaAuthentication := func() func(*fiber.Ctx) error {
 		return middleware.NewOktaAuthMiddleware(
 		configs.EnvConfigs.AuthIssuer,
@@ -60,5 +61,6 @@ func PrivateRoutes(app *fiber.App, handlers Handlers) {
 
 	route := app.Group(route_prefix + "v1/api")
 
-	route.Get("/whoami", oktaAuthentication(), handlers.GetIdentity)
+	route.Get("/whoami", oktaAuthentication(), h.GetIdentity)
+	route.Post("/insertSecurityExceptions", oktaAuthentication(), handlers.InsertSecurityExceptions)
 }

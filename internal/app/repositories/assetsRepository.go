@@ -12,7 +12,7 @@ import (
 	"securityrules/security-rules/internal/utils/sql"
 )
 
-func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error) {
+func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionStatus, assignTo string) ([]models.Asset, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -25,17 +25,21 @@ func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error)
 	typeArg := nilIfEmpty(exceptionType)
 	severityArg := nilIfEmpty(severity)
 	priorityArg := nilIfEmpty(priority)
+	ruleTypeArg := nilIfEmpty(ruleType)
+	ruleNameArg := nilIfEmpty(ruleName)
+	exceptionStatusArg := nilIfEmpty(exceptionStatus)
+	assignToArg := nilIfEmpty(assignTo)
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_ASSETS(?, ?, ?)", typeArg, severityArg, priorityArg)
+		rows, err = snowflake.Query("CALL GET_ASSETS(?, ?, ?, ?, ?, ?, ?)", typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_ASSETS"($1, $2, $3)`, typeArg, severityArg, priorityArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_ASSETS"($1, $2, $3, $4, $5, $6, $7)`, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	}
 	if err != nil {
 		return nil, err
@@ -57,13 +61,14 @@ func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error)
 			tradingTeam         sql.NullString
 			exceptionCount      sql.NullInt64
 			bbgLastRefresh      sql.NullString
+			allComplete         sql.NullBool
 		)
 
 		if err := rows.Scan(
 			&exceptionDate, &priority, &severity, &typeCol,
 			&assignTo, &assetID, &figi,
 			&securityDescription, &trader, &tradingTeam,
-			&exceptionCount, &bbgLastRefresh,
+			&exceptionCount, &bbgLastRefresh, &allComplete,
 		); err != nil {
 			return nil, err
 		}
@@ -81,6 +86,7 @@ func GetAssets(exceptionType, severity, priority string) ([]models.Asset, error)
 			TradingTeam:         sqlutil.NullStr(tradingTeam),
 			ExceptionCount:      sqlutil.NullInt(exceptionCount),
 			BbgLastRefresh:      sqlutil.NullStr(bbgLastRefresh),
+			AllComplete:         allComplete.Valid && allComplete.Bool,
 		})
 	}
 

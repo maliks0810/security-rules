@@ -23,4 +23,5 @@ type SecurityException struct {
 	CreatedBy           string `json:"created_by"`
 	ModifiedDate        string `json:"modified_date"`
 	ModifiedBy          string `json:"modified_by"`
+	ExceptionStatus     string `json:"exception_status"`
 }

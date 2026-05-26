@@ -26,29 +26,34 @@ func GetInformation(ctx *fiber.Ctx) error {
 }
 
 // GetSecurityExceptions godoc
-// @Summary      List security exceptions for an asset
-// @Description  Returns SECURITY_EXCEPTION rows for the given asset ID, optionally filtered by exception type, severity (CATEGORY_TYPE.CODE), and priority (SEVERITY_TYPE.CODE).
+// @Summary      List security exceptions
+// @Description  Returns SECURITY_EXCEPTION rows, optionally filtered by asset ID, exception type, severity (CATEGORY_TYPE.CODE), priority (SEVERITY_TYPE.CODE), rule type, rule name, and rule group.
 // @Tags         security-exceptions
 // @Produce      json
-// @Param        asset_id        query     string  true   "Asset ID"
+// @Param        asset_id        query     string  false  "Asset ID filter"
 // @Param        exception_type  query     string  false  "EXCEPTION_TYPE.CODE filter"
 // @Param        severity        query     string  false  "CATEGORY_TYPE.CODE filter"
 // @Param        priority        query     string  false  "SEVERITY_TYPE.CODE filter"
+// @Param        rule_type       query     string  false  "RULE_TYPE.NAME filter"
+// @Param        rule_name       query     string  false  "RULE.RULE_NAME filter"
+// @Param        rule_group      query     string  false  "RULE_GROUP.NAME filter"
+// @Param        exception_status query    string  false  "EXCEPTION_STATUS.CODE filter"
+// @Param        assign_to       query     string  false  "DM_USER.USER filter"
 // @Success      200             {array}   models.SecurityException
-// @Failure      400             {object}  map[string]string  "asset_id query parameter is required"
 // @Failure      500             {object}  map[string]string  "failed to query security exceptions"
 // @Router       /v1/api/getSecurityExceptions [get]
 func GetSecurityExceptions(ctx *fiber.Ctx) error {
 	assetID := ctx.Query("asset_id")
-	if assetID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id query parameter is required"})
-	}
-
 	exceptionType := ctx.Query("exception_type")
 	severity := ctx.Query("severity")
 	priority := ctx.Query("priority")
+	ruleType := ctx.Query("rule_type")
+	ruleName := ctx.Query("rule_name")
+	ruleGroup := ctx.Query("rule_group")
+	exceptionStatus := ctx.Query("exception_status")
+	assignTo := ctx.Query("assign_to")
 
-	exceptions, err := services.GetSecurityExceptions(assetID, exceptionType, severity, priority)
+	exceptions, err := services.GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query security exceptions"})
 	}
@@ -64,6 +69,10 @@ func GetSecurityExceptions(ctx *fiber.Ctx) error {
 // @Param        exception_type  query     string  false  "EXCEPTION_TYPE.CODE filter"
 // @Param        severity        query     string  false  "CATEGORY_TYPE.CODE filter"
 // @Param        priority        query     string  false  "SEVERITY_TYPE.CODE filter"
+// @Param        rule_type       query     string  false  "RULE_TYPE.NAME filter"
+// @Param        rule_name        query     string  false  "RULE.RULE_NAME filter"
+// @Param        exception_status query     string  false  "EXCEPTION_STATUS.CODE filter"
+// @Param        assign_to       query      string  false  "DM_USER.USER filter"
 // @Success      200             {array}   models.Asset
 // @Failure      500             {object}  map[string]string  "failed to query assets"
 // @Router       /v1/api/getAssets [get]
@@ -71,13 +80,34 @@ func GetAssets(ctx *fiber.Ctx) error {
 	exceptionType := ctx.Query("exception_type")
 	severity := ctx.Query("severity")
 	priority := ctx.Query("priority")
+	ruleType := ctx.Query("rule_type")
+	ruleName := ctx.Query("rule_name")
+	exceptionStatus := ctx.Query("exception_status")
+	assignTo := ctx.Query("assign_to")
 
-	assets, err := services.GetAssets(exceptionType, severity, priority)
+	assets, err := services.GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionStatus, assignTo)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query assets"})
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(assets)
+}
+
+// GetExceptionStatus godoc
+// @Summary      List exception status codes
+// @Description  Returns EXCEPTION_STATUS.CODE values ordered by SORT_ORDER.
+// @Tags         exception-status
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query exception status"
+// @Router       /v1/api/getExceptionStatus [get]
+func GetExceptionStatus(ctx *fiber.Ctx) error {
+	codes, err := services.GetExceptionStatus()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception status"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
 // GetExceptionTypes godoc
@@ -131,19 +161,79 @@ func GetSeverityType(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
+// GetDMUsers godoc
+// @Summary      List DM users
+// @Description  Returns DM_USER.USER values ordered by ID.
+// @Tags         users
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query users"
+// @Router       /v1/api/getDMUsers [get]
+func GetDMUsers(ctx *fiber.Ctx) error {
+	users, err := services.GetDMUsers()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query users"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(users)
+}
+
+// GetRuleGroups godoc
+// @Summary      List rule group names
+// @Description  Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.
+// @Tags         rule-groups
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query rule groups"
+// @Router       /v1/api/getRuleGroups [get]
+func GetRuleGroups(ctx *fiber.Ctx) error {
+	names, err := services.GetRuleGroups()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule groups"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(names)
+}
+
+// GetRuleTypes godoc
+// @Summary      List rule type names for a rule group
+// @Description  Returns RULE_TYPE.NAME values joined to RULE_GROUP by RULE_GROUP_ID and filtered by rule group name.
+// @Tags         rule-types
+// @Produce      json
+// @Param        rule_group  query     string  true  "Rule group name"
+// @Success      200         {array}   string
+// @Failure      400         {object}  map[string]string  "rule_group query parameter is required"
+// @Failure      500         {object}  map[string]string  "failed to query rule types"
+// @Router       /v1/api/getRuleTypes [get]
+func GetRuleTypes(ctx *fiber.Ctx) error {
+	ruleGroup := ctx.Query("rule_group")
+	if ruleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group query parameter is required"})
+	}
+
+	names, err := services.GetRuleTypes(ruleGroup)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule types"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(names)
+}
+
 // GetRules godoc
 // @Summary      List rules
-// @Description  Returns rules from LIST_RULES, optionally filtered by process type.
+// @Description  Returns rules from GET_RULES, optionally filtered by rule type (RULE_TYPE.NAME).
 // @Tags         rules
 // @Produce      json
 // @Param        process_type  query     string  false  "Process type filter"
+// @Param        rule_type     query     string  false  "RULE_TYPE.NAME filter"
 // @Success      200           {array}   models.Rule
 // @Failure      500           {object}  map[string]string  "failed to query rules"
 // @Router       /v1/api/getRules [get]
 func GetRules(ctx *fiber.Ctx) error {
 	processType := ctx.Query("process_type")
+	ruleType := ctx.Query("rule_type")
 
-	rules, err := services.GetRules(processType)
+	rules, err := services.GetRules(processType, ruleType)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules"})
 	}
@@ -185,17 +275,7 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 
-// InsertSecurityExceptions godoc
-// @Summary      Insert security exceptions
-// @Description  Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.
-// @Tags         security-exceptions
-// @Accept       json
-// @Produce      json
-// @Param        exceptions  body      []models.SecurityException  true  "Security exceptions to insert"
-// @Success      201
-// @Failure      400  {object}  map[string]string  "invalid request body"
-// @Failure      500  {object}  map[string]string  "failed to insert security exceptions"
-// @Router       /v1/api/insertSecurityExceptions [post]
+// InsertSecurityExceptions is a private endpoint and intentionally omitted from Swagger.
 // StreamEvents godoc
 // @Summary      Server-Sent Events stream of domain changes
 // @Description  Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.

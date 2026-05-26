@@ -2,6 +2,8 @@ basePath: /de/securities/rules
 definitions:
   securityrules_security-rules_internal_app_models.Asset:
     properties:
+      all_complete:
+        type: boolean
       asset_id:
         type: string
       assign_to:
@@ -56,6 +58,8 @@ definitions:
         type: string
       exception_source_id:
         type: integer
+      exception_status:
+        type: string
       exception_status_id:
         type: integer
       issue_description:
@@ -94,45 +98,17 @@ info:
 paths:
   /v1/api/events:
     get:
-      consumes:
-      - application/json
-      description: |-
-        Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.
-        Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.
-      parameters:
-      - description: Security exceptions to insert
-        in: body
-        name: exceptions
-        required: true
-        schema:
-          items:
-            $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
-          type: array
+      description: Long-lived text/event-stream that pushes events such as security_exception.inserted
+        to subscribed clients.
       produces:
-      - application/json
       - text/event-stream
       responses:
         "200":
           description: stream of SSE-formatted events
           schema:
             type: string
-        "201":
-          description: Created
-        "400":
-          description: invalid request body
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: failed to insert security exceptions
-          schema:
-            additionalProperties:
-              type: string
-            type: object
       summary: Server-Sent Events stream of domain changes
       tags:
-      - security-exceptions
       - events
   /v1/api/executeRules:
     post:
@@ -190,6 +166,26 @@ paths:
         in: query
         name: severity
         type: string
+      - description: SEVERITY_TYPE.CODE filter
+        in: query
+        name: priority
+        type: string
+      - description: RULE_TYPE.NAME filter
+        in: query
+        name: rule_type
+        type: string
+      - description: RULE.RULE_NAME filter
+        in: query
+        name: rule_name
+        type: string
+      - description: EXCEPTION_STATUS.CODE filter
+        in: query
+        name: exception_status
+        type: string
+      - description: DM_USER.USER filter
+        in: query
+        name: assign_to
+        type: string
       produces:
       - application/json
       responses:
@@ -208,6 +204,48 @@ paths:
       summary: List assets with exception summary
       tags:
       - assets
+  /v1/api/getDMUsers:
+    get:
+      description: Returns DM_USER.USER values ordered by ID.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query users
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List DM users
+      tags:
+      - users
+  /v1/api/getExceptionStatus:
+    get:
+      description: Returns EXCEPTION_STATUS.CODE values ordered by SORT_ORDER.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query exception status
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List exception status codes
+      tags:
+      - exception-status
   /v1/api/getExceptionTypes:
     get:
       description: Returns EXCEPTION_TYPE.CODE values ordered by EXCEPTIONTYPERANK.
@@ -250,13 +288,73 @@ paths:
       summary: List priority codes
       tags:
       - priority-types
+  /v1/api/getRuleGroups:
+    get:
+      description: Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query rule groups
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rule group names
+      tags:
+      - rule-groups
+  /v1/api/getRuleTypes:
+    get:
+      description: Returns RULE_TYPE.NAME values joined to RULE_GROUP by RULE_GROUP_ID
+        and filtered by rule group name.
+      parameters:
+      - description: Rule group name
+        in: query
+        name: rule_group
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: rule_group query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query rule types
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rule type names for a rule group
+      tags:
+      - rule-types
   /v1/api/getRules:
     get:
-      description: Returns rules from LIST_RULES, optionally filtered by process type.
+      description: Returns rules from GET_RULES, optionally filtered by rule type
+        (RULE_TYPE.NAME).
       parameters:
       - description: Process type filter
         in: query
         name: process_type
+        type: string
+      - description: RULE_TYPE.NAME filter
+        in: query
+        name: rule_type
         type: string
       produces:
       - application/json
@@ -278,13 +376,13 @@ paths:
       - rules
   /v1/api/getSecurityExceptions:
     get:
-      description: Returns SECURITY_EXCEPTION rows for the given asset ID, optionally
-        filtered by exception type, severity (CATEGORY_TYPE.CODE), and priority (SEVERITY_TYPE.CODE).
+      description: Returns SECURITY_EXCEPTION rows, optionally filtered by asset ID,
+        exception type, severity (CATEGORY_TYPE.CODE), priority (SEVERITY_TYPE.CODE),
+        rule type, rule name, and rule group.
       parameters:
-      - description: Asset ID
+      - description: Asset ID filter
         in: query
         name: asset_id
-        required: true
         type: string
       - description: EXCEPTION_TYPE.CODE filter
         in: query
@@ -298,6 +396,26 @@ paths:
         in: query
         name: priority
         type: string
+      - description: RULE_TYPE.NAME filter
+        in: query
+        name: rule_type
+        type: string
+      - description: RULE.RULE_NAME filter
+        in: query
+        name: rule_name
+        type: string
+      - description: RULE_GROUP.NAME filter
+        in: query
+        name: rule_group
+        type: string
+      - description: EXCEPTION_STATUS.CODE filter
+        in: query
+        name: exception_status
+        type: string
+      - description: DM_USER.USER filter
+        in: query
+        name: assign_to
+        type: string
       produces:
       - application/json
       responses:
@@ -307,19 +425,13 @@ paths:
             items:
               $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
             type: array
-        "400":
-          description: asset_id query parameter is required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
         "500":
           description: failed to query security exceptions
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: List security exceptions for an asset
+      summary: List security exceptions
       tags:
       - security-exceptions
   /v1/api/getSeverityType:
@@ -356,46 +468,4 @@ paths:
       summary: Service welcome message
       tags:
       - info
-  /v1/api/insertSecurityExceptions:
-    post:
-      consumes:
-      - application/json
-      description: |-
-        Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.
-        Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.
-      parameters:
-      - description: Security exceptions to insert
-        in: body
-        name: exceptions
-        required: true
-        schema:
-          items:
-            $ref: '#/definitions/securityrules_security-rules_internal_app_models.SecurityException'
-          type: array
-      produces:
-      - application/json
-      - text/event-stream
-      responses:
-        "200":
-          description: stream of SSE-formatted events
-          schema:
-            type: string
-        "201":
-          description: Created
-        "400":
-          description: invalid request body
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: failed to insert security exceptions
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Server-Sent Events stream of domain changes
-      tags:
-      - security-exceptions
-      - events
 swagger: "2.0"

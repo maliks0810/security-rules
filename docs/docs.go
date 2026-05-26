@@ -17,59 +17,19 @@ const docTemplate = `{
     "paths": {
         "/v1/api/events": {
             "get": {
-                "description": "Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.\nLong-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.",
                 "produces": [
-                    "application/json",
                     "text/event-stream"
                 ],
                 "tags": [
-                    "security-exceptions",
                     "events"
                 ],
                 "summary": "Server-Sent Events stream of domain changes",
-                "parameters": [
-                    {
-                        "description": "Security exceptions to insert",
-                        "name": "exceptions",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
-                            }
-                        }
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "stream of SSE-formatted events",
                         "schema": {
                             "type": "string"
-                        }
-                    },
-                    "201": {
-                        "description": "Created"
-                    },
-                    "400": {
-                        "description": "invalid request body",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "failed to insert security exceptions",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
                         }
                     }
                 }
@@ -160,6 +120,36 @@ const docTemplate = `{
                         "description": "CATEGORY_TYPE.CODE filter",
                         "name": "severity",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SEVERITY_TYPE.CODE filter",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_TYPE.NAME filter",
+                        "name": "rule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_STATUS.CODE filter",
+                        "name": "exception_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER filter",
+                        "name": "assign_to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -174,6 +164,70 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "failed to query assets",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getDMUsers": {
+            "get": {
+                "description": "Returns DM_USER.USER values ordered by ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "List DM users",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query users",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getExceptionStatus": {
+            "get": {
+                "description": "Returns EXCEPTION_STATUS.CODE values ordered by SORT_ORDER.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exception-status"
+                ],
+                "summary": "List exception status codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception status",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -248,9 +302,91 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/getRuleGroups": {
+            "get": {
+                "description": "Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rule-groups"
+                ],
+                "summary": "List rule group names",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rule groups",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getRuleTypes": {
+            "get": {
+                "description": "Returns RULE_TYPE.NAME values joined to RULE_GROUP by RULE_GROUP_ID and filtered by rule group name.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rule-types"
+                ],
+                "summary": "List rule type names for a rule group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule group name",
+                        "name": "rule_group",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "rule_group query parameter is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rule types",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getRules": {
             "get": {
-                "description": "Returns rules from LIST_RULES, optionally filtered by process type.",
+                "description": "Returns rules from GET_RULES, optionally filtered by rule type (RULE_TYPE.NAME).",
                 "produces": [
                     "application/json"
                 ],
@@ -263,6 +399,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Process type filter",
                         "name": "process_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_TYPE.NAME filter",
+                        "name": "rule_type",
                         "in": "query"
                     }
                 ],
@@ -290,21 +432,20 @@ const docTemplate = `{
         },
         "/v1/api/getSecurityExceptions": {
             "get": {
-                "description": "Returns SECURITY_EXCEPTION rows for the given asset ID, optionally filtered by exception type, severity (CATEGORY_TYPE.CODE), and priority (SEVERITY_TYPE.CODE).",
+                "description": "Returns SECURITY_EXCEPTION rows, optionally filtered by asset ID, exception type, severity (CATEGORY_TYPE.CODE), priority (SEVERITY_TYPE.CODE), rule type, rule name, and rule group.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "security-exceptions"
                 ],
-                "summary": "List security exceptions for an asset",
+                "summary": "List security exceptions",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Asset ID",
+                        "description": "Asset ID filter",
                         "name": "asset_id",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -323,6 +464,36 @@ const docTemplate = `{
                         "description": "SEVERITY_TYPE.CODE filter",
                         "name": "priority",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_TYPE.NAME filter",
+                        "name": "rule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME filter",
+                        "name": "rule_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_STATUS.CODE filter",
+                        "name": "exception_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER filter",
+                        "name": "assign_to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -332,15 +503,6 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "asset_id query parameter is required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
                             }
                         }
                     },
@@ -407,72 +569,15 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/v1/api/insertSecurityExceptions": {
-            "post": {
-                "description": "Inserts one or more SECURITY_EXCEPTION rows. Accepts an array of SecurityException objects.\nLong-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json",
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "security-exceptions",
-                    "events"
-                ],
-                "summary": "Server-Sent Events stream of domain changes",
-                "parameters": [
-                    {
-                        "description": "Security exceptions to insert",
-                        "name": "exceptions",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.SecurityException"
-                            }
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "stream of SSE-formatted events",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "201": {
-                        "description": "Created"
-                    },
-                    "400": {
-                        "description": "invalid request body",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "failed to insert security exceptions",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
         "securityrules_security-rules_internal_app_models.Asset": {
             "type": "object",
             "properties": {
+                "all_complete": {
+                    "type": "boolean"
+                },
                 "asset_id": {
                     "type": "string"
                 },
@@ -554,6 +659,9 @@ const docTemplate = `{
                 },
                 "exception_source_id": {
                     "type": "integer"
+                },
+                "exception_status": {
+                    "type": "string"
                 },
                 "exception_status_id": {
                     "type": "integer"
