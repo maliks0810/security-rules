@@ -39,6 +39,7 @@ func GetInformation(ctx *fiber.Ctx) error {
 // @Param        rule_group      query     string  false  "RULE_GROUP.NAME filter"
 // @Param        exception_status query    string  false  "EXCEPTION_STATUS.CODE filter"
 // @Param        assign_to       query     string  false  "DM_USER.USER filter"
+// @Param        rule_name_pattern query   string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
 // @Success      200             {array}   models.SecurityException
 // @Failure      500             {object}  map[string]string  "failed to query security exceptions"
 // @Router       /v1/api/getSecurityExceptions [get]
@@ -52,8 +53,9 @@ func GetSecurityExceptions(ctx *fiber.Ctx) error {
 	ruleGroup := ctx.Query("rule_group")
 	exceptionStatus := ctx.Query("exception_status")
 	assignTo := ctx.Query("assign_to")
+	ruleNamePattern := ctx.Query("rule_name_pattern")
 
-	exceptions, err := services.GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo)
+	exceptions, err := services.GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query security exceptions"})
 	}
@@ -127,16 +129,16 @@ func GetExceptionTypes(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
-// GetPriorityType godoc
+// GetPriorityTypes godoc
 // @Summary      List priority codes
 // @Description  Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.
 // @Tags         priority-types
 // @Produce      json
 // @Success      200  {array}   string
 // @Failure      500  {object}  map[string]string  "failed to query priority types"
-// @Router       /v1/api/getPriorityType [get]
-func GetPriorityType(ctx *fiber.Ctx) error {
-	codes, err := services.GetPriorityType()
+// @Router       /v1/api/getPriorityTypes [get]
+func GetPriorityTypes(ctx *fiber.Ctx) error {
+	codes, err := services.GetPriorityTypes()
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query priority types"})
 	}
@@ -144,16 +146,16 @@ func GetPriorityType(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
-// GetSeverityType godoc
+// GetSeverityTypes godoc
 // @Summary      List severity codes
 // @Description  Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.
 // @Tags         severity-types
 // @Produce      json
 // @Success      200  {array}   string
 // @Failure      500  {object}  map[string]string  "failed to query severity types"
-// @Router       /v1/api/getSeverityType [get]
-func GetSeverityType(ctx *fiber.Ctx) error {
-	codes, err := services.GetSeverityType()
+// @Router       /v1/api/getSeverityTypes [get]
+func GetSeverityTypes(ctx *fiber.Ctx) error {
+	codes, err := services.GetSeverityTypes()
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query severity types"})
 	}
@@ -252,7 +254,7 @@ func GetRules(ctx *fiber.Ctx) error {
 // @Success      200           {object}  map[string]string  "rules executed"
 // @Failure      400           {object}  map[string]string  "process_type and asset_id are required"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
-// @Router       /v1/api/executeRules [post]
+// @Router       /v1/api/executeRules [get]
 func ExecuteRules(ctx *fiber.Ctx) error {
 	processType := ctx.Query("process_type")
 	assetID := ctx.Query("asset_id")

@@ -36,7 +36,7 @@ const docTemplate = `{
             }
         },
         "/v1/api/executeRules": {
-            "post": {
+            "get": {
                 "description": "Runs every rule for the given process_type against the asset and inserts any returned rows as security exceptions.",
                 "produces": [
                     "application/json"
@@ -270,7 +270,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/api/getPriorityType": {
+        "/v1/api/getPriorityTypes": {
             "get": {
                 "description": "Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.",
                 "produces": [
@@ -494,6 +494,12 @@ const docTemplate = `{
                         "description": "DM_USER.USER filter",
                         "name": "assign_to",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SQL ILIKE pattern against RULE.RULE_NAME",
+                        "name": "rule_name_pattern",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -518,7 +524,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/api/getSeverityType": {
+        "/v1/api/getSeverityTypes": {
             "get": {
                 "description": "Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.",
                 "produces": [

@@ -8,16 +8,19 @@ DROP FUNCTION IF EXISTS public."GET_EXCEPTIONS"(varchar, text, text, text, text,
 
 DROP FUNCTION IF EXISTS public."GET_EXCEPTIONS"(varchar, text, text, text, text, text, text, text, text);
 
+DROP FUNCTION IF EXISTS public."GET_EXCEPTIONS"(varchar, text, text, text, text, text, text, text, text, text);
+
 CREATE OR REPLACE FUNCTION public."GET_EXCEPTIONS"(
-    p_asset_id         character varying DEFAULT NULL,
-    p_exception_type   text DEFAULT NULL,
-    p_severity         text DEFAULT NULL,
-    p_priority         text DEFAULT NULL,
-    p_rule_type        text DEFAULT NULL,
-    p_rule_name        text DEFAULT NULL,
-    p_rule_group       text DEFAULT NULL,
-    p_exception_status text DEFAULT NULL,
-    p_assign_to        text DEFAULT NULL
+    p_asset_id          character varying DEFAULT NULL,
+    p_exception_type    text DEFAULT NULL,
+    p_severity          text DEFAULT NULL,
+    p_priority          text DEFAULT NULL,
+    p_rule_type         text DEFAULT NULL,
+    p_rule_name         text DEFAULT NULL,
+    p_rule_group        text DEFAULT NULL,
+    p_exception_status  text DEFAULT NULL,
+    p_assign_to         text DEFAULT NULL,
+    p_rule_name_pattern text DEFAULT NULL
 )
 RETURNS TABLE(
     "SECURITY_EXCEPTION_ID" numeric,
@@ -90,5 +93,6 @@ AS $$
       AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r."RULE_NAME"  = p_rule_name)
       AND (p_rule_group       IS NULL OR p_rule_group       = 'All' OR rg."NAME"      = p_rule_group)
       AND (p_exception_status IS NULL OR p_exception_status = 'All' OR es."CODE"      = p_exception_status)
-      AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du."USER"      = p_assign_to);
+      AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du."USER"      = p_assign_to)
+      AND (p_rule_name_pattern IS NULL OR r."RULE_NAME"      ILIKE p_rule_name_pattern);
 $$;

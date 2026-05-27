@@ -13,16 +13,16 @@ func GetExceptionStatus() ([]string, error) {
 	return repositories.GetExceptionStatus()
 }
 
-func GetSeverityType() ([]string, error) {
-	return repositories.GetSeverityType()
+func GetSeverityTypes() ([]string, error) {
+	return repositories.GetSeverityTypes()
 }
 
-func GetPriorityType() ([]string, error) {
-	return repositories.GetPriorityType()
+func GetPriorityTypes() ([]string, error) {
+	return repositories.GetPriorityTypes()
 }
 
-func GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo string) ([]models.SecurityException, error) {
-	return repositories.GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo)
+func GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.SecurityException, error) {
+	return repositories.GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
 }
 
 func InsertSecurityExceptions(exceptions []models.SecurityException) error {

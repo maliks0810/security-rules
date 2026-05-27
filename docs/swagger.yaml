@@ -111,7 +111,7 @@ paths:
       tags:
       - events
   /v1/api/executeRules:
-    post:
+    get:
       description: Runs every rule for the given process_type against the asset and
         inserts any returned rows as security exceptions.
       parameters:
@@ -267,7 +267,7 @@ paths:
       summary: List exception type codes
       tags:
       - exception-types
-  /v1/api/getPriorityType:
+  /v1/api/getPriorityTypes:
     get:
       description: Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.
       produces:
@@ -416,6 +416,10 @@ paths:
         in: query
         name: assign_to
         type: string
+      - description: SQL ILIKE pattern against RULE.RULE_NAME
+        in: query
+        name: rule_name_pattern
+        type: string
       produces:
       - application/json
       responses:
@@ -434,7 +438,7 @@ paths:
       summary: List security exceptions
       tags:
       - security-exceptions
-  /v1/api/getSeverityType:
+  /v1/api/getSeverityTypes:
     get:
       description: Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.
       produces:

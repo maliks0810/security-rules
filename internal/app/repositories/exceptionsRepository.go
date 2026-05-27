@@ -12,15 +12,15 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetSeverityType() ([]string, error) {
+func GetSeverityTypes() ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: GetSeverityType - using SNOWFLAKE database environment")
+		log.Logger.Info("exceptionsRepository: GetSeverityTypes - using SNOWFLAKE database environment")
 		rows, err = snowflake.Query("CALL GET_SEVERITY_TYPE()")
 	} else {
-		log.Logger.Info("exceptionsRepository: GetSeverityType - using POSTGRES database environment")
+		log.Logger.Info("exceptionsRepository: GetSeverityTypes - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
@@ -42,15 +42,15 @@ func GetSeverityType() ([]string, error) {
 	return codes, nil
 }
 
-func GetPriorityType() ([]string, error) {
+func GetPriorityTypes() ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: GetPriorityType - using SNOWFLAKE database environment")
+		log.Logger.Info("exceptionsRepository: GetPriorityTypes - using SNOWFLAKE database environment")
 		rows, err = snowflake.Query("CALL GET_PRIORITY_TYPE()")
 	} else {
-		log.Logger.Info("exceptionsRepository: GetPriorityType - using POSTGRES database environment")
+		log.Logger.Info("exceptionsRepository: GetPriorityTypes - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
@@ -132,7 +132,7 @@ func GetExceptionTypes() ([]string, error) {
 	return codes, nil
 }
 
-func GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo string) ([]models.SecurityException, error) {
+func GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.SecurityException, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -151,17 +151,18 @@ func GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleType,
 	ruleGroupArg := nilIfEmpty(ruleGroup)
 	exceptionStatusArg := nilIfEmpty(exceptionStatus)
 	assignToArg := nilIfEmpty(assignTo)
+	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?)", assetArg, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg)
+		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assetArg, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg, ruleNamePatternArg)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetSecurityExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9)`, assetArg, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, assetArg, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg, ruleNamePatternArg)
 	}
 	if err != nil {
 		return nil, err
@@ -254,7 +255,7 @@ func InsertSecurityExceptions(exceptions []models.SecurityException) error {
 				e.SecurityExceptionID, e.RuleID,
 				nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
 				e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
-				e.AssignTo, e.AssignToDate, e.ResolveDate,
+				nil, e.AssignToDate, e.ResolveDate,
 				nil, e.IssueDescription, nil,
 				nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
 				e.ExceptionSourceID, nil, nil, nil,
@@ -279,7 +280,7 @@ func InsertSecurityExceptions(exceptions []models.SecurityException) error {
 			e.SecurityExceptionID, e.RuleID,
 			nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nil,
 			e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
-			e.AssignTo, e.AssignToDate, e.ResolveDate,
+			nil, e.AssignToDate, e.ResolveDate,
 			nil, e.IssueDescription, nil,
 			nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
 			e.ExceptionSourceID, nil, nil, nil,
