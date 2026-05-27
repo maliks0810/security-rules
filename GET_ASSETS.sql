@@ -28,136 +28,62 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
+    -- Snowflake cannot evaluate correlated scalar subqueries that contain
+    -- window functions / LIMIT (unlike Postgres), so the per-asset rollups
+    -- are computed in a single pass with window functions instead.
     res := (
+        WITH filtered AS (
+            SELECT
+                se."ASSET_ID"            AS "ASSET_ID",
+                se."RUN_DATE"            AS "RUN_DATE",
+                du."USER"                AS "ASSIGN_TO_USER",
+                st."CODE"                AS "SEVERITY_CODE",
+                st."SEVERITY_RANK"       AS "SEVERITY_RANK",
+                ct."CODE"                AS "CATEGORY_CODE",
+                ct."CATEGORY_RANK"       AS "CATEGORY_RANK",
+                et."CODE"                AS "EXC_TYPE_CODE",
+                et."EXCEPTIONTYPERANK"   AS "EXC_TYPE_RANK",
+                es."CODE"                AS "STATUS_CODE"
+            FROM "SECURITY_EXCEPTION" se
+            JOIN "RULE"          r  ON r."RULE_ID"           = se."RULE_ID"
+            JOIN "SEVERITY_TYPE" st ON st."SEVERITY_TYPE_ID" = se."SEVERITY_TYPE_ID"
+            JOIN "CATEGORY_TYPE" ct ON ct."CATEGORY_TYPE_ID" = se."CATEGORY_TYPE_ID"
+            LEFT JOIN "RULE_TYPE"        rt ON rt."RULE_TYPE_ID"        = r."RULE_TYPE_ID"
+            LEFT JOIN "EXCEPTION_TYPE"   et ON et."EXCEPTION_TYPE_ID"   = se."EXCEPTION_TYPE_ID"
+            LEFT JOIN "EXCEPTION_STATUS" es ON es."EXCEPTION_STATUS_ID" = se."EXCEPTION_STATUS_ID"
+            LEFT JOIN "DM_USER"          du ON du."ID"                  = se."ASSIGN_TO_ID"
+            WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."CODE" = :P_EXCEPTION_TYPE)
+              AND (:P_SEVERITY         IS NULL OR ct."CODE" = :P_SEVERITY)
+              AND (:P_PRIORITY         IS NULL OR st."CODE" = :P_PRIORITY)
+              AND (:P_RULE_TYPE        IS NULL OR :P_RULE_TYPE        = 'All' OR rt."NAME"     = :P_RULE_TYPE)
+              AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+              AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."CODE"     = :P_EXCEPTION_STATUS)
+              AND (:P_ASSIGN_TO        IS NULL OR :P_ASSIGN_TO        = 'All' OR du."USER"     = :P_ASSIGN_TO)
+        )
         SELECT
-            se."RUN_DATE"     AS "EXCEPTION_DATE",
-            (
-                SELECT st2."CODE"
-                FROM "SECURITY_EXCEPTION" se2
-                JOIN "SEVERITY_TYPE" st2 ON st2."SEVERITY_TYPE_ID" = se2."SEVERITY_TYPE_ID"
-                JOIN "RULE"          r2  ON r2."RULE_ID"           = se2."RULE_ID"
-                LEFT JOIN "RULE_TYPE"        rt2 ON rt2."RULE_TYPE_ID"        = r2."RULE_TYPE_ID"
-                LEFT JOIN "EXCEPTION_TYPE"   et2 ON et2."EXCEPTION_TYPE_ID"   = se2."EXCEPTION_TYPE_ID"
-                LEFT JOIN "CATEGORY_TYPE"    ct2 ON ct2."CATEGORY_TYPE_ID"    = se2."CATEGORY_TYPE_ID"
-                LEFT JOIN "EXCEPTION_STATUS" es2 ON es2."EXCEPTION_STATUS_ID" = se2."EXCEPTION_STATUS_ID"
-                LEFT JOIN "DM_USER"          du2 ON du2."ID"                  = se2."ASSIGN_TO_ID"
-                WHERE se2."ASSET_ID" = se."ASSET_ID"
-                  AND (:P_EXCEPTION_TYPE IS NULL OR et2."CODE" = :P_EXCEPTION_TYPE)
-                  AND (:P_SEVERITY       IS NULL OR ct2."CODE" = :P_SEVERITY)
-                  AND (:P_PRIORITY       IS NULL OR st2."CODE" = :P_PRIORITY)
-                  AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rt2."NAME"     = :P_RULE_TYPE)
-                  AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r2."RULE_NAME" = :P_RULE_NAME)
-                  AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es2."CODE" = :P_EXCEPTION_STATUS)
-                  AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du2."USER"      = :P_ASSIGN_TO)
-                QUALIFY RANK() OVER (ORDER BY st2."SEVERITY_RANK" ASC) = 1
-                LIMIT 1
-            ) AS "PRIORITY",
-            (
-                SELECT ct2."CODE"
-                FROM "SECURITY_EXCEPTION" se2
-                JOIN "CATEGORY_TYPE" ct2 ON ct2."CATEGORY_TYPE_ID" = se2."CATEGORY_TYPE_ID"
-                JOIN "RULE"          r2  ON r2."RULE_ID"           = se2."RULE_ID"
-                LEFT JOIN "RULE_TYPE"        rt2 ON rt2."RULE_TYPE_ID"        = r2."RULE_TYPE_ID"
-                LEFT JOIN "EXCEPTION_TYPE"   et2 ON et2."EXCEPTION_TYPE_ID"   = se2."EXCEPTION_TYPE_ID"
-                LEFT JOIN "SEVERITY_TYPE"    st2 ON st2."SEVERITY_TYPE_ID"    = se2."SEVERITY_TYPE_ID"
-                LEFT JOIN "EXCEPTION_STATUS" es2 ON es2."EXCEPTION_STATUS_ID" = se2."EXCEPTION_STATUS_ID"
-                LEFT JOIN "DM_USER"          du2 ON du2."ID"                  = se2."ASSIGN_TO_ID"
-                WHERE se2."ASSET_ID" = se."ASSET_ID"
-                  AND (:P_EXCEPTION_TYPE IS NULL OR et2."CODE" = :P_EXCEPTION_TYPE)
-                  AND (:P_SEVERITY       IS NULL OR ct2."CODE" = :P_SEVERITY)
-                  AND (:P_PRIORITY       IS NULL OR st2."CODE" = :P_PRIORITY)
-                  AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rt2."NAME"     = :P_RULE_TYPE)
-                  AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r2."RULE_NAME" = :P_RULE_NAME)
-                  AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es2."CODE" = :P_EXCEPTION_STATUS)
-                  AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du2."USER"      = :P_ASSIGN_TO)
-                QUALIFY RANK() OVER (ORDER BY ct2."CATEGORY_RANK" ASC) = 1
-                LIMIT 1
-            ) AS "SEVERITY",
-            (
-                SELECT et2."CODE"
-                FROM "SECURITY_EXCEPTION" se2
-                JOIN "EXCEPTION_TYPE" et2 ON et2."EXCEPTION_TYPE_ID" = se2."EXCEPTION_TYPE_ID"
-                JOIN "RULE"           r2  ON r2."RULE_ID"            = se2."RULE_ID"
-                LEFT JOIN "RULE_TYPE"        rt2 ON rt2."RULE_TYPE_ID"        = r2."RULE_TYPE_ID"
-                LEFT JOIN "CATEGORY_TYPE"    ct2 ON ct2."CATEGORY_TYPE_ID"    = se2."CATEGORY_TYPE_ID"
-                LEFT JOIN "SEVERITY_TYPE"    st2 ON st2."SEVERITY_TYPE_ID"    = se2."SEVERITY_TYPE_ID"
-                LEFT JOIN "EXCEPTION_STATUS" es2 ON es2."EXCEPTION_STATUS_ID" = se2."EXCEPTION_STATUS_ID"
-                LEFT JOIN "DM_USER"          du2 ON du2."ID"                  = se2."ASSIGN_TO_ID"
-                WHERE se2."ASSET_ID" = se."ASSET_ID"
-                  AND (:P_EXCEPTION_TYPE IS NULL OR et2."CODE" = :P_EXCEPTION_TYPE)
-                  AND (:P_SEVERITY       IS NULL OR ct2."CODE" = :P_SEVERITY)
-                  AND (:P_PRIORITY       IS NULL OR st2."CODE" = :P_PRIORITY)
-                  AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rt2."NAME"     = :P_RULE_TYPE)
-                  AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r2."RULE_NAME" = :P_RULE_NAME)
-                  AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es2."CODE" = :P_EXCEPTION_STATUS)
-                  AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du2."USER"      = :P_ASSIGN_TO)
-                QUALIFY RANK() OVER (ORDER BY et2."EXCEPTIONTYPERANK" ASC) = 1
-                LIMIT 1
-            ) AS "TYPE",
-            du."USER"         AS "ASSIGN_TO",
-            se."ASSET_ID"     AS "ASSET_ID",
-            'BBG00G6M2LZ2'    AS "FIGI",
-            'XYZ'             AS "SECURITY_DESCRIPTION",
-            'Colman Slain'    AS "TRADER",
-            'ABS'             AS "TRADING_TEAM",
-            (
-                SELECT CAST(COUNT(*) AS NUMBER)
-                FROM "SECURITY_EXCEPTION" se2
-                JOIN "SEVERITY_TYPE" st2 ON st2."SEVERITY_TYPE_ID" = se2."SEVERITY_TYPE_ID"
-                JOIN "RULE"          r2  ON r2."RULE_ID"           = se2."RULE_ID"
-                LEFT JOIN "RULE_TYPE"        rt2 ON rt2."RULE_TYPE_ID"        = r2."RULE_TYPE_ID"
-                LEFT JOIN "EXCEPTION_TYPE"   et2 ON et2."EXCEPTION_TYPE_ID"   = se2."EXCEPTION_TYPE_ID"
-                LEFT JOIN "CATEGORY_TYPE"    ct2 ON ct2."CATEGORY_TYPE_ID"    = se2."CATEGORY_TYPE_ID"
-                LEFT JOIN "EXCEPTION_STATUS" es2 ON es2."EXCEPTION_STATUS_ID" = se2."EXCEPTION_STATUS_ID"
-                LEFT JOIN "DM_USER"          du2 ON du2."ID"                  = se2."ASSIGN_TO_ID"
-                WHERE se2."ASSET_ID" = se."ASSET_ID"
-                  AND (:P_EXCEPTION_TYPE IS NULL OR et2."CODE" = :P_EXCEPTION_TYPE)
-                  AND (:P_SEVERITY       IS NULL OR ct2."CODE" = :P_SEVERITY)
-                  AND (:P_PRIORITY       IS NULL OR st2."CODE" = :P_PRIORITY)
-                  AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rt2."NAME"     = :P_RULE_TYPE)
-                  AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r2."RULE_NAME" = :P_RULE_NAME)
-                  AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es2."CODE" = :P_EXCEPTION_STATUS)
-                  AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du2."USER"      = :P_ASSIGN_TO)
-            ) AS "EXCEPTION_COUNT",
-            '10:55 AM'        AS "BBG_LAST_REFRESH",
-            (
-                SELECT COUNT(*) > 0
-                   AND COUNT_IF(COALESCE(es3."CODE", '') <> 'Complete') = 0
-                FROM "SECURITY_EXCEPTION" se3
-                JOIN "SEVERITY_TYPE" st3 ON st3."SEVERITY_TYPE_ID" = se3."SEVERITY_TYPE_ID"
-                JOIN "RULE"          r3  ON r3."RULE_ID"           = se3."RULE_ID"
-                LEFT JOIN "RULE_TYPE"        rt3 ON rt3."RULE_TYPE_ID"        = r3."RULE_TYPE_ID"
-                LEFT JOIN "EXCEPTION_TYPE"   et3 ON et3."EXCEPTION_TYPE_ID"   = se3."EXCEPTION_TYPE_ID"
-                LEFT JOIN "CATEGORY_TYPE"    ct3 ON ct3."CATEGORY_TYPE_ID"    = se3."CATEGORY_TYPE_ID"
-                LEFT JOIN "EXCEPTION_STATUS" es3 ON es3."EXCEPTION_STATUS_ID" = se3."EXCEPTION_STATUS_ID"
-                LEFT JOIN "DM_USER"          du3 ON du3."ID"                  = se3."ASSIGN_TO_ID"
-                WHERE se3."ASSET_ID" = se."ASSET_ID"
-                  AND (:P_EXCEPTION_TYPE IS NULL OR et3."CODE" = :P_EXCEPTION_TYPE)
-                  AND (:P_SEVERITY       IS NULL OR ct3."CODE" = :P_SEVERITY)
-                  AND (:P_PRIORITY       IS NULL OR st3."CODE" = :P_PRIORITY)
-                  AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rt3."NAME"     = :P_RULE_TYPE)
-                  AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r3."RULE_NAME" = :P_RULE_NAME)
-                  AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es3."CODE" = :P_EXCEPTION_STATUS)
-                  AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du3."USER"      = :P_ASSIGN_TO)
-            ) AS "ALL_COMPLETE"
-        FROM "SECURITY_EXCEPTION" se
-        JOIN "RULE" r ON r."RULE_ID" = se."RULE_ID"
-        LEFT JOIN "RULE_TYPE"        rtj ON rtj."RULE_TYPE_ID"     = r."RULE_TYPE_ID"
-        LEFT JOIN "EXCEPTION_TYPE"   et  ON et."EXCEPTION_TYPE_ID" = se."EXCEPTION_TYPE_ID"
-        LEFT JOIN "CATEGORY_TYPE"    ct  ON ct."CATEGORY_TYPE_ID"  = se."CATEGORY_TYPE_ID"
-        LEFT JOIN "SEVERITY_TYPE"    st  ON st."SEVERITY_TYPE_ID"  = se."SEVERITY_TYPE_ID"
-        LEFT JOIN "EXCEPTION_STATUS" es  ON es."EXCEPTION_STATUS_ID" = se."EXCEPTION_STATUS_ID"
-        LEFT JOIN "DM_USER"          du  ON du."ID"                  = se."ASSIGN_TO_ID"
-        WHERE (:P_EXCEPTION_TYPE IS NULL OR et."CODE" = :P_EXCEPTION_TYPE)
-          AND (:P_SEVERITY       IS NULL OR ct."CODE" = :P_SEVERITY)
-          AND (:P_PRIORITY       IS NULL OR st."CODE" = :P_PRIORITY)
-          AND (:P_RULE_TYPE      IS NULL OR :P_RULE_TYPE = 'All' OR rtj."NAME"    = :P_RULE_TYPE)
-          AND (:P_RULE_NAME      IS NULL OR :P_RULE_NAME = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
-          AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."CODE" = :P_EXCEPTION_STATUS)
-          AND (:P_ASSIGN_TO      IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER"      = :P_ASSIGN_TO)
+            "RUN_DATE"                 AS "EXCEPTION_DATE",
+            FIRST_VALUE("SEVERITY_CODE") OVER (
+                PARTITION BY "ASSET_ID" ORDER BY "SEVERITY_RANK" NULLS LAST
+            )                          AS "PRIORITY",
+            FIRST_VALUE("CATEGORY_CODE") OVER (
+                PARTITION BY "ASSET_ID" ORDER BY "CATEGORY_RANK" NULLS LAST
+            )                          AS "SEVERITY",
+            FIRST_VALUE("EXC_TYPE_CODE") OVER (
+                PARTITION BY "ASSET_ID" ORDER BY "EXC_TYPE_RANK" NULLS LAST
+            )                          AS "TYPE",
+            "ASSIGN_TO_USER"           AS "ASSIGN_TO",
+            "ASSET_ID"                 AS "ASSET_ID",
+            'BBG00G6M2LZ2'             AS "FIGI",
+            'XYZ'                      AS "SECURITY_DESCRIPTION",
+            'Colman Slain'             AS "TRADER",
+            'ABS'                      AS "TRADING_TEAM",
+            COUNT(*) OVER (PARTITION BY "ASSET_ID")            AS "EXCEPTION_COUNT",
+            '10:55 AM'                 AS "BBG_LAST_REFRESH",
+            COUNT_IF(COALESCE("STATUS_CODE", '') <> 'Complete')
+                OVER (PARTITION BY "ASSET_ID") = 0             AS "ALL_COMPLETE"
+        FROM filtered
         QUALIFY ROW_NUMBER() OVER (
-            PARTITION BY se."ASSET_ID"
-            ORDER BY se."RUN_DATE" DESC
+            PARTITION BY "ASSET_ID" ORDER BY "RUN_DATE" DESC
         ) = 1
     );
     RETURN TABLE(res);
