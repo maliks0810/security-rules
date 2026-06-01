@@ -28,3 +28,15 @@ func GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleTyp
 func InsertSecurityExceptions(exceptions []models.SecurityException) error {
 	return repositories.InsertSecurityExceptions(exceptions)
 }
+
+func UpdateSecurityException(e models.SecurityException) error {
+	return repositories.UpdateSecurityException(e)
+}
+
+func UpdateExceptionStatus(assetID string, ruleID int) (int, error) {
+	return repositories.UpdateExceptionStatus(assetID, ruleID)
+}
+
+func UpdateAssignTo(assetID, assignTo string) (int, error) {
+	return repositories.UpdateAssignTo(assetID, assignTo)
+}

@@ -21,5 +21,6 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getDMUsers", handlers.GetDMUsers)
 	route.Get("/getRuleTypes", handlers.GetRuleTypes)
 	route.Get("/executeRules", handlers.ExecuteRules)
+	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
 	route.Get("/events", handlers.StreamEvents)
 }

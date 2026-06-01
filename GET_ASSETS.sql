@@ -77,7 +77,8 @@ BEGIN
             'XYZ'                      AS "SECURITY_DESCRIPTION",
             'Colman Slain'             AS "TRADER",
             'ABS'                      AS "TRADING_TEAM",
-            COUNT(*) OVER (PARTITION BY "ASSET_ID")            AS "EXCEPTION_COUNT",
+            COUNT_IF(COALESCE("STATUS_CODE", '') <> 'Complete')
+                OVER (PARTITION BY "ASSET_ID")                 AS "EXCEPTION_COUNT",
             '10:55 AM'                 AS "BBG_LAST_REFRESH",
             COUNT_IF(COALESCE("STATUS_CODE", '') <> 'Complete')
                 OVER (PARTITION BY "ASSET_ID") = 0             AS "ALL_COMPLETE"

@@ -3,6 +3,7 @@ package repositories
 import (
 	"database/sql"
 	"strings"
+	"time"
 
 	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
@@ -133,6 +134,8 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 		bbg = idBbGlobal[0]
 	}
 
+	runStart := time.Now().UTC().Format(time.RFC3339)
+
 	var rows *sql.Rows
 	var err error
 
@@ -150,6 +153,8 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 		return nil, err
 	}
 	defer rows.Close()
+
+	runEnd := time.Now().UTC().Format(time.RFC3339)
 
 	cols, err := rows.Columns()
 	if err != nil {
@@ -178,9 +183,17 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 		}
 
 		ex := models.SecurityException{
-			RuleID:   ruleID,
-			RuleName: storedProcedure,
-			AssetID:  assetID,
+			RuleID:            ruleID,
+			RuleName:          storedProcedure,
+			AssetID:           assetID,
+			RunStart:          runStart,
+			RunDate:           runEnd,
+			RunEnd:            runEnd,
+			ExceptionStatusID: 1, // Pending
+			SeverityTypeID:    1, // High (default until rule-specific severity wired)
+			CategoryTypeID:    1, // Trading
+			ProcessTypeID:     1,
+			ExceptionTypeID:   1, // Security Setup
 		}
 		if assetIdx >= 0 && raw[assetIdx].Valid && raw[assetIdx].String != "" {
 			ex.AssetID = raw[assetIdx].String

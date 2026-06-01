@@ -277,6 +277,33 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 
+// UpdateAssignTo godoc
+// @Summary      Update SECURITY_EXCEPTION.ASSIGN_TO_ID for an asset
+// @Description  Resolves assign_to against DM_USER and updates every
+//               SECURITY_EXCEPTION row for the given asset. An empty
+//               assign_to clears the assignment.
+// @Tags         security-exceptions
+// @Produce      json
+// @Param        asset_id   query     string  true   "Asset ID"
+// @Param        assign_to  query     string  false  "DM_USER.USER name (empty to unassign)"
+// @Success      200        {object}  map[string]int  "rows updated"
+// @Failure      400        {object}  map[string]string  "asset_id query parameter is required"
+// @Failure      500        {object}  map[string]string  "failed to update assign to"
+// @Router       /v1/api/updateAssignTo [get]
+func UpdateAssignTo(ctx *fiber.Ctx) error {
+	assetID := ctx.Query("asset_id")
+	if assetID == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id query parameter is required"})
+	}
+	assignTo := ctx.Query("assign_to")
+
+	n, err := services.UpdateAssignTo(assetID, assignTo)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update assign to"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
 // InsertSecurityExceptions is a private endpoint and intentionally omitted from Swagger.
 // StreamEvents godoc
 // @Summary      Server-Sent Events stream of domain changes

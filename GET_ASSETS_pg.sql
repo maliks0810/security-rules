@@ -145,7 +145,8 @@ AS $$
                AND (p_rule_type        IS NULL OR p_rule_type        = 'All' OR rt2."NAME"     = p_rule_type)
                AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r2."RULE_NAME" = p_rule_name)
                AND (p_exception_status IS NULL OR p_exception_status = 'All' OR es2."CODE"    = p_exception_status)
-               AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du2."USER"    = p_assign_to)) AS "EXCEPTION_COUNT",
+               AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du2."USER"    = p_assign_to)
+               AND (es2."CODE" IS NULL OR es2."CODE" <> 'Complete')) AS "EXCEPTION_COUNT",
            '10:55 AM'         AS "BBG_LAST_REFRESH",
            (SELECT COUNT(*) > 0
               AND COUNT(*) FILTER (WHERE es3."CODE" IS DISTINCT FROM 'Complete') = 0

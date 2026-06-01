@@ -27,29 +27,74 @@ func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
 		return err
 	}
 
-	numberOfExceptions := 0
+	// Snapshot the existing exceptions for this asset so we can diff the
+	// rule-run results against them in memory. We only keep RULE_ID tuples
+	// (the grain of SECURITY_EXCEPTION is (ASSET_ID, RULE_ID)).
+	existing, err := repositories.GetSecurityExceptions(assetID, "", "", "", "", "", "", "", "", "")
+	if err != nil {
+		return err
+	}
+	existingRuleIDs := make(map[int]bool, len(existing))
+	for _, x := range existing {
+		existingRuleIDs[x.RuleID] = true
+	}
+
+	// Classify each new exception as INSERT (new rule_id) or UPDATE (existing).
+	touched := make(map[int]bool)
+	var inserts []models.SecurityException
+	var updates []models.SecurityException
 	for _, r := range rules {
 		exceptions, err := repositories.ExecuteRule(r.RuleCommand, r.RuleID, assetID, idBbGlobal...)
 		if err != nil {
 			return err
 		}
-		numberOfExceptions += len(exceptions)
-		if len(exceptions) == 0 {
-			continue
+		for _, e := range exceptions {
+			if existingRuleIDs[e.RuleID] {
+				updates = append(updates, e)
+			} else {
+				inserts = append(inserts, e)
+			}
+			touched[e.RuleID] = true
 		}
-		if err := InsertSecurityExceptions(exceptions); err != nil {
+	}
+
+	if len(inserts) > 0 {
+		if err := InsertSecurityExceptions(inserts); err != nil {
+			return err
+		}
+	}
+	for _, e := range updates {
+		if err := repositories.UpdateSecurityException(e); err != nil {
 			return err
 		}
 	}
 
-	log.Logger.Info(fmt.Sprintf("rulesService: ExecuteRules - generated %d exceptions for asset %s", numberOfExceptions, assetID))
+	// Anything in the original snapshot that the rule run did not touch:
+	// mark Complete if still Pending.
+	completed := 0
+	for ruleID := range existingRuleIDs {
+		if touched[ruleID] {
+			continue
+		}
+		n, err := repositories.UpdateExceptionStatus(assetID, ruleID)
+		if err != nil {
+			return err
+		}
+		completed += n
+	}
 
-	if numberOfExceptions > 0 {
+	generated := len(inserts) + len(updates)
+	log.Logger.Info(fmt.Sprintf(
+		"rulesService: ExecuteRules - asset %s: generated %d exceptions",
+		assetID, generated,
+	))
+
+	if generated > 0 || completed > 0 {
 		events.Publish(events.Event{
 			Type: "security_exception.inserted",
 			Payload: map[string]any{
 				"asset_id": assetID,
-				"count":    numberOfExceptions,
+				"count":    generated,
 			},
 		})
 	}
