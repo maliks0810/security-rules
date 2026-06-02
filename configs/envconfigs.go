@@ -8,30 +8,30 @@ import (
 )
 
 type envConfigs struct {
-	GolangEnvironment			types.Environment
-	HostEnvironment 			string 		`mapstructure:"HOST_ENVIRONMENT"`
-	AuthAudience				string 		`mapstructure:"TCW_OKTA_AUDIENCE"`
-	AuthIssuer					string 		`mapstructure:"TCW_OKTA_ISSUER"`
-	AuthorizationUrl			string 		`mapstructure:"PERMITIO_AUTH_URL"`
-	AuthorizationKey			string 		`mapstructure:"PERMITIO_AUTH_KEY"`
-	AmqpConnection	 			string 		`mapstructure:"AMQP_CONNECTION_STRING"`
-	SnowflakeAccount			string 		`mapstructure:"SNOWFLAKE_ACCOUNT"`
-	SnowflakeUser				string 		`mapstructure:"SNOWFLAKE_USER"`
-	SnowflakeRole				string 		`mapstructure:"SNOWFLAKE_ROLE"`
-	SnowflakeWarehouse			string 		`mapstructure:"SNOWFLAKE_WAREHOUSE"`
-	SnowflakeDatabase			string 		`mapstructure:"SNOWFLAKE_DATABASE"`
-	SnowflakeSchema				string 		`mapstructure:"SNOWFLAKE_SCHEMA"`
-	SnowflakeAuthenticator		string 		`mapstructure:"SNOWFLAKE_AUTHENTICATOR"`
-	KeyVaultUrl                             string `mapstructure:"AZ_KEY_VAULT_VELOCITY_URL"`
-	KeyVaultDerKey                          string `mapstructure:"AZ_SF_DEF_KEY"`
-	KeyVaultPwdKey                          string `mapstructure:"AZ_SF_PWD_KEY"`
-	SnowflakeConnectionTtlInMin             int    `mapstructure:"SNOWFLAKE_CONNECTION_TTL_IN_MIN"`
-	Database                                string `mapstructure:"DATABASE"`
-	PostgresHost                            string `mapstructure:"POSTGRES_HOST"`
-	PostgresPort                            int    `mapstructure:"POSTGRES_PORT"`
-	PostgresUser                            string `mapstructure:"POSTGRES_USER"`
-	PostgresPassword                        string `mapstructure:"POSTGRES_PASSWORD"`
-	PostgresDatabase                        string `mapstructure:"POSTGRES_DATABASE"`
+	GolangEnvironment           types.Environment
+	HostEnvironment             string `mapstructure:"HOST_ENVIRONMENT"`
+	AuthAudience                string `mapstructure:"TCW_OKTA_AUDIENCE"`
+	AuthIssuer                  string `mapstructure:"TCW_OKTA_ISSUER"`
+	AuthorizationUrl            string `mapstructure:"PERMITIO_AUTH_URL"`
+	AuthorizationKey            string `mapstructure:"PERMITIO_AUTH_KEY"`
+	AmqpConnection              string `mapstructure:"AMQP_CONNECTION_STRING"`
+	SnowflakeAccount            string `mapstructure:"SNOWFLAKE_ACCOUNT"`
+	SnowflakeUser               string `mapstructure:"SNOWFLAKE_USER"`
+	SnowflakeRole               string `mapstructure:"SNOWFLAKE_ROLE"`
+	SnowflakeWarehouse          string `mapstructure:"SNOWFLAKE_WAREHOUSE"`
+	SnowflakeDatabase           string `mapstructure:"SNOWFLAKE_DATABASE"`
+	SnowflakeSchema             string `mapstructure:"SNOWFLAKE_SCHEMA"`
+	SnowflakeAuthenticator      string `mapstructure:"SNOWFLAKE_AUTHENTICATOR"`
+	KeyVaultUrl                 string `mapstructure:"AZ_KEY_VAULT_VELOCITY_URL"`
+	KeyVaultDerKey              string `mapstructure:"AZ_SF_DEF_KEY"`
+	KeyVaultPwdKey              string `mapstructure:"AZ_SF_PWD_KEY"`
+	SnowflakeConnectionTtlInMin int    `mapstructure:"SNOWFLAKE_CONNECTION_TTL_IN_MINUTES"`
+	Database                    string `mapstructure:"DATABASE"`
+	PostgresHost                string `mapstructure:"POSTGRES_HOST"`
+	PostgresPort                int    `mapstructure:"POSTGRES_PORT"`
+	PostgresUser                string `mapstructure:"POSTGRES_USER"`
+	PostgresPassword            string `mapstructure:"POSTGRES_PASSWORD"`
+	PostgresDatabase            string `mapstructure:"POSTGRES_DATABASE"`
 }
 
 var EnvConfigs *envConfigs
@@ -50,14 +50,14 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.SetDefault("GOLANG_ENVIRONMENT", "local")
 	viper.SetDefault("TCW_OKTA_AUDIENCE", "api://default")
 	viper.SetDefault("TCW_OKTA_ISSUER", "https://tcw.okta.com/oauth2/default")
-	
+
 	// General Configurations
 	viper.BindEnv("GOLANG_ENVIRONMENT")
 
 	// Authentication Configurations
 	viper.BindEnv("TCW_OKTA_AUDIENCE")
 	viper.BindEnv("TCW_OKTA_ISSUER")
-	
+
 	// Permit.IO Configurations
 	viper.BindEnv("PERMITIO_AUTH_URL")
 	viper.BindEnv("PERMITIO_AUTH_KEY")
