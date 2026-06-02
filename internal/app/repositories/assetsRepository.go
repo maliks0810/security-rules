@@ -1,16 +1,21 @@
 package repositories
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"strings"
+	"time"
 
 	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/postgres"
 	"securityrules/security-rules/internal/utils/snowflake"
-	"securityrules/security-rules/internal/utils/sql"
+	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
+
+const getAssetsQueryTimeout = 30 * time.Second
 
 func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionStatus, assignTo string) ([]models.Asset, error) {
 	var rows *sql.Rows
@@ -30,20 +35,27 @@ func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionS
 	exceptionStatusArg := nilIfEmpty(exceptionStatus)
 	assignToArg := nilIfEmpty(assignTo)
 
+	ctx, cancel := context.WithTimeout(context.Background(), getAssetsQueryTimeout)
+	defer cancel()
+	queryStart := time.Now()
+
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
-		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_ASSETS(?, ?, ?, ?, ?, ?, ?)", typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
+		// snowflake.QueryContext reopens the connection and retries once if the auth token has expired.
+		rows, err = snowflake.QueryContext(ctx, "CALL GET_ASSETS(?, ?, ?, ?, ?, ?, ?)", typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_ASSETS"($1, $2, $3, $4, $5, $6, $7)`, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
+		rows, err = postgres.DB.QueryContext(ctx, `SELECT * FROM public."GET_ASSETS"($1, $2, $3, $4, $5, $6, $7)`, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	}
+	elapsed := time.Since(queryStart)
 	if err != nil {
+		log.Logger.Error(fmt.Sprintf("assetsRepository: GetAssets - query failed after %s: %v", elapsed, err))
 		return nil, err
 	}
+	log.Logger.Info(fmt.Sprintf("assetsRepository: GetAssets - query returned in %s", elapsed))
 	defer rows.Close()
 
 	var assets []models.Asset

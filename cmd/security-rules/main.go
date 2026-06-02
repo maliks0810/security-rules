@@ -76,6 +76,7 @@ func main() {
 			log.Logger.Error(fmt.Sprintf("main.go: main - unable to open snowflake connection at startup: %v", err))
 		} else {
 			sf.DB = facade.DBConnection
+			tuneSnowflakePool(sf.DB)
 		}
 		sf.Reopen = func() error {
 			log.Logger.Info("main.go: sf.Reopen - force-closing and reopening Snowflake connection...")
@@ -89,6 +90,7 @@ func main() {
 				return err
 			}
 			sf.DB = facade.DBConnection
+			tuneSnowflakePool(sf.DB)
 			return nil
 		}
 	} else {
@@ -97,6 +99,7 @@ func main() {
 			log.Logger.Error(fmt.Sprintf("main.go: main - unable to open postgres connection at startup: %v", err))
 		} else {
 			pg.DB = facade.PostgresDBConnection
+			tunePostgresPool(pg.DB)
 		}
 	}
 
@@ -123,6 +126,36 @@ func initializeFacade() Facade {
 		Vault:     initializeVault(),
 		Snowflake: initializeSnowflake(),
 	}
+}
+
+// tuneSnowflakePool bounds the *sql.DB pool so we don't open one fresh
+// TLS+JWT-authenticated connection per concurrent request (Snowflake
+// handshake is ~200-800ms). ConnMaxLifetime stays comfortably under the
+// Snowflake auth-token TTL so we rotate connections proactively rather
+// than discovering an expired token mid-query.
+func tuneSnowflakePool(db *sql.DB) {
+	if db == nil {
+		return
+	}
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(50 * time.Minute)
+	db.SetConnMaxIdleTime(10 * time.Minute)
+	log.Logger.Info("main.go: tuneSnowflakePool - pool limits applied (max=5, idle=2, lifetime=50m, idle_timeout=10m)")
+}
+
+// tunePostgresPool mirrors tuneSnowflakePool for the Postgres pool. The
+// caps are higher because lib/pq connections are cheap (no JWT auth, no
+// warehouse resume) but we still bound idle to avoid leaking.
+func tunePostgresPool(db *sql.DB) {
+	if db == nil {
+		return
+	}
+	db.SetMaxOpenConns(15)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(55 * time.Minute)
+	db.SetConnMaxIdleTime(10 * time.Minute)
+	log.Logger.Info("main.go: tunePostgresPool - pool limits applied (max=15, idle=5, lifetime=55m, idle_timeout=10m)")
 }
 
 func newTracerProvider() *sdktrace.TracerProvider {

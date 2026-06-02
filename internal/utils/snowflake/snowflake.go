@@ -1,6 +1,7 @@
 package snowflake
 
 import (
+	"context"
 	"crypto/rsa"
 	"database/sql"
 	"errors"
@@ -37,6 +38,13 @@ func IsAuthTokenExpired(err error) bool {
 // Reopen and retries once. Callers that need Snowflake-specific reauth should
 // use this instead of DB.Query directly.
 func Query(query string, args ...any) (*sql.Rows, error) {
+	return QueryContext(context.Background(), query, args...)
+}
+
+// QueryContext is the context-aware twin of Query: cancellation/timeouts on
+// ctx propagate to the in-flight Snowflake call so a stuck request can be
+// bounded by the caller. Reauth retry behavior is unchanged.
+func QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	if DB == nil {
 		if Reopen == nil {
 			return nil, sql.ErrConnDone
@@ -46,7 +54,7 @@ func Query(query string, args ...any) (*sql.Rows, error) {
 		}
 	}
 
-	rows, err := DB.Query(query, args...)
+	rows, err := DB.QueryContext(ctx, query, args...)
 	if err == nil {
 		return rows, nil
 	}
@@ -62,7 +70,7 @@ func Query(query string, args ...any) (*sql.Rows, error) {
 	if DB == nil {
 		return nil, errors.Join(err, sql.ErrConnDone)
 	}
-	return DB.Query(query, args...)
+	return DB.QueryContext(ctx, query, args...)
 }
 
 /*
