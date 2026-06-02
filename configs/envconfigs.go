@@ -73,7 +73,7 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.BindEnv("SNOWFLAKE_DATABASE")
 	viper.BindEnv("SNOWFLAKE_SCHEMA")
 	viper.BindEnv("SNOWFLAKE_AUTHENTICATOR")
-	viper.BindEnv("SNOWFLAKE_CONNECTION_TTL_IN_MIN")
+	viper.BindEnv("SNOWFLAKE_CONNECTION_TTL_IN_MINUTES")
 	viper.BindEnv("AZ_KEY_VAULT_VELOCITY_URL")
 	viper.BindEnv("AZ_SF_DEF_KEY")
 	viper.BindEnv("AZ_SF_PWD_KEY")
