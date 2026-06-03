@@ -182,10 +182,15 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 			return nil, err
 		}
 
+		idBb := ""
+		if len(idBbGlobal) > 0 {
+			idBb = idBbGlobal[0]
+		}
 		ex := models.SecurityException{
 			RuleID:            ruleID,
 			RuleName:          storedProcedure,
 			AssetID:           assetID,
+			IdBbGlobal:        idBb,
 			RunStart:          runStart,
 			RunDate:           runEnd,
 			RunEnd:            runEnd,

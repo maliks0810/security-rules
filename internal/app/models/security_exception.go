@@ -6,6 +6,7 @@ type SecurityException struct {
 	RuleName              string    `json:"rule_name"`
 	Priority              string    `json:"priority"`
 	AssetID             string `json:"asset_id"`
+	IdBbGlobal          string `json:"id_bb_global"`
 	RunDate             string `json:"run_date"`
 	RunStart            string `json:"run_start"`
 	RunEnd              string `json:"run_end"`
