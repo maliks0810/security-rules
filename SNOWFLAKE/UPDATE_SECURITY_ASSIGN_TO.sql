@@ -1,0 +1,29 @@
+CREATE OR REPLACE PROCEDURE UPDATE_SECURITY_ASSIGN_TO(
+    P_ASSET_ID  VARCHAR,
+    P_ASSIGN_TO VARCHAR
+)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    affected NUMBER := 0;
+    user_id  NUMBER := NULL;
+BEGIN
+    IF (:P_ASSIGN_TO IS NOT NULL AND :P_ASSIGN_TO <> '') THEN
+        SELECT "ID" INTO :user_id
+        FROM "DM_USER"
+        WHERE "USER" = :P_ASSIGN_TO
+        LIMIT 1;
+    END IF;
+
+    UPDATE "SECURITY_EXCEPTION"
+       SET "ASSIGN_TO_ID" = :user_id,
+           "MODIFIED_DATE" = CURRENT_TIMESTAMP::TIMESTAMP_NTZ,
+           "MODIFIED_BY"   = 'system'
+     WHERE "ASSET_ID" = :P_ASSET_ID;
+
+    affected := SQLROWCOUNT;
+    RETURN affected;
+END;
+$$;

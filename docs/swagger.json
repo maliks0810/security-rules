@@ -91,6 +91,69 @@
                 }
             }
         },
+        "/v1/api/executeSecurityRules": {
+            "get": {
+                "description": "Runs every rule for the given process_type against the asset and writes results into the legacy SECURITY_EXCEPTION table. Kept alongside /executeRules (which writes to the slim EXCEPTION table) during the migration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Execute rules for an asset (legacy SECURITY_EXCEPTION flow)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Process type",
+                        "name": "process_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "asset_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bloomberg global ID",
+                        "name": "id_bb_global",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rules executed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "process_type and asset_id are required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to execute security rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getAssets": {
             "get": {
                 "description": "Returns the deduplicated set of assets, optionally filtered by exception type CODE and severity (CATEGORY_TYPE.CODE).",
@@ -122,8 +185,8 @@
                     },
                     {
                         "type": "string",
-                        "description": "RULE_TYPE.NAME filter",
-                        "name": "rule_type",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
                         "in": "query"
                     },
                     {
@@ -233,14 +296,14 @@
         },
         "/v1/api/getExceptionTypes": {
             "get": {
-                "description": "Returns EXCEPTION_TYPE.CODE values ordered by EXCEPTIONTYPERANK.",
+                "description": "Returns EXCEPTION_TYPE.NAME values ordered by SORT_ORDER.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "exception-types"
                 ],
-                "summary": "List exception type codes",
+                "summary": "List exception type names",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -263,16 +326,110 @@
                 }
             }
         },
+        "/v1/api/getExceptions": {
+            "get": {
+                "description": "Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "List exceptions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset ID filter",
+                        "name": "asset_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_TYPE.NAME filter",
+                        "name": "exception_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_SEVERITY_TYPE.NAME filter",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_PRIORITY_TYPE.NAME filter",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME filter (reserved — RULE_2 does not carry RULE_CATALOG_ID for filtering yet)",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_2.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Reserved (RULE_2 has no rule_group yet)",
+                        "name": "rule_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_STATUS.NAME filter",
+                        "name": "exception_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER filter",
+                        "name": "assign_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SQL ILIKE pattern against RULE_2.RULE_NAME",
+                        "name": "rule_name_pattern",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Exception"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exceptions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getPriorityTypes": {
             "get": {
-                "description": "Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.",
+                "description": "Returns EXCEPTION_PRIORITY_TYPE.NAME values ordered by SORT_ORDER.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "priority-types"
                 ],
-                "summary": "List priority codes",
+                "summary": "List priority names",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -295,46 +452,14 @@
                 }
             }
         },
-        "/v1/api/getRuleGroups": {
+        "/v1/api/getRuleCatalogs": {
             "get": {
-                "description": "Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.",
+                "description": "Returns RULE_CATALOG.NAME values joined to RULE_GROUP by RULE_GROUP_ID and filtered by rule group name.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "rule-groups"
-                ],
-                "summary": "List rule group names",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "failed to query rule groups",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/api/getRuleTypes": {
-            "get": {
-                "description": "Returns RULE_TYPE.NAME values joined to RULE_GROUP by RULE_GROUP_ID and filtered by rule group name.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "rule-types"
+                    "rule-catalogs"
                 ],
                 "summary": "List rule type names for a rule group",
                 "parameters": [
@@ -377,9 +502,41 @@
                 }
             }
         },
+        "/v1/api/getRuleGroups": {
+            "get": {
+                "description": "Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rule-groups"
+                ],
+                "summary": "List rule group names",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rule groups",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getRules": {
             "get": {
-                "description": "Returns rules from GET_RULES, optionally filtered by rule type (RULE_TYPE.NAME).",
+                "description": "Returns rules from GET_RULES, optionally filtered by rule type (RULE_CATALOG.NAME).",
                 "produces": [
                     "application/json"
                 ],
@@ -396,8 +553,8 @@
                     },
                     {
                         "type": "string",
-                        "description": "RULE_TYPE.NAME filter",
-                        "name": "rule_type",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
                         "in": "query"
                     }
                 ],
@@ -460,8 +617,8 @@
                     },
                     {
                         "type": "string",
-                        "description": "RULE_TYPE.NAME filter",
-                        "name": "rule_type",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
                         "in": "query"
                     },
                     {
@@ -568,6 +725,118 @@
                     }
                 }
             }
+        },
+        "/v1/api/updateAssignTo": {
+            "get": {
+                "description": "Resolves assign_to against DM_USER and updates every",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Update EXCEPTION.ASSIGN_TO_ID for an asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "asset_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER name (empty to unassign)",
+                        "name": "assign_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "asset_id query parameter is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update assign to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/updateSecurityAssignTo": {
+            "get": {
+                "description": "Resolves assign_to against DM_USER and updates every",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "security-exceptions"
+                ],
+                "summary": "Update SECURITY_EXCEPTION.ASSIGN_TO_ID for an asset (legacy)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset ID",
+                        "name": "asset_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER name (empty to unassign)",
+                        "name": "assign_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "asset_id query parameter is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update security assign to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -611,6 +880,80 @@
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "securityrules_security-rules_internal_app_models.Exception": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
+                    "type": "string"
+                },
+                "assign_to": {
+                    "type": "string"
+                },
+                "assign_to_id": {
+                    "type": "integer"
+                },
+                "comment_id": {
+                    "type": "integer"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "created_date": {
+                    "type": "string"
+                },
+                "exception_date": {
+                    "type": "string"
+                },
+                "exception_id": {
+                    "type": "integer"
+                },
+                "exception_status": {
+                    "type": "string"
+                },
+                "exception_time": {
+                    "type": "string"
+                },
+                "exception_type": {
+                    "type": "string"
+                },
+                "id_bb_global": {
+                    "type": "string"
+                },
+                "issue_description": {
+                    "type": "string"
+                },
+                "modified_by": {
+                    "type": "string"
+                },
+                "modified_date": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "string"
+                },
+                "result_data": {
+                    "type": "string"
+                },
+                "result_type_id": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "rule_name": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "status_id": {
+                    "type": "integer"
+                },
+                "suppress_date": {
                     "type": "string"
                 }
             }
@@ -665,6 +1008,12 @@
                 "exception_status_id": {
                     "type": "integer"
                 },
+                "exception_type_id": {
+                    "type": "integer"
+                },
+                "id_bb_global": {
+                    "type": "string"
+                },
                 "issue_description": {
                     "type": "string"
                 },
@@ -693,6 +1042,9 @@
                     "type": "string"
                 },
                 "run_date": {
+                    "type": "string"
+                },
+                "run_end": {
                     "type": "string"
                 },
                 "run_start": {

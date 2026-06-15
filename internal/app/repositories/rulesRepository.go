@@ -43,19 +43,19 @@ func GetRuleGroups() ([]string, error) {
 	return names, nil
 }
 
-func GetRuleTypes(ruleGroup string) ([]string, error) {
+func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("rulesRepository: GetRuleTypes - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_RULE_TYPES(?)", ruleGroup)
+		log.Logger.Info("rulesRepository: GetRuleCatalogs - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_RULE_CATALOGS(?)", ruleGroup)
 	} else {
-		log.Logger.Info("rulesRepository: GetRuleTypes - using POSTGRES database environment")
+		log.Logger.Info("rulesRepository: GetRuleCatalogs - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_TYPES"($1)`, ruleGroup)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_CATALOGS"($1)`, ruleGroup)
 	}
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func GetRuleTypes(ruleGroup string) ([]string, error) {
 	return names, nil
 }
 
-func GetRules(processType, ruleType string) ([]models.Rule, error) {
+func GetRules(processType, ruleCatalog string) ([]models.Rule, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -83,18 +83,18 @@ func GetRules(processType, ruleType string) ([]models.Rule, error) {
 		}
 		return s
 	}
-	ruleTypeArg := nilIfEmpty(ruleType)
+	ruleCatalogArg := nilIfEmpty(ruleCatalog)
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRules - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_RULES(?, ?)", processType, ruleTypeArg)
+		rows, err = snowflake.Query("CALL GET_RULES(?, ?)", processType, ruleCatalogArg)
 	} else {
 		log.Logger.Info("rulesRepository: GetRules - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULES"($1, $2)`, processType, ruleTypeArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULES"($1, $2)`, processType, ruleCatalogArg)
 	}
 	if err != nil {
 		return nil, err
@@ -128,26 +128,45 @@ func GetRules(processType, ruleType string) ([]models.Rule, error) {
 	return rules, nil
 }
 
-func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal ...string) ([]models.SecurityException, error) {
-	var bbg any = nil
-	if len(idBbGlobal) > 0 && idBbGlobal[0] != "" {
+// resolveRuleCommand replaces ${ASSET_ID} and ${ID_BB_GLOBAL} placeholder
+// tokens in the RULE_CATALOG_SOURCE command with literals derived from the
+// caller's arguments. Empty values become NULL so the SP receives a real
+// NULL instead of an empty-string literal. Single quotes in the values are
+// doubled per SQL escaping; the inputs are URL-sourced asset and Bloomberg
+// IDs, so they should never legitimately contain quotes.
+func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
+	sqlLit := func(s string) string {
+		if s == "" {
+			return "NULL"
+		}
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	out := strings.ReplaceAll(ruleCommand, "${ASSET_ID}", sqlLit(assetID))
+	out = strings.ReplaceAll(out, "${ID_BB_GLOBAL}", sqlLit(idBbGlobal))
+	return out
+}
+
+func ExecuteSecurityRule(ruleCommand string, ruleID int, ruleName string, assetID string, idBbGlobal ...string) ([]models.SecurityException, error) {
+	runStart := time.Now().UTC().Format(time.RFC3339)
+
+	bbg := ""
+	if len(idBbGlobal) > 0 {
 		bbg = idBbGlobal[0]
 	}
-
-	runStart := time.Now().UTC().Format(time.RFC3339)
+	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg)
 
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("rulesRepository: ExecuteRule - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL "+storedProcedure+"(?, ?)", assetID, bbg)
+		log.Logger.Info("rulesRepository: ExecuteSecurityRule - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(resolvedCommand)
 	} else {
-		log.Logger.Info("rulesRepository: ExecuteRule - using POSTGRES database environment")
+		log.Logger.Info("rulesRepository: ExecuteSecurityRule - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."`+storedProcedure+`"($1, $2)`, assetID, bbg)
+		rows, err = postgres.DB.Query(resolvedCommand)
 	}
 	if err != nil {
 		return nil, err
@@ -161,13 +180,15 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 		return nil, err
 	}
 
-	assetIdx, issueIdx := -1, -1
+	assetIdx, issueIdx, ruleNameIdx := -1, -1, -1
 	for i, c := range cols {
 		switch strings.ToUpper(c) {
 		case "ASSET_ID", "ALADDIN_ID":
 			assetIdx = i
 		case "ISSUE_DESCRIPTION":
 			issueIdx = i
+		case "RULE_NAME":
+			ruleNameIdx = i
 		}
 	}
 
@@ -182,13 +203,20 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 			return nil, err
 		}
 
+		// If the result set carries a RULE_NAME column, only attribute the
+		// row to this rule when it matches. Lets one catalog source feed
+		// multiple rules from a single query.
+		if ruleNameIdx >= 0 && raw[ruleNameIdx].Valid && raw[ruleNameIdx].String != ruleName {
+			continue
+		}
+
 		idBb := ""
 		if len(idBbGlobal) > 0 {
 			idBb = idBbGlobal[0]
 		}
 		ex := models.SecurityException{
 			RuleID:            ruleID,
-			RuleName:          storedProcedure,
+			RuleName:          ruleName,
 			AssetID:           assetID,
 			IdBbGlobal:        idBb,
 			RunStart:          runStart,
@@ -211,6 +239,101 @@ func ExecuteRule(storedProcedure string, ruleID int, assetID string, idBbGlobal 
 
 	if exceptions == nil {
 		exceptions = []models.SecurityException{}
+	}
+	return exceptions, nil
+}
+
+// ExecuteRule runs the rule's RULE_CATALOG_SOURCE command verbatim and
+// builds new-model Exception rows from the result set (one per matching
+// record). The command is expected to return ASSET_ID/ALADDIN_ID and
+// ISSUE_DESCRIPTION columns; an optional RULE_NAME column, if present,
+// scopes rows to the rule whose name matches (so one catalog source can
+// feed multiple rules from a single query).
+func ExecuteRule(ruleCommand string, ruleID int, ruleName string, assetID string, idBbGlobal ...string) ([]models.Exception, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	bbg := ""
+	if len(idBbGlobal) > 0 {
+		bbg = idBbGlobal[0]
+	}
+	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg)
+
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: ExecuteRule - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(resolvedCommand)
+	} else {
+		log.Logger.Info("rulesRepository: ExecuteRule - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(resolvedCommand)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	assetIdx, issueIdx, ruleNameIdx := -1, -1, -1
+	for i, c := range cols {
+		switch strings.ToUpper(c) {
+		case "ASSET_ID", "ALADDIN_ID":
+			assetIdx = i
+		case "ISSUE_DESCRIPTION":
+			issueIdx = i
+		case "RULE_NAME":
+			ruleNameIdx = i
+		}
+	}
+
+	var exceptions []models.Exception
+	for rows.Next() {
+		raw := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range raw {
+			ptrs[i] = &raw[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		if ruleNameIdx >= 0 && raw[ruleNameIdx].Valid && raw[ruleNameIdx].String != ruleName {
+			continue
+		}
+
+		idBb := ""
+		if len(idBbGlobal) > 0 {
+			idBb = idBbGlobal[0]
+		}
+		ex := models.Exception{
+			RuleID:        ruleID,
+			RuleName:      ruleName,
+			AssetID:       assetID,
+			IdBbGlobal:    idBb,
+			ExceptionDate: now,
+			ExceptionTime: now,
+			StatusID:      1, // Pending
+			CreatedDate:   now,
+			CreatedBy:     "system",
+		}
+		if assetIdx >= 0 && raw[assetIdx].Valid && raw[assetIdx].String != "" {
+			ex.AssetID = raw[assetIdx].String
+		}
+		if issueIdx >= 0 {
+			ex.IssueDescription = sqlutil.NullStr(raw[issueIdx])
+		}
+		exceptions = append(exceptions, ex)
+	}
+
+	if exceptions == nil {
+		exceptions = []models.Exception{}
 	}
 	return exceptions, nil
 }

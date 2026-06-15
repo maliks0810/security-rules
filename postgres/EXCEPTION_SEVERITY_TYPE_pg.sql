@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS public."EXCEPTION_SEVERITY_TYPE";
+
+CREATE TABLE public."EXCEPTION_SEVERITY_TYPE" (
+    "EXCEPTION_SEVERITY_TYPE_ID" integer,
+    "NAME"                       varchar(100),
+    "SORT_ORDER"                 integer,
+    "CREATED_BY"                 varchar(100),
+    "CREATED_DATE"               timestamp
+);
+
+INSERT INTO public."EXCEPTION_SEVERITY_TYPE" (
+    "EXCEPTION_SEVERITY_TYPE_ID", "NAME", "SORT_ORDER", "CREATED_BY", "CREATED_DATE"
+)
+SELECT "CATEGORY_TYPE_ID", "CODE", "SORTORDER", "MODIFIED_BY", "MODIFIED_DATE"
+FROM public."CATEGORY_TYPE";

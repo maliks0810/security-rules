@@ -17,7 +17,7 @@ import (
 
 const getAssetsQueryTimeout = 30 * time.Second
 
-func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionStatus, assignTo string) ([]models.Asset, error) {
+func GetAssets(exceptionType, severity, priority, ruleCatalog, ruleName, exceptionStatus, assignTo string) ([]models.Asset, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -30,7 +30,7 @@ func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionS
 	typeArg := nilIfEmpty(exceptionType)
 	severityArg := nilIfEmpty(severity)
 	priorityArg := nilIfEmpty(priority)
-	ruleTypeArg := nilIfEmpty(ruleType)
+	ruleCatalogArg := nilIfEmpty(ruleCatalog)
 	ruleNameArg := nilIfEmpty(ruleName)
 	exceptionStatusArg := nilIfEmpty(exceptionStatus)
 	assignToArg := nilIfEmpty(assignTo)
@@ -42,13 +42,13 @@ func GetAssets(exceptionType, severity, priority, ruleType, ruleName, exceptionS
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("assetsRepository: GetAssets - using SNOWFLAKE database environment")
 		// snowflake.QueryContext reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.QueryContext(ctx, "CALL GET_ASSETS(?, ?, ?, ?, ?, ?, ?)", typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
+		rows, err = snowflake.QueryContext(ctx, "CALL GET_ASSETS(?, ?, ?, ?, ?, ?, ?)", typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	} else {
 		log.Logger.Info("assetsRepository: GetAssets - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.QueryContext(ctx, `SELECT * FROM public."GET_ASSETS"($1, $2, $3, $4, $5, $6, $7)`, typeArg, severityArg, priorityArg, ruleTypeArg, ruleNameArg, exceptionStatusArg, assignToArg)
+		rows, err = postgres.DB.QueryContext(ctx, `SELECT * FROM public."GET_ASSETS"($1, $2, $3, $4, $5, $6, $7)`, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, exceptionStatusArg, assignToArg)
 	}
 	elapsed := time.Since(queryStart)
 	if err != nil {

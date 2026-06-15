@@ -29,6 +29,55 @@ definitions:
       type:
         type: string
     type: object
+  securityrules_security-rules_internal_app_models.Exception:
+    properties:
+      asset_id:
+        type: string
+      assign_to:
+        type: string
+      assign_to_id:
+        type: integer
+      comment_id:
+        type: integer
+      created_by:
+        type: string
+      created_date:
+        type: string
+      exception_date:
+        type: string
+      exception_id:
+        type: integer
+      exception_status:
+        type: string
+      exception_time:
+        type: string
+      exception_type:
+        type: string
+      id_bb_global:
+        type: string
+      issue_description:
+        type: string
+      modified_by:
+        type: string
+      modified_date:
+        type: string
+      priority:
+        type: string
+      result_data:
+        type: string
+      result_type_id:
+        type: integer
+      rule_id:
+        type: integer
+      rule_name:
+        type: string
+      severity:
+        type: string
+      status_id:
+        type: integer
+      suppress_date:
+        type: string
+    type: object
   securityrules_security-rules_internal_app_models.Rule:
     properties:
       environment:
@@ -62,6 +111,10 @@ definitions:
         type: string
       exception_status_id:
         type: integer
+      exception_type_id:
+        type: integer
+      id_bb_global:
+        type: string
       issue_description:
         type: string
       modified_by:
@@ -81,6 +134,8 @@ definitions:
       rule_name:
         type: string
       run_date:
+        type: string
+      run_end:
         type: string
       run_start:
         type: string
@@ -153,6 +208,50 @@ paths:
       summary: Execute rules for an asset
       tags:
       - rules
+  /v1/api/executeSecurityRules:
+    get:
+      description: Runs every rule for the given process_type against the asset and
+        writes results into the legacy SECURITY_EXCEPTION table. Kept alongside /executeRules
+        (which writes to the slim EXCEPTION table) during the migration.
+      parameters:
+      - description: Process type
+        in: query
+        name: process_type
+        required: true
+        type: string
+      - description: Asset ID
+        in: query
+        name: asset_id
+        required: true
+        type: string
+      - description: Bloomberg global ID
+        in: query
+        name: id_bb_global
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rules executed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: process_type and asset_id are required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to execute security rules
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Execute rules for an asset (legacy SECURITY_EXCEPTION flow)
+      tags:
+      - rules
   /v1/api/getAssets:
     get:
       description: Returns the deduplicated set of assets, optionally filtered by
@@ -170,9 +269,9 @@ paths:
         in: query
         name: priority
         type: string
-      - description: RULE_TYPE.NAME filter
+      - description: RULE_CATALOG.NAME filter
         in: query
-        name: rule_type
+        name: rule_catalog
         type: string
       - description: RULE.RULE_NAME filter
         in: query
@@ -248,7 +347,7 @@ paths:
       - exception-status
   /v1/api/getExceptionTypes:
     get:
-      description: Returns EXCEPTION_TYPE.CODE values ordered by EXCEPTIONTYPERANK.
+      description: Returns EXCEPTION_TYPE.NAME values ordered by SORT_ORDER.
       produces:
       - application/json
       responses:
@@ -264,12 +363,76 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: List exception type codes
+      summary: List exception type names
       tags:
       - exception-types
+  /v1/api/getExceptions:
+    get:
+      description: Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION
+        table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.
+      parameters:
+      - description: Asset ID filter
+        in: query
+        name: asset_id
+        type: string
+      - description: EXCEPTION_TYPE.NAME filter
+        in: query
+        name: exception_type
+        type: string
+      - description: EXCEPTION_SEVERITY_TYPE.NAME filter
+        in: query
+        name: severity
+        type: string
+      - description: EXCEPTION_PRIORITY_TYPE.NAME filter
+        in: query
+        name: priority
+        type: string
+      - description: RULE_CATALOG.NAME filter (reserved — RULE_2 does not carry RULE_CATALOG_ID
+          for filtering yet)
+        in: query
+        name: rule_catalog
+        type: string
+      - description: RULE_2.RULE_NAME filter
+        in: query
+        name: rule_name
+        type: string
+      - description: Reserved (RULE_2 has no rule_group yet)
+        in: query
+        name: rule_group
+        type: string
+      - description: EXCEPTION_STATUS.NAME filter
+        in: query
+        name: exception_status
+        type: string
+      - description: DM_USER.USER filter
+        in: query
+        name: assign_to
+        type: string
+      - description: SQL ILIKE pattern against RULE_2.RULE_NAME
+        in: query
+        name: rule_name_pattern
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Exception'
+            type: array
+        "500":
+          description: failed to query exceptions
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List exceptions
+      tags:
+      - exceptions
   /v1/api/getPriorityTypes:
     get:
-      description: Returns SEVERITY_TYPE.CODE values ordered by SEVERITY_RANK.
+      description: Returns EXCEPTION_PRIORITY_TYPE.NAME values ordered by SORT_ORDER.
       produces:
       - application/json
       responses:
@@ -285,33 +448,12 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: List priority codes
+      summary: List priority names
       tags:
       - priority-types
-  /v1/api/getRuleGroups:
+  /v1/api/getRuleCatalogs:
     get:
-      description: Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              type: string
-            type: array
-        "500":
-          description: failed to query rule groups
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: List rule group names
-      tags:
-      - rule-groups
-  /v1/api/getRuleTypes:
-    get:
-      description: Returns RULE_TYPE.NAME values joined to RULE_GROUP by RULE_GROUP_ID
+      description: Returns RULE_CATALOG.NAME values joined to RULE_GROUP by RULE_GROUP_ID
         and filtered by rule group name.
       parameters:
       - description: Rule group name
@@ -342,19 +484,40 @@ paths:
             type: object
       summary: List rule type names for a rule group
       tags:
-      - rule-types
+      - rule-catalogs
+  /v1/api/getRuleGroups:
+    get:
+      description: Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query rule groups
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rule group names
+      tags:
+      - rule-groups
   /v1/api/getRules:
     get:
       description: Returns rules from GET_RULES, optionally filtered by rule type
-        (RULE_TYPE.NAME).
+        (RULE_CATALOG.NAME).
       parameters:
       - description: Process type filter
         in: query
         name: process_type
         type: string
-      - description: RULE_TYPE.NAME filter
+      - description: RULE_CATALOG.NAME filter
         in: query
-        name: rule_type
+        name: rule_catalog
         type: string
       produces:
       - application/json
@@ -396,9 +559,9 @@ paths:
         in: query
         name: priority
         type: string
-      - description: RULE_TYPE.NAME filter
+      - description: RULE_CATALOG.NAME filter
         in: query
-        name: rule_type
+        name: rule_catalog
         type: string
       - description: RULE.RULE_NAME filter
         in: query
@@ -472,4 +635,78 @@ paths:
       summary: Service welcome message
       tags:
       - info
+  /v1/api/updateAssignTo:
+    get:
+      description: Resolves assign_to against DM_USER and updates every
+      parameters:
+      - description: Asset ID
+        in: query
+        name: asset_id
+        required: true
+        type: string
+      - description: DM_USER.USER name (empty to unassign)
+        in: query
+        name: assign_to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rows updated
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: asset_id query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to update assign to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update EXCEPTION.ASSIGN_TO_ID for an asset
+      tags:
+      - exceptions
+  /v1/api/updateSecurityAssignTo:
+    get:
+      description: Resolves assign_to against DM_USER and updates every
+      parameters:
+      - description: Asset ID
+        in: query
+        name: asset_id
+        required: true
+        type: string
+      - description: DM_USER.USER name (empty to unassign)
+        in: query
+        name: assign_to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rows updated
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: asset_id query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to update security assign to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update SECURITY_EXCEPTION.ASSIGN_TO_ID for an asset (legacy)
+      tags:
+      - security-exceptions
 swagger: "2.0"

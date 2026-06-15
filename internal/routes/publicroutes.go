@@ -11,6 +11,7 @@ func PublicRoutes(app *fiber.App) {
 
 	route.Get("/info", handlers.GetInformation)
 	route.Get("/getSecurityExceptions", handlers.GetSecurityExceptions)
+	route.Get("/getExceptions", handlers.GetExceptions)
 	route.Get("/getAssets", handlers.GetAssets)
 	route.Get("/getExceptionTypes", handlers.GetExceptionTypes)
 	route.Get("/getExceptionStatus", handlers.GetExceptionStatus)
@@ -19,8 +20,10 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getRules", handlers.GetRules)
 	route.Get("/getRuleGroups", handlers.GetRuleGroups)
 	route.Get("/getDMUsers", handlers.GetDMUsers)
-	route.Get("/getRuleTypes", handlers.GetRuleTypes)
+	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
 	route.Get("/executeRules", handlers.ExecuteRules)
+	route.Get("/executeSecurityRules", handlers.ExecuteSecurityRules)
 	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
+	route.Get("/updateSecurityAssignTo", handlers.UpdateSecurityAssignTo)
 	route.Get("/events", handlers.StreamEvents)
 }
