@@ -2,8 +2,9 @@
 -- snowflake_dq.sql
 --
 -- Combined Snowflake setup for the security-rules / DQM application.
--- This is the canonical "fresh environment" script — running it brings
--- DATA_QUALITY to the schema + procedures the Go service expects.
+-- Database: TCW_CORE_DEV, Schema: DATA_QUALITY.
+-- This is the canonical "fresh environment" script — running it brings the
+-- DATA_QUALITY schema to the objects + seed data the Go service expects.
 --
 -- RERUNNABILITY:
 --   * Lookup tables (EXCEPTION_STATUS, EXCEPTION_TYPE, EXCEPTION_PRIORITY_TYPE,
@@ -25,13 +26,13 @@
 --     1. Lookup tables   2. Data tables   3. Views   4. Procedures
 --
 -- USAGE:
---   USE DATABASE DATA_QUALITY;
---   USE SCHEMA PUBLIC;            -- adjust if your schema differs
---   -- run this whole file via Snowsight worksheet or:
---   --   snowsql -f SNOWFLAKE/snowflake_dq.sql
+--   Run this whole file via Snowsight worksheet or:
+--     snowsql -f SNOWFLAKE/snowflake_dq.sql
+--   The database/schema context is set by the two USE statements below.
 -- =============================================================================
 
-USE DATABASE DATA_QUALITY;
+USE DATABASE TCW_CORE_DEV;
+USE SCHEMA DATA_QUALITY;
 
 
 -- =============================================================================
