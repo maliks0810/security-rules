@@ -41,10 +41,6 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 	return repositories.UpdateExceptionStatus(assetID, ruleID, complete)
 }
 
-func UpdateSecurityAssignTo(assetID, assignTo string) (int, error) {
-	return repositories.UpdateSecurityAssignTo(assetID, assignTo)
-}
-
 func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return repositories.UpdateAssignTo(assetID, assignTo)
 }

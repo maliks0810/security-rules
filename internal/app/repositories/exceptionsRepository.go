@@ -244,39 +244,9 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	return exceptions, nil
 }
 
-// UpdateSecurityAssignTo sets ASSIGN_TO_ID for every SECURITY_EXCEPTION row
-// of the given asset, resolving the user name against DM_USER. An empty
-// assignTo clears the assignment (sets ASSIGN_TO_ID to NULL).
-func UpdateSecurityAssignTo(assetID, assignTo string) (int, error) {
-	var n int
-	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: UpdateSecurityAssignTo - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL UPDATE_SECURITY_ASSIGN_TO(?, ?)", assetID, assignTo)
-		if err != nil {
-			return 0, err
-		}
-		defer rows.Close()
-		if rows.Next() {
-			_ = rows.Scan(&n)
-		}
-		return n, nil
-	}
-	log.Logger.Info("exceptionsRepository: UpdateSecurityAssignTo - using POSTGRES database environment")
-	if postgres.DB == nil {
-		return 0, sql.ErrConnDone
-	}
-	err := postgres.DB.QueryRow(
-		`SELECT public."UPDATE_SECURITY_ASSIGN_TO"($1, $2)`,
-		assetID, assignTo,
-	).Scan(&n)
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
-}
-
 // UpdateAssignTo sets ASSIGN_TO_ID for every EXCEPTION row of the given
-// asset. Same semantic as UpdateSecurityAssignTo but targets the slim
+// asset, resolving the user name against DM_USER. An empty assignTo
+// clears the assignment (sets ASSIGN_TO_ID to NULL). Targets the slim
 // EXCEPTION table via the new UPDATE_ASSIGN_TO SP.
 func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	var n int

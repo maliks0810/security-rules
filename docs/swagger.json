@@ -624,62 +624,6 @@
                     }
                 }
             }
-        },
-        "/v1/api/updateSecurityAssignTo": {
-            "get": {
-                "description": "Resolves assign_to against DM_USER and updates every",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "security-exceptions"
-                ],
-                "summary": "Update SECURITY_EXCEPTION.ASSIGN_TO_ID for an asset (legacy)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Asset ID",
-                        "name": "asset_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "DM_USER.USER name (empty to unassign)",
-                        "name": "assign_to",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "rows updated",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "asset_id query parameter is required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "failed to update security assign to",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {

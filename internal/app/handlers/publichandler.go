@@ -305,34 +305,6 @@ func UpdateAssignTo(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
 }
 
-// UpdateSecurityAssignTo godoc
-// @Summary      Update SECURITY_EXCEPTION.ASSIGN_TO_ID for an asset (legacy)
-// @Description  Resolves assign_to against DM_USER and updates every
-//               SECURITY_EXCEPTION row for the given asset. An empty
-//               assign_to clears the assignment. Kept alongside
-//               /updateAssignTo (which writes to the slim EXCEPTION table)
-//               during the migration.
-// @Tags         security-exceptions
-// @Produce      json
-// @Param        asset_id   query     string  true   "Asset ID"
-// @Param        assign_to  query     string  false  "DM_USER.USER name (empty to unassign)"
-// @Success      200        {object}  map[string]int  "rows updated"
-// @Failure      400        {object}  map[string]string  "asset_id query parameter is required"
-// @Failure      500        {object}  map[string]string  "failed to update security assign to"
-// @Router       /v1/api/updateSecurityAssignTo [get]
-func UpdateSecurityAssignTo(ctx *fiber.Ctx) error {
-	assetID := ctx.Query("asset_id")
-	if assetID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id query parameter is required"})
-	}
-	assignTo := ctx.Query("assign_to")
-
-	n, err := services.UpdateSecurityAssignTo(assetID, assignTo)
-	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update security assign to"})
-	}
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
-}
 
 // InsertSecurityExceptions is a private endpoint and intentionally omitted from Swagger.
 // StreamEvents godoc
