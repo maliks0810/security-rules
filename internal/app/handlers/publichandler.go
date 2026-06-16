@@ -25,44 +25,6 @@ func GetInformation(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).SendString("Welcome to Go microservices using Fiber")
 }
 
-// GetSecurityExceptions godoc
-// @Summary      List security exceptions
-// @Description  Returns SECURITY_EXCEPTION rows, optionally filtered by asset ID, exception type, severity (CATEGORY_TYPE.CODE), priority (SEVERITY_TYPE.CODE), rule type, rule name, and rule group.
-// @Tags         security-exceptions
-// @Produce      json
-// @Param        asset_id        query     string  false  "Asset ID filter"
-// @Param        exception_type  query     string  false  "EXCEPTION_TYPE.CODE filter"
-// @Param        severity        query     string  false  "CATEGORY_TYPE.CODE filter"
-// @Param        priority        query     string  false  "SEVERITY_TYPE.CODE filter"
-// @Param        rule_catalog       query     string  false  "RULE_CATALOG.NAME filter"
-// @Param        rule_name       query     string  false  "RULE.RULE_NAME filter"
-// @Param        rule_group      query     string  false  "RULE_GROUP.NAME filter"
-// @Param        exception_status query    string  false  "EXCEPTION_STATUS.CODE filter"
-// @Param        assign_to       query     string  false  "DM_USER.USER filter"
-// @Param        rule_name_pattern query   string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
-// @Success      200             {array}   models.SecurityException
-// @Failure      500             {object}  map[string]string  "failed to query security exceptions"
-// @Router       /v1/api/getSecurityExceptions [get]
-func GetSecurityExceptions(ctx *fiber.Ctx) error {
-	assetID := ctx.Query("asset_id")
-	exceptionType := ctx.Query("exception_type")
-	severity := ctx.Query("severity")
-	priority := ctx.Query("priority")
-	ruleCatalog := ctx.Query("rule_catalog")
-	ruleName := ctx.Query("rule_name")
-	ruleGroup := ctx.Query("rule_group")
-	exceptionStatus := ctx.Query("exception_status")
-	assignTo := ctx.Query("assign_to")
-	ruleNamePattern := ctx.Query("rule_name_pattern")
-
-	exceptions, err := services.GetSecurityExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
-	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query security exceptions"})
-	}
-
-	return ctx.Status(fiber.StatusOK).JSON(exceptions)
-}
-
 // GetExceptions godoc
 // @Summary      List exceptions
 // @Description  Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.
@@ -315,39 +277,6 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 
-// ExecuteSecurityRules godoc
-// @Summary      Execute rules for an asset (legacy SECURITY_EXCEPTION flow)
-// @Description  Runs every rule for the given process_type against the asset and writes results into the legacy SECURITY_EXCEPTION table. Kept alongside /executeRules (which writes to the slim EXCEPTION table) during the migration.
-// @Tags         rules
-// @Produce      json
-// @Param        process_type  query     string  true   "Process type"
-// @Param        asset_id      query     string  true   "Asset ID"
-// @Param        id_bb_global  query     string  false  "Bloomberg global ID"
-// @Success      200           {object}  map[string]string  "rules executed"
-// @Failure      400           {object}  map[string]string  "process_type and asset_id are required"
-// @Failure      500           {object}  map[string]string  "failed to execute security rules"
-// @Router       /v1/api/executeSecurityRules [get]
-func ExecuteSecurityRules(ctx *fiber.Ctx) error {
-	processType := ctx.Query("process_type")
-	assetID := ctx.Query("asset_id")
-	if processType == "" || assetID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "process_type and asset_id are required"})
-	}
-
-	idBbGlobal := ctx.Query("id_bb_global")
-
-	var err error
-	if idBbGlobal == "" {
-		err = services.ExecuteSecurityRules(processType, assetID)
-	} else {
-		err = services.ExecuteSecurityRules(processType, assetID, idBbGlobal)
-	}
-	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute security rules"})
-	}
-
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
-}
 
 // UpdateAssignTo godoc
 // @Summary      Update EXCEPTION.ASSIGN_TO_ID for an asset

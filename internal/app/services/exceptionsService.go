@@ -21,10 +21,6 @@ func GetPriorityTypes() ([]string, error) {
 	return repositories.GetPriorityTypes()
 }
 
-func GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.SecurityException, error) {
-	return repositories.GetSecurityExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
-}
-
 func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.Exception, error) {
 	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
 }
@@ -37,16 +33,8 @@ func InsertExceptions(exceptions []models.Exception) error {
 	return repositories.InsertExceptions(exceptions)
 }
 
-func UpdateSecurityException(e models.SecurityException) error {
-	return repositories.UpdateSecurityException(e)
-}
-
 func UpdateExceptions(exceptions []models.Exception) error {
 	return repositories.UpdateExceptions(exceptions)
-}
-
-func UpdateSecurityExceptionStatus(assetID string, ruleID int) (int, error) {
-	return repositories.UpdateSecurityExceptionStatus(assetID, ruleID)
 }
 
 func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, error) {
