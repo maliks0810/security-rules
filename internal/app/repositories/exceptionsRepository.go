@@ -309,62 +309,6 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 	return n, nil
 }
 
-func InsertSecurityExceptions(exceptions []models.SecurityException) error {
-	nilIfEmpty := func(s string) any {
-		if s == "" {
-			return nil
-		}
-		return s
-	}
-
-	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: InsertSecurityExceptions - using SNOWFLAKE database environment")
-		for _, e := range exceptions {
-			rows, err := snowflake.Query(
-				"CALL INSERT_SECURITY_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-				e.RuleID,
-				nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nilIfEmpty(e.RunEnd),
-				e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
-				nil, e.AssignToDate, e.ResolveDate,
-				nil, e.IssueDescription, nil,
-				nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
-				e.ExceptionSourceID, e.ExceptionTypeID, nil, nil,
-				nil, nil, e.AssignedBy, nil, e.AssetID,
-				nilIfEmpty(e.IdBbGlobal),
-			)
-			if err != nil {
-				return err
-			}
-			rows.Close()
-		}
-		return nil
-	}
-
-	log.Logger.Info("exceptionsRepository: InsertSecurityExceptions - using POSTGRES database environment")
-	if postgres.DB == nil {
-		return sql.ErrConnDone
-	}
-
-	for _, e := range exceptions {
-		_, err := postgres.DB.Exec(
-			`SELECT public."INSERT_SECURITY_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
-			e.RuleID,
-			nilIfEmpty(e.RunDate), nilIfEmpty(e.RunStart), nilIfEmpty(e.RunEnd),
-			e.ResultTypeID, e.ExceptionStatusID, e.SeverityTypeID, e.ProcessTypeID, e.CategoryTypeID,
-			nil, e.AssignToDate, e.ResolveDate,
-			nil, e.IssueDescription, nil,
-			nilIfEmpty(e.CreatedDate), e.CreatedBy, e.ModifiedBy, nilIfEmpty(e.ModifiedDate),
-			e.ExceptionSourceID, e.ExceptionTypeID, nil, nil,
-			nil, nil, e.AssignedBy, nil, e.AssetID,
-			nilIfEmpty(e.IdBbGlobal),
-		)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // InsertExceptions writes each row to the slim EXCEPTION table via the
 // 11-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
 // blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime

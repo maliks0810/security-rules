@@ -62,6 +62,5 @@ func PrivateRoutes(app *fiber.App, h Handlers) {
 	route := app.Group(route_prefix + "v1/api")
 
 	route.Get("/whoami", oktaAuthentication(), h.GetIdentity)
-	route.Post("/insertSecurityExceptions", oktaAuthentication(), handlers.InsertSecurityExceptions)
 	route.Post("/insertExceptions", oktaAuthentication(), handlers.InsertExceptions)
 }

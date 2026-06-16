@@ -25,10 +25,6 @@ func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ru
 	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
 }
 
-func InsertSecurityExceptions(exceptions []models.SecurityException) error {
-	return repositories.InsertSecurityExceptions(exceptions)
-}
-
 func InsertExceptions(exceptions []models.Exception) error {
 	return repositories.InsertExceptions(exceptions)
 }

@@ -306,7 +306,6 @@ func UpdateAssignTo(ctx *fiber.Ctx) error {
 }
 
 
-// InsertSecurityExceptions is a private endpoint and intentionally omitted from Swagger.
 // StreamEvents godoc
 // @Summary      Server-Sent Events stream of domain changes
 // @Description  Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.
@@ -360,19 +359,6 @@ func StreamEvents(ctx *fiber.Ctx) error {
 		}
 	}))
 	return nil
-}
-
-func InsertSecurityExceptions(ctx *fiber.Ctx) error {
-	var exceptions []models.SecurityException
-	if err := ctx.BodyParser(&exceptions); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
-	}
-
-	if err := services.InsertSecurityExceptions(exceptions); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to insert security exceptions"})
-	}
-
-	return ctx.SendStatus(fiber.StatusCreated)
 }
 
 // InsertExceptions is a private endpoint and intentionally omitted from Swagger.
