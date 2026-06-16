@@ -16,16 +16,19 @@ LANGUAGE SQL
 AS
 $$
 BEGIN
+    -- INSERT ... SELECT (not VALUES) so the COALESCE/NULLIF expression on
+    -- STATUS_ID is evaluated by the query planner rather than the VALUES
+    -- list, which rejects function calls against bound parameters in SF.
     INSERT INTO "EXCEPTION" (
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         "STATUS_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION",
         "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY"
-    ) VALUES (
+    )
+    SELECT
         :RULE_ID, :ASSET_ID, :EXCEPTION_DATE, :ID_BB_GLOBAL,
         COALESCE(NULLIF(:STATUS_ID, 0), 1),  -- default to Pending
         :EXCEPTION_TIME, :ISSUE_DESCRIPTION,
-        :ASSIGN_TO_ID, :RESULT_TYPE_ID, :CREATED_DATE, :CREATED_BY
-    );
+        :ASSIGN_TO_ID, :RESULT_TYPE_ID, :CREATED_DATE, :CREATED_BY;
     RETURN 'OK';
 END;
 $$;
