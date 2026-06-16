@@ -2,8 +2,7 @@ DROP FUNCTION IF EXISTS public."UPDATE_ASSIGN_TO"(character varying, text);
 
 -- Updates ASSIGN_TO_ID on every EXCEPTION row for the given asset, resolving
 -- the user name against DM_USER. Passing an empty/NULL p_assign_to clears
--- the assignment (sets ASSIGN_TO_ID to NULL). Mirrors UPDATE_SECURITY_ASSIGN_TO
--- but targets the slim EXCEPTION table.
+-- the assignment (sets ASSIGN_TO_ID to NULL).
 CREATE OR REPLACE FUNCTION public."UPDATE_ASSIGN_TO"(
     p_asset_id  character varying,
     p_assign_to text
