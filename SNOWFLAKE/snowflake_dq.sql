@@ -7,15 +7,16 @@
 -- DATA_QUALITY schema to the objects + seed data the Go service expects.
 --
 -- RERUNNABILITY:
---   * Lookup tables (EXCEPTION_STATUS, EXCEPTION_TYPE, EXCEPTION_PRIORITY_TYPE,
---     EXCEPTION_SEVERITY_TYPE) use CREATE OR REPLACE TABLE + literal seeds.
---     Rerunning resets their rows to the canonical seed values.
---   * Operational data tables (DM_USER, RULE_GROUP, RULE_CATALOG, RULE,
---     EXCEPTION, EXCEPTION_HIST) use CREATE TABLE IF NOT EXISTS. Data is
---     preserved across reruns. Seed rows for DM_USER / RULE_GROUP /
---     RULE_CATALOG / RULE are inserted only when the table is empty
---     (idempotent via NOT EXISTS subqueries).
---   * Views, procedures and functions use CREATE OR REPLACE — always safe.
+--   * Every object uses CREATE OR REPLACE — tables, views, procedures.
+--   * Lookup AND operational tables (DM_USER, RULE_GROUP, RULE_CATALOG, RULE,
+--     EXCEPTION, EXCEPTION_HIST, EXCEPTION_STATUS, EXCEPTION_TYPE,
+--     EXCEPTION_PRIORITY_TYPE, EXCEPTION_SEVERITY_TYPE) are dropped and
+--     recreated on each run, then re-seeded from the literal VALUES in
+--     this script. Running this file destroys existing row data in those
+--     tables — that is the intended semantic for repeatable environment
+--     setup.
+--   * If you need to preserve production data on a given table, comment
+--     that table's CREATE OR REPLACE block before running the script.
 --
 -- MAINTAINING THIS FILE:
 --   When you add, update, or drop a Snowflake object referenced by
@@ -110,27 +111,25 @@ INSERT INTO EXCEPTION_SEVERITY_TYPE (EXCEPTION_SEVERITY_TYPE_ID, NAME, SORT_ORDE
 
 
 -- =============================================================================
--- 2. OPERATIONAL DATA TABLES (IF NOT EXISTS — preserve rows on rerun)
+-- 2. OPERATIONAL DATA TABLES (CREATE OR REPLACE — resets data on rerun)
 -- =============================================================================
 
 -- DM_USER ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS DM_USER (
+CREATE OR REPLACE TABLE DM_USER (
     ID   NUMBER AUTOINCREMENT START 1 INCREMENT 1 PRIMARY KEY,
     "USER" VARCHAR(100) NOT NULL
 );
 
-INSERT INTO DM_USER ("USER")
-SELECT column1 FROM VALUES
+INSERT INTO DM_USER ("USER") VALUES
     ('Unassigned'),
     ('Paul Cohen'),
     ('Jake Rigney'),
     ('Anush Safaryan'),
     ('Jimmy Fu'),
-    ('Natasha Cabrera') v
-WHERE NOT EXISTS (SELECT 1 FROM DM_USER WHERE "USER" = v.column1);
+    ('Natasha Cabrera');
 
 -- RULE_GROUP ------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS RULE_GROUP (
+CREATE OR REPLACE TABLE RULE_GROUP (
     RULE_GROUP_ID NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
     NAME          VARCHAR(100),
     DESCRIPTION   VARCHAR(512),
@@ -138,12 +137,11 @@ CREATE TABLE IF NOT EXISTS RULE_GROUP (
     CREATED_BY    VARCHAR(100)
 );
 
-INSERT INTO RULE_GROUP (NAME, DESCRIPTION, CREATED_DATE, CREATED_BY)
-SELECT 'Security Master', 'Security Master', CURRENT_TIMESTAMP(), CURRENT_USER()
-WHERE NOT EXISTS (SELECT 1 FROM RULE_GROUP WHERE NAME = 'Security Master');
+INSERT INTO RULE_GROUP (NAME, DESCRIPTION, CREATED_DATE, CREATED_BY) VALUES
+    ('Security Master', 'Security Master', CURRENT_TIMESTAMP(), CURRENT_USER());
 
 -- RULE_CATALOG ----------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS RULE_CATALOG (
+CREATE OR REPLACE TABLE RULE_CATALOG (
     RULE_CATALOG_ID         NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
     NAME                    VARCHAR(100),
     DESCRIPTION             VARCHAR(512),
@@ -164,11 +162,10 @@ SELECT
     'SQL',
     'DE_SNOWFLAKE',
     CURRENT_TIMESTAMP(),
-    CURRENT_USER()
-WHERE NOT EXISTS (SELECT 1 FROM RULE_CATALOG WHERE NAME = 'Bloomberg Compare Differences');
+    CURRENT_USER();
 
 -- RULE ------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS RULE (
+CREATE OR REPLACE TABLE RULE (
     RULE_ID                    NUMBER IDENTITY(1,1) PRIMARY KEY,
     RULE_CATALOG_ID            INT NULL,
     RULE_NAME                  VARCHAR(100) NULL,
@@ -189,8 +186,7 @@ SELECT
     'RULE_DM_BBG_MATURITY_DATE',
     'Compares Maturity Date between Bloomberg and Aladdin',
     1, 1, 1, 1, 2, 1,
-    CURRENT_USER(), CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9)
-WHERE NOT EXISTS (SELECT 1 FROM RULE WHERE RULE_NAME = 'RULE_DM_BBG_MATURITY_DATE');
+    CURRENT_USER(), CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9);
 
 INSERT INTO RULE (RULE_CATALOG_ID, RULE_NAME, RULE_DESCRIPTION, IS_ACTIVE, EXCEPTION_TYPE_ID, EXCEPTION_PROCESS_TYPE_ID, EXCEPTION_SEVERITY_TYPE_ID, EXCEPTION_PRIORITY_TYPE_ID, EXCEPTION_SOURCE, CREATED_BY, CREATED_DATE)
 SELECT
@@ -198,11 +194,10 @@ SELECT
     'RULE_DM_BBG_REGISTRATION',
     'Compares Registration between Bloomberg and Aladdin',
     1, 1, 1, 1, 2, 1,
-    CURRENT_USER(), CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9)
-WHERE NOT EXISTS (SELECT 1 FROM RULE WHERE RULE_NAME = 'RULE_DM_BBG_REGISTRATION');
+    CURRENT_USER(), CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9);
 
 -- EXCEPTION -------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS EXCEPTION (
+CREATE OR REPLACE TABLE EXCEPTION (
     EXCEPTION_ID      NUMBER IDENTITY(1000000,1) PRIMARY KEY,
     RULE_ID           INT,
     ASSET_ID          VARCHAR(100),
@@ -223,7 +218,7 @@ CREATE TABLE IF NOT EXISTS EXCEPTION (
 );
 
 -- EXCEPTION_HIST --------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS EXCEPTION_HIST (
+CREATE OR REPLACE TABLE EXCEPTION_HIST (
     EXCEPTION_ID      INT,
     RULE_ID           INT,
     ASSET_ID          VARCHAR(100),
