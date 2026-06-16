@@ -15,5 +15,7 @@ CREATE TABLE public."EXCEPTION_HIST" (
     "ASSIGN_TO_ID"        integer,
     "RESULT_TYPE_ID"      integer,
     "CREATED_DATE"        timestamp,
-    "CREATED_BY"          varchar(100)
+    "CREATED_BY"          varchar(100),
+    "MODIFIED_DATE"       timestamp,
+    "MODIFIED_BY"         varchar(100)
 );
