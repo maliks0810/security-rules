@@ -27,19 +27,19 @@ func GetInformation(ctx *fiber.Ctx) error {
 
 // GetExceptions godoc
 // @Summary      List exceptions
-// @Description  Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.
+// @Description  Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE and the EXCEPTION_*_TYPE lookups.
 // @Tags         exceptions
 // @Produce      json
 // @Param        asset_id          query     string  false  "Asset ID filter"
 // @Param        exception_type    query     string  false  "EXCEPTION_TYPE.NAME filter"
 // @Param        severity          query     string  false  "EXCEPTION_SEVERITY_TYPE.NAME filter"
 // @Param        priority          query     string  false  "EXCEPTION_PRIORITY_TYPE.NAME filter"
-// @Param        rule_catalog      query     string  false  "RULE_CATALOG.NAME filter (reserved — RULE_2 does not carry RULE_CATALOG_ID for filtering yet)"
-// @Param        rule_name         query     string  false  "RULE_2.RULE_NAME filter"
-// @Param        rule_group        query     string  false  "Reserved (RULE_2 has no rule_group yet)"
+// @Param        rule_catalog      query     string  false  "RULE_CATALOG.NAME filter (reserved — RULE does not carry RULE_CATALOG_ID for filtering yet)"
+// @Param        rule_name         query     string  false  "RULE.RULE_NAME filter"
+// @Param        rule_group        query     string  false  "Reserved (RULE has no rule_group yet)"
 // @Param        exception_status  query     string  false  "EXCEPTION_STATUS.NAME filter"
 // @Param        assign_to         query     string  false  "DM_USER.USER filter"
-// @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE_2.RULE_NAME"
+// @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
 // @Success      200             {array}   models.Exception
 // @Failure      500             {object}  map[string]string  "failed to query exceptions"
 // @Router       /v1/api/getExceptions [get]

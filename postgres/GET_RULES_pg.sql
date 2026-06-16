@@ -19,7 +19,7 @@ AS $$
     SELECT r."RULE_ID",
            r."RULE_NAME",
            rc."RULE_CATALOG_SOURCE"::character varying AS "RULE_COMMAND",
-           r."ENVIRONMENT"
+           NULL::character varying AS "ENVIRONMENT"
     FROM public."RULE" r
     JOIN public."RULE_CATALOG" rc
       ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"

@@ -43,16 +43,16 @@ BEGIN
                 es."NAME"        AS status_name,
                 du."USER"        AS assign_to_user
             FROM "EXCEPTION" e
-            JOIN "RULE_2" r2
-              ON r2."RULE_ID" = e."RULE_ID"
+            JOIN "RULE" r
+              ON r."RULE_ID" = e."RULE_ID"
             LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept
-              ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r2."EXCEPTION_PRIORITY_TYPE_ID"
+              ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
             LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est
-              ON est."EXCEPTION_SEVERITY_TYPE_ID" = r2."EXCEPTION_SEVERITY_TYPE_ID"
+              ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
             LEFT JOIN "EXCEPTION_TYPE" et
-              ON et."EXCEPTION_TYPE_ID" = r2."EXCEPTION_TYPE_ID"
+              ON et."EXCEPTION_TYPE_ID" = r."EXCEPTION_TYPE_ID"
             LEFT JOIN "RULE_CATALOG" rc
-              ON rc."RULE_CATALOG_ID" = r2."RULE_CATALOG_ID"
+              ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
             LEFT JOIN "EXCEPTION_STATUS" es
               ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
             LEFT JOIN "DM_USER" du
@@ -61,7 +61,7 @@ BEGIN
               AND (:P_SEVERITY         IS NULL OR est."NAME" = :P_SEVERITY)
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)
               AND (:P_RULE_CATALOG     IS NULL OR :P_RULE_CATALOG     = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
-              AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r2."RULE_NAME" = :P_RULE_NAME)
+              AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
               AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."NAME"      = :P_EXCEPTION_STATUS)
               AND (:P_ASSIGN_TO        IS NULL OR :P_ASSIGN_TO        = 'All' OR du."USER"      = :P_ASSIGN_TO)
         )

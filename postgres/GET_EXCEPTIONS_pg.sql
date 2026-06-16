@@ -1,6 +1,6 @@
--- GET_EXCEPTIONS reads the slim EXCEPTION table joined with RULE_2 and
+-- GET_EXCEPTIONS reads the slim EXCEPTION table joined with RULE and
 -- the various lookup tables. Returns 23 columns matching the Exception Go
--- model 1:1 (no dummy NULL columns to fit a legacy struct). RULE_2 has no
+-- model 1:1 (no dummy NULL columns to fit a legacy struct). RULE has no
 -- RULE_TYPE_ID / RULE_GROUP_ID yet, so p_rule_catalog / p_rule_group filters
 -- are accept-all (pending future schema work).
 
@@ -47,7 +47,7 @@ LANGUAGE sql
 AS $$
     SELECT e."EXCEPTION_ID",
            e."RULE_ID",
-           r2."RULE_NAME"::text,
+           r."RULE_NAME"::text,
            e."ASSET_ID",
            e."EXCEPTION_DATE",
            e."EXCEPTION_TIME",
@@ -69,11 +69,11 @@ AS $$
            e."MODIFIED_DATE",
            e."MODIFIED_BY"::text
     FROM public."EXCEPTION" e
-    LEFT JOIN public."RULE_2"                  r2  ON r2."RULE_ID"                     = e."RULE_ID"
-    LEFT JOIN public."EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"           = r2."EXCEPTION_TYPE_ID"
-    LEFT JOIN public."EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r2."EXCEPTION_PRIORITY_TYPE_ID"
-    LEFT JOIN public."EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r2."EXCEPTION_SEVERITY_TYPE_ID"
-    LEFT JOIN public."RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r2."RULE_CATALOG_ID"
+    LEFT JOIN public."RULE"                  r ON r."RULE_ID"                     = e."RULE_ID"
+    LEFT JOIN public."EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"           = r."EXCEPTION_TYPE_ID"
+    LEFT JOIN public."EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+    LEFT JOIN public."EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+    LEFT JOIN public."RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
     LEFT JOIN public."RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
     LEFT JOIN public."EXCEPTION_STATUS"        es  ON es."EXCEPTION_STATUS_ID"         = e."STATUS_ID"
     LEFT JOIN public."DM_USER"                 du  ON du."ID"                          = e."ASSIGN_TO_ID"
@@ -82,9 +82,9 @@ AS $$
       AND (p_severity          IS NULL OR est."NAME"    = p_severity)
       AND (p_priority          IS NULL OR ept."NAME"    = p_priority)
       AND (p_rule_catalog      IS NULL OR p_rule_catalog = 'All' OR rc."NAME" = p_rule_catalog)
-      AND (p_rule_name         IS NULL OR p_rule_name  = 'All' OR r2."RULE_NAME" = p_rule_name)
+      AND (p_rule_name         IS NULL OR p_rule_name  = 'All' OR r."RULE_NAME" = p_rule_name)
       AND (p_rule_group        IS NULL OR p_rule_group = 'All' OR rg."NAME" = p_rule_group)
       AND (p_exception_status  IS NULL OR p_exception_status = 'All' OR es."NAME" = p_exception_status)
       AND (p_assign_to         IS NULL OR p_assign_to  = 'All' OR du."USER" = p_assign_to)
-      AND (p_rule_name_pattern IS NULL OR r2."RULE_NAME" ILIKE p_rule_name_pattern);
+      AND (p_rule_name_pattern IS NULL OR r."RULE_NAME" ILIKE p_rule_name_pattern);
 $$;

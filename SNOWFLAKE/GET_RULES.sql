@@ -18,7 +18,7 @@ BEGIN
         SELECT r."RULE_ID",
                r."RULE_NAME",
                rc."RULE_CATALOG_SOURCE" AS "RULE_COMMAND",
-               r."ENVIRONMENT"
+               NULL::VARCHAR AS "ENVIRONMENT"
         FROM "RULE" r
         JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
         WHERE (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)

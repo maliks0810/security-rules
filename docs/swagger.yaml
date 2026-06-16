@@ -270,7 +270,7 @@ paths:
   /v1/api/getExceptions:
     get:
       description: Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION
-        table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.
+        table joined with RULE and the EXCEPTION_*_TYPE lookups.
       parameters:
       - description: Asset ID filter
         in: query
@@ -288,16 +288,16 @@ paths:
         in: query
         name: priority
         type: string
-      - description: RULE_CATALOG.NAME filter (reserved — RULE_2 does not carry RULE_CATALOG_ID
+      - description: RULE_CATALOG.NAME filter (reserved — RULE does not carry RULE_CATALOG_ID
           for filtering yet)
         in: query
         name: rule_catalog
         type: string
-      - description: RULE_2.RULE_NAME filter
+      - description: RULE.RULE_NAME filter
         in: query
         name: rule_name
         type: string
-      - description: Reserved (RULE_2 has no rule_group yet)
+      - description: Reserved (RULE has no rule_group yet)
         in: query
         name: rule_group
         type: string
@@ -309,7 +309,7 @@ paths:
         in: query
         name: assign_to
         type: string
-      - description: SQL ILIKE pattern against RULE_2.RULE_NAME
+      - description: SQL ILIKE pattern against RULE.RULE_NAME
         in: query
         name: rule_name_pattern
         type: string

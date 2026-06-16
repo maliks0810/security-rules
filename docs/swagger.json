@@ -265,7 +265,7 @@
         },
         "/v1/api/getExceptions": {
             "get": {
-                "description": "Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE_2 and the EXCEPTION_*_TYPE lookups.",
+                "description": "Returns rows from GET_EXCEPTIONS, which reads the slim EXCEPTION table joined with RULE and the EXCEPTION_*_TYPE lookups.",
                 "produces": [
                     "application/json"
                 ],
@@ -300,19 +300,19 @@
                     },
                     {
                         "type": "string",
-                        "description": "RULE_CATALOG.NAME filter (reserved — RULE_2 does not carry RULE_CATALOG_ID for filtering yet)",
+                        "description": "RULE_CATALOG.NAME filter (reserved — RULE does not carry RULE_CATALOG_ID for filtering yet)",
                         "name": "rule_catalog",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "RULE_2.RULE_NAME filter",
+                        "description": "RULE.RULE_NAME filter",
                         "name": "rule_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Reserved (RULE_2 has no rule_group yet)",
+                        "description": "Reserved (RULE has no rule_group yet)",
                         "name": "rule_group",
                         "in": "query"
                     },
@@ -330,7 +330,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "SQL ILIKE pattern against RULE_2.RULE_NAME",
+                        "description": "SQL ILIKE pattern against RULE.RULE_NAME",
                         "name": "rule_name_pattern",
                         "in": "query"
                     }

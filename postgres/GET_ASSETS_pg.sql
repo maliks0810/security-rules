@@ -1,5 +1,5 @@
 -- GET_ASSETS sources from the slim EXCEPTION table. Priority / severity /
--- type / rule-catalog all come from RULE_2 (the rule's own attributes),
+-- type / rule-catalog all come from RULE (the rule's own attributes),
 -- joined to the corresponding EXCEPTION_*_TYPE lookups for their NAMEs.
 -- FIGI is the most-recent EXCEPTION.ID_BB_GLOBAL per asset, and ASSIGN_TO
 -- is the most-recent DM_USER.USER. The aggregate result is one row per
@@ -47,16 +47,16 @@ AS $$
             es."NAME"        AS status_name,
             du."USER"        AS assign_to_user
         FROM public."EXCEPTION" e
-        JOIN public."RULE_2" r2
-          ON r2."RULE_ID" = e."RULE_ID"
+        JOIN public."RULE" r
+          ON r."RULE_ID" = e."RULE_ID"
         LEFT JOIN public."EXCEPTION_PRIORITY_TYPE" ept
-          ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r2."EXCEPTION_PRIORITY_TYPE_ID"
+          ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
         LEFT JOIN public."EXCEPTION_SEVERITY_TYPE" est
-          ON est."EXCEPTION_SEVERITY_TYPE_ID" = r2."EXCEPTION_SEVERITY_TYPE_ID"
+          ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
         LEFT JOIN public."EXCEPTION_TYPE" et
-          ON et."EXCEPTION_TYPE_ID" = r2."EXCEPTION_TYPE_ID"
+          ON et."EXCEPTION_TYPE_ID" = r."EXCEPTION_TYPE_ID"
         LEFT JOIN public."RULE_CATALOG" rc
-          ON rc."RULE_CATALOG_ID" = r2."RULE_CATALOG_ID"
+          ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
         LEFT JOIN public."EXCEPTION_STATUS" es
           ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
         LEFT JOIN public."DM_USER" du
@@ -65,7 +65,7 @@ AS $$
           AND (p_severity         IS NULL OR est."NAME" = p_severity)
           AND (p_priority         IS NULL OR ept."NAME" = p_priority)
           AND (p_rule_catalog     IS NULL OR p_rule_catalog     = 'All' OR rc."NAME"      = p_rule_catalog)
-          AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r2."RULE_NAME" = p_rule_name)
+          AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r."RULE_NAME" = p_rule_name)
           AND (p_exception_status IS NULL OR p_exception_status = 'All' OR es."NAME"      = p_exception_status)
           AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du."USER"      = p_assign_to)
     )

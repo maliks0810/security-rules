@@ -133,7 +133,7 @@ func GetExceptionTypes() ([]string, error) {
 }
 
 // GetExceptions calls GET_EXCEPTIONS_2, which reads from the slim EXCEPTION
-// table and joins RULE_2 + the lookup tables. Returns the new Exception
+// table and joins RULE + the lookup tables. Returns the new Exception
 // model (23-column shape — no dummy NULLs to fit the legacy struct).
 func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.Exception, error) {
 	var rows *sql.Rows
