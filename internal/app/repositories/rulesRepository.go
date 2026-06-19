@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -231,6 +232,21 @@ func ExecuteRule(ruleCommand string, ruleID int, ruleName string, assetID string
 		}
 		if issueIdx >= 0 {
 			ex.IssueDescription = sqlutil.NullStr(raw[issueIdx])
+		}
+
+		// Serialize the full row of column results as a JSON object keyed
+		// by column name so RESULT_DATA captures everything RULE_CATALOG_SOURCE
+		// produced (matches the EXCEPTION.RESULT_DATA OBJECT/jsonb shape).
+		resultObj := make(map[string]any, len(cols))
+		for i, c := range cols {
+			if raw[i].Valid {
+				resultObj[c] = raw[i].String
+			} else {
+				resultObj[c] = nil
+			}
+		}
+		if b, err := json.Marshal(resultObj); err == nil {
+			ex.ResultData = string(b)
 		}
 		exceptions = append(exceptions, ex)
 	}
