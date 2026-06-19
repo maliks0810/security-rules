@@ -310,9 +310,11 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 }
 
 // InsertExceptions writes each row to the slim EXCEPTION table via the
-// 11-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
+// 12-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
 // blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime
-// flows into EXCEPTION_TIME (full timestamp).
+// flows into EXCEPTION_TIME (full timestamp). ResultData is the JSON
+// column-array of results pulled from RULE_CATALOG_SOURCE — SF wraps it
+// in PARSE_JSON so it binds to the OBJECT-typed param; PG casts to jsonb.
 func InsertExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
 		if s == "" {
@@ -337,7 +339,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: InsertExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL INSERT_EXCEPTION(?,?,?,?,?,?,?,PARSE_JSON(?),?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
@@ -345,6 +347,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 				e.StatusID,
 				nilIfEmpty(e.ExceptionTime),
 				nilIfEmpty(e.IssueDescription),
+				nilIfEmpty(e.ResultData),
 				nilIfZero(e.AssignToID),
 				e.ResultTypeID,
 				nilIfEmpty(e.CreatedDate),
@@ -365,7 +368,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+			`SELECT public."INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
@@ -373,6 +376,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 			e.StatusID,
 			nilIfEmpty(e.ExceptionTime),
 			nilIfEmpty(e.IssueDescription),
+			nilIfEmpty(e.ResultData),
 			nilIfZero(e.AssignToID),
 			e.ResultTypeID,
 			nilIfEmpty(e.CreatedDate),
@@ -387,7 +391,9 @@ func InsertExceptions(exceptions []models.Exception) error {
 
 // UpdateExceptions updates each EXCEPTION row identified by (ASSET_ID, RULE_ID)
 // via UPDATE_EXCEPTION. STATUS_ID is force-reset to 1 (Pending) inside the SP
-// regardless of what the caller passes.
+// regardless of what the caller passes. A NULL ResultData preserves the
+// existing column via COALESCE inside the SP — same pattern as ID_BB_GLOBAL
+// and ASSIGN_TO_ID.
 func UpdateExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
 		if s == "" {
@@ -412,7 +418,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: UpdateExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL UPDATE_EXCEPTION(?,?,?,?,?,?,?,PARSE_JSON(?),?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
@@ -420,6 +426,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 				e.StatusID,
 				nilIfEmpty(e.ExceptionTime),
 				nilIfEmpty(e.IssueDescription),
+				nilIfEmpty(e.ResultData),
 				nilIfZero(e.AssignToID),
 				e.ResultTypeID,
 				nilIfEmpty(e.CreatedDate),
@@ -440,7 +447,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+			`SELECT public."UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
@@ -448,6 +455,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 			e.StatusID,
 			nilIfEmpty(e.ExceptionTime),
 			nilIfEmpty(e.IssueDescription),
+			nilIfEmpty(e.ResultData),
 			nilIfZero(e.AssignToID),
 			e.ResultTypeID,
 			nilIfEmpty(e.CreatedDate),
