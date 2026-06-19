@@ -1,0 +1,16 @@
+DROP FUNCTION IF EXISTS public."GET_RULE_TYPES"(text);
+DROP FUNCTION IF EXISTS public."GET_RULE_CATALOGS"(text);
+
+CREATE OR REPLACE FUNCTION public."GET_RULE_CATALOGS"(
+    p_rule_group text
+)
+RETURNS TABLE("RULE_CATALOG_NAME" character varying)
+LANGUAGE sql
+AS $$
+    SELECT rc."NAME" AS "RULE_CATALOG_NAME"
+    FROM public."RULE_CATALOG" rc
+    JOIN public."RULE_GROUP" rg
+      ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+    WHERE rg."NAME" = p_rule_group
+    ORDER BY rc."RULE_CATALOG_ID" ASC;
+$$;
