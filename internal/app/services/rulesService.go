@@ -28,8 +28,9 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 //   - (RuleID, AssetID) is in the produced set but not in the snapshot →
 //     INSERT a new exception.
 //   - (RuleID, AssetID) is in both the snapshot and produced set →
-//     TOUCH_EXCEPTION_AUDIT (bumps MODIFIED_DATE / MODIFIED_BY only;
-//     status and other fields left intact).
+//     UPDATE_EXCEPTION (re-flags STATUS_ID to Pending and refreshes
+//     EXCEPTION_DATE/TIME, ISSUE_DESCRIPTION, and RESULT_DATA from the
+//     re-fired rule's result row).
 //   - (RuleID, AssetID) is in the snapshot but not in the produced set →
 //     UPDATE_EXCEPTION_STATUS (flips Pending to Complete).
 func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
@@ -90,8 +91,8 @@ func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
 			return err
 		}
 	}
-	for _, e := range touches {
-		if _, err := repositories.UpdateExceptionStatus(e.AssetID, e.RuleID, false); err != nil {
+	if len(touches) > 0 {
+		if err := UpdateExceptions(touches); err != nil {
 			return err
 		}
 	}
