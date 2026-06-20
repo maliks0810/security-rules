@@ -86,8 +86,9 @@ func GetAssets(ctx *fiber.Ctx) error {
 	ruleName := ctx.Query("rule_name")
 	exceptionStatus := ctx.Query("exception_status")
 	assignTo := ctx.Query("assign_to")
+	ruleGroup := ctx.Query("rule_group")
 
-	assets, err := services.GetAssets(exceptionType, severity, priority, ruleCatalog, ruleName, exceptionStatus, assignTo)
+	assets, err := services.GetAssets(exceptionType, severity, priority, ruleCatalog, ruleName, exceptionStatus, assignTo, ruleGroup)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query assets"})
 	}

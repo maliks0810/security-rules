@@ -6,6 +6,7 @@
 -- asset that has at least one matching exception.
 
 DROP FUNCTION IF EXISTS public."GET_ASSETS"(text, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public."GET_ASSETS"(text, text, text, text, text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public."GET_ASSETS"(
     p_exception_type   text DEFAULT NULL,
@@ -14,7 +15,8 @@ CREATE OR REPLACE FUNCTION public."GET_ASSETS"(
     p_rule_catalog     text DEFAULT NULL,
     p_rule_name        text DEFAULT NULL,
     p_exception_status text DEFAULT NULL,
-    p_assign_to        text DEFAULT NULL
+    p_assign_to        text DEFAULT NULL,
+    p_rule_group       text DEFAULT NULL
 )
 RETURNS TABLE(
     "EXCEPTION_DATE"       timestamp without time zone,
@@ -57,6 +59,8 @@ AS $$
           ON et."EXCEPTION_TYPE_ID" = r."EXCEPTION_TYPE_ID"
         LEFT JOIN public."RULE_CATALOG" rc
           ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+        LEFT JOIN public."RULE_GROUP" rg
+          ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
         LEFT JOIN public."EXCEPTION_STATUS" es
           ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
         LEFT JOIN public."DM_USER" du
@@ -64,6 +68,7 @@ AS $$
         WHERE (p_exception_type   IS NULL OR et."NAME"  = p_exception_type)
           AND (p_severity         IS NULL OR est."NAME" = p_severity)
           AND (p_priority         IS NULL OR ept."NAME" = p_priority)
+          AND (p_rule_group       IS NULL OR p_rule_group       = 'All' OR rg."NAME"      = p_rule_group)
           AND (p_rule_catalog     IS NULL OR p_rule_catalog     = 'All' OR rc."NAME"      = p_rule_catalog)
           AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r."RULE_NAME" = p_rule_name)
           AND (p_exception_status IS NULL OR p_exception_status = 'All' OR es."NAME"      = p_exception_status)
