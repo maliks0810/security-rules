@@ -22,8 +22,10 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 }
 
 // ExecuteRules is the new orchestration that writes to the slim EXCEPTION
-// table. Diff key is (RuleID, AssetID), scoped to the rules being run
-// across all assets — the rule SQL can produce rows for any asset:
+// table. GetRules now returns one row per RULE_CATALOG; we run each
+// catalog's RULE_CATALOG_SOURCE exactly once and the result rows carry
+// their own RULE_ID, so a single query feeds many rules in one shot.
+// Diff key is (RuleID, AssetID), built from the produced rule IDs.
 //
 //   - (RuleID, AssetID) is in the produced set but not in the snapshot →
 //     INSERT a new exception.
@@ -32,43 +34,28 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 //     EXCEPTION_DATE/TIME, ISSUE_DESCRIPTION, and RESULT_DATA from the
 //     re-fired rule's result row).
 //   - (RuleID, AssetID) is in the snapshot but not in the produced set →
-//     UPDATE_EXCEPTION_STATUS (flips Pending to Complete).
+//     UPDATE_EXCEPTION_STATUS (flips Pending to Complete). Scoped to the
+//     rule IDs we actually produced this run, so rules not covered by any
+//     catalog source aren't accidentally marked Complete.
 func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
-	rules, err := repositories.GetRules(processType, "")
+	catalogs, err := repositories.GetRules(processType, "")
 	if err != nil {
 		return err
 	}
 
-	runRuleIDs := make(map[int]bool, len(rules))
-	for _, r := range rules {
-		runRuleIDs[r.RuleID] = true
-	}
-
-	// Snapshot existing (RuleID, AssetID) pairs across all assets, but
-	// scoped to the rules we're about to evaluate. We compare against
-	// these to decide insert vs touch vs complete.
-	existing, err := repositories.GetExceptions("", "", "", "", "", "", "", "", "", "")
-	if err != nil {
-		return err
-	}
 	type ruleAsset struct {
 		RuleID  int
 		AssetID string
 	}
-	existingKeys := make(map[ruleAsset]bool)
-	for _, x := range existing {
-		if runRuleIDs[x.RuleID] {
-			existingKeys[ruleAsset{x.RuleID, x.AssetID}] = true
-		}
-	}
 
-	// Run each rule and split the produced exceptions into inserts (new
-	// keys) vs touches (existing keys).
+	// Run each catalog source once. Each result row carries its own
+	// RULE_ID, so collect the produced exceptions and the set of rule
+	// IDs that participated this run.
+	runRuleIDs := make(map[int]bool)
 	producedKeys := make(map[ruleAsset]bool)
-	var inserts []models.Exception
-	var touches []models.Exception
-	for _, r := range rules {
-		exceptions, err := repositories.ExecuteRule(r.RuleCommand, r.RuleID, r.RuleName, assetID, idBbGlobal...)
+	var produced []models.Exception
+	for _, c := range catalogs {
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, idBbGlobal...)
 		if err != nil {
 			return err
 		}
@@ -78,11 +65,33 @@ func ExecuteRules(processType, assetID string, idBbGlobal ...string) error {
 				continue
 			}
 			producedKeys[key] = true
-			if existingKeys[key] {
-				touches = append(touches, e)
-			} else {
-				inserts = append(inserts, e)
-			}
+			runRuleIDs[e.RuleID] = true
+			produced = append(produced, e)
+		}
+	}
+
+	// Snapshot existing (RuleID, AssetID) pairs across all assets, scoped
+	// to the rule IDs the catalogs actually produced this round.
+	existing, err := repositories.GetExceptions("", "", "", "", "", "", "", "", "", "")
+	if err != nil {
+		return err
+	}
+	existingKeys := make(map[ruleAsset]bool)
+	for _, x := range existing {
+		if runRuleIDs[x.RuleID] {
+			existingKeys[ruleAsset{x.RuleID, x.AssetID}] = true
+		}
+	}
+
+	// Split produced into inserts (new keys) vs touches (existing keys).
+	var inserts []models.Exception
+	var touches []models.Exception
+	for _, e := range produced {
+		key := ruleAsset{e.RuleID, e.AssetID}
+		if existingKeys[key] {
+			touches = append(touches, e)
+		} else {
+			inserts = append(inserts, e)
 		}
 	}
 

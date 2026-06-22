@@ -582,17 +582,20 @@ END;
 $$;
 
 -- GET_RULES -------------------------------------------------------------------
--- RULE_COMMAND comes from RULE_CATALOG.RULE_CATALOG_SOURCE (raw SQL).
--- ENVIRONMENT is returned as NULL since the new RULE table has no such column.
+-- One row per RULE_CATALOG. RULE_COMMAND is the catalog's
+-- RULE_CATALOG_SOURCE SQL; when executed by the Go ExecuteRule layer the
+-- result set is expected to include a RULE_ID column per row identifying
+-- which RULE the row belongs to. ENVIRONMENT is RULE_CATALOG_CONNECTION.
+-- P_PROCESS_TYPE is accepted for caller compatibility but ignored.
 CREATE OR REPLACE PROCEDURE GET_RULES(
     P_PROCESS_TYPE VARCHAR,
     P_RULE_CATALOG VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
-    "RULE_ID"      NUMBER,
-    "RULE_NAME"    VARCHAR,
-    "RULE_COMMAND" VARCHAR,
-    "ENVIRONMENT"  VARCHAR
+    "RULE_CATALOG_ID"   NUMBER,
+    "RULE_CATALOG_NAME" VARCHAR,
+    "RULE_COMMAND"      VARCHAR,
+    "ENVIRONMENT"       VARCHAR
 )
 LANGUAGE SQL
 AS
@@ -601,12 +604,11 @@ DECLARE
     res RESULTSET;
 BEGIN
     res := (
-        SELECT r."RULE_ID",
-               r."RULE_NAME",
-               rc."RULE_CATALOG_SOURCE" AS "RULE_COMMAND",
-               NULL::VARCHAR AS "ENVIRONMENT"
-        FROM "RULE" r
-        JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+        SELECT rc."RULE_CATALOG_ID"         AS "RULE_CATALOG_ID",
+               rc."NAME"                    AS "RULE_CATALOG_NAME",
+               rc."RULE_CATALOG_SOURCE"     AS "RULE_COMMAND",
+               rc."RULE_CATALOG_CONNECTION" AS "ENVIRONMENT"
+        FROM "RULE_CATALOG" rc
         WHERE (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)
     );
     RETURN TABLE(res);
