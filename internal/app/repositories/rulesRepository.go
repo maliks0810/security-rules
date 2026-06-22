@@ -45,6 +45,36 @@ func GetRuleGroups() ([]string, error) {
 	return names, nil
 }
 
+func GetRuleNames(ruleCatalog string) ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetRuleNames - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL GET_RULE_NAMES(?)", ruleCatalog)
+	} else {
+		log.Logger.Info("rulesRepository: GetRuleNames - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_NAMES"($1)`, ruleCatalog)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := []string{}
+	for rows.Next() {
+		var name sql.NullString
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, sqlutil.NullStr(name))
+	}
+	return names, nil
+}
+
 func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 	var rows *sql.Rows
 	var err error

@@ -21,6 +21,10 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 	return repositories.GetRuleCatalogs(ruleGroup)
 }
 
+func GetRuleNames(ruleCatalog string) ([]string, error) {
+	return repositories.GetRuleNames(ruleCatalog)
+}
+
 // ExecuteRules is the new orchestration that writes to the slim EXCEPTION
 // table. GetRules now returns one row per RULE_CATALOG; we run each
 // catalog's RULE_CATALOG_SOURCE exactly once and the result rows carry

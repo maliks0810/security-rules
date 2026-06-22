@@ -222,6 +222,30 @@ func GetRuleCatalogs(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(names)
 }
 
+// GetRuleNames godoc
+// @Summary      List rule names for a catalog
+// @Description  Returns RULE.RULE_NAME values for the given catalog. Used by the rule tree view.
+// @Tags         rule-names
+// @Produce      json
+// @Param        rule_catalog  query     string  true  "Rule catalog name"
+// @Success      200           {array}   string
+// @Failure      400           {object}  map[string]string  "rule_catalog query parameter is required"
+// @Failure      500           {object}  map[string]string  "failed to query rule names"
+// @Router       /v1/api/getRuleNames [get]
+func GetRuleNames(ctx *fiber.Ctx) error {
+	ruleCatalog := ctx.Query("rule_catalog")
+	if ruleCatalog == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_catalog query parameter is required"})
+	}
+
+	names, err := services.GetRuleNames(ruleCatalog)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule names"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(names)
+}
+
 // GetRules godoc
 // @Summary      List rules
 // @Description  Returns rules from GET_RULES, optionally filtered by rule type (RULE_CATALOG.NAME).

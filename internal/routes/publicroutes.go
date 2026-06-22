@@ -20,6 +20,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getRuleGroups", handlers.GetRuleGroups)
 	route.Get("/getDMUsers", handlers.GetDMUsers)
 	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
+	route.Get("/getRuleNames", handlers.GetRuleNames)
 	route.Get("/executeRules", handlers.ExecuteRules)
 	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
 	route.Get("/events", handlers.StreamEvents)
