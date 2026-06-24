@@ -247,20 +247,22 @@ func GetRuleNames(ctx *fiber.Ctx) error {
 }
 
 // GetRules godoc
-// @Summary      List rules
-// @Description  Returns rules from GET_RULES, optionally filtered by rule type (RULE_CATALOG.NAME).
+// @Summary      List rule catalogs
+// @Description  Returns one row per RULE_CATALOG, optionally filtered. rule_type controls how rule_name is interpreted: "CATALOG" or "RULE" -> rule_name matches RULE_CATALOG.NAME; "GROUP" -> rule_name matches RULE_GROUP.NAME. Omit / empty / "All" means no filter.
 // @Tags         rules
 // @Produce      json
-// @Param        process_type  query     string  false  "Process type filter"
-// @Param        rule_catalog     query     string  false  "RULE_CATALOG.NAME filter"
+// @Param        process_type  query     string  false  "Process type (accepted for compatibility, currently ignored)"
+// @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
+// @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
 // @Success      200           {array}   models.Rule
 // @Failure      500           {object}  map[string]string  "failed to query rules"
 // @Router       /v1/api/getRules [get]
 func GetRules(ctx *fiber.Ctx) error {
 	processType := ctx.Query("process_type")
-	ruleCatalog := ctx.Query("rule_catalog")
+	ruleName := ctx.Query("rule_name")
+	ruleType := ctx.Query("rule_type")
 
-	rules, err := services.GetRules(processType, ruleCatalog)
+	rules, err := services.GetRules(processType, ruleName, ruleType)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules"})
 	}

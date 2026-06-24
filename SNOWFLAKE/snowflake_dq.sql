@@ -586,14 +586,21 @@ END;
 $$;
 
 -- GET_RULES -------------------------------------------------------------------
--- One row per RULE_CATALOG. RULE_COMMAND is the catalog's
--- RULE_CATALOG_SOURCE SQL; when executed by the Go ExecuteRule layer the
--- result set is expected to include a RULE_ID column per row identifying
--- which RULE the row belongs to. ENVIRONMENT is RULE_CATALOG_CONNECTION.
--- P_PROCESS_TYPE is accepted for caller compatibility but ignored.
+-- One row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE (the SQL
+-- the Go ExecuteRule layer runs; the result set must include a RULE_ID
+-- column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION. P_PROCESS_TYPE
+-- is accepted for caller compatibility but ignored.
+--
+-- Filtering:
+--   P_RULE_TYPE = 'CATALOG' or 'RULE' (RULE behaves the same as CATALOG
+--     for now) → P_RULE_NAME matches RULE_CATALOG.NAME.
+--   P_RULE_TYPE = 'GROUP'  → P_RULE_NAME matches RULE_GROUP.NAME; returns
+--     every catalog whose RULE_GROUP_ID resolves to that group.
+--   P_RULE_NAME NULL / empty / 'All' → no filter, return every catalog.
 CREATE OR REPLACE PROCEDURE GET_RULES(
     P_PROCESS_TYPE VARCHAR,
-    P_RULE_CATALOG VARCHAR DEFAULT NULL
+    P_RULE_NAME    VARCHAR DEFAULT NULL,
+    P_RULE_TYPE    VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
     "RULE_CATALOG_ID"   NUMBER,
@@ -613,7 +620,15 @@ BEGIN
                rc."RULE_CATALOG_SOURCE"     AS "RULE_COMMAND",
                rc."RULE_CATALOG_CONNECTION" AS "ENVIRONMENT"
         FROM "RULE_CATALOG" rc
-        WHERE (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)
+        LEFT JOIN "RULE_GROUP" rg
+          ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+        WHERE :P_RULE_NAME IS NULL
+           OR :P_RULE_NAME = ''
+           OR :P_RULE_NAME = 'All'
+           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+                 AND rc."NAME" = :P_RULE_NAME)
+           OR (UPPER(:P_RULE_TYPE) = 'GROUP'
+                 AND rg."NAME"  = :P_RULE_NAME)
     );
     RETURN TABLE(res);
 END;

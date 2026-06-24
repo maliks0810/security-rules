@@ -1,6 +1,7 @@
 CREATE OR REPLACE PROCEDURE GET_RULES(
     P_PROCESS_TYPE VARCHAR,
-    P_RULE_CATALOG VARCHAR DEFAULT NULL
+    P_RULE_NAME    VARCHAR DEFAULT NULL,
+    P_RULE_TYPE    VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
     "RULE_CATALOG_ID"   NUMBER,
@@ -14,18 +15,34 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
-    -- Now returns one row per RULE_CATALOG. The RULE_CATALOG_SOURCE query
-    -- (returned as RULE_COMMAND) is expected to emit a RULE_ID column per
-    -- row when executed; the Go ExecuteRule layer scans that and uses it
-    -- as each EXCEPTION's RULE_ID. P_PROCESS_TYPE is accepted for caller
-    -- compatibility but ignored — RULE_CATALOG has no process-type column.
+    -- Returns one row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE
+    -- (the SQL the Go ExecuteRule layer runs; the result set must include
+    -- a RULE_ID column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
+    -- P_PROCESS_TYPE is accepted for caller compatibility but ignored.
+    --
+    -- Filtering:
+    --   P_RULE_TYPE = 'CATALOG' or 'RULE' (for now they behave the same)
+    --     → P_RULE_NAME matched against RULE_CATALOG.NAME.
+    --   P_RULE_TYPE = 'GROUP'
+    --     → P_RULE_NAME matched against RULE_GROUP.NAME; returns every
+    --       catalog whose RULE_GROUP_ID resolves to that group.
+    --   P_RULE_TYPE NULL / unset OR P_RULE_NAME NULL / empty / 'All'
+    --     → no filter, return every catalog.
     res := (
         SELECT rc."RULE_CATALOG_ID"         AS "RULE_CATALOG_ID",
                rc."NAME"                    AS "RULE_CATALOG_NAME",
                rc."RULE_CATALOG_SOURCE"     AS "RULE_COMMAND",
                rc."RULE_CATALOG_CONNECTION" AS "ENVIRONMENT"
         FROM "RULE_CATALOG" rc
-        WHERE (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)
+        LEFT JOIN "RULE_GROUP" rg
+          ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+        WHERE :P_RULE_NAME IS NULL
+           OR :P_RULE_NAME = ''
+           OR :P_RULE_NAME = 'All'
+           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+                 AND rc."NAME" = :P_RULE_NAME)
+           OR (UPPER(:P_RULE_TYPE) = 'GROUP'
+                 AND rg."NAME"  = :P_RULE_NAME)
     );
     RETURN TABLE(res);
 END;
