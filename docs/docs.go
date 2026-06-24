@@ -37,7 +37,7 @@ const docTemplate = `{
         },
         "/v1/api/executeRules": {
             "get": {
-                "description": "Runs every rule for the given process_type against the asset and inserts any returned rows as security exceptions.",
+                "description": "Runs rule catalogs against the asset and inserts any returned rows as exceptions. rule_name + rule_type scope which catalogs run, using the same semantics as /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
                 "produces": [
                     "application/json"
                 ],
@@ -46,13 +46,6 @@ const docTemplate = `{
                 ],
                 "summary": "Execute rules for an asset",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Process type",
-                        "name": "process_type",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "Asset ID",
@@ -64,6 +57,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Bloomberg global ID",
                         "name": "id_bb_global",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter value (catalog name or group name depending on rule_type)",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CATALOG | GROUP | RULE",
+                        "name": "rule_type",
                         "in": "query"
                     }
                 ],
@@ -78,7 +83,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "process_type and asset_id are required",
+                        "description": "asset_id is required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -478,27 +483,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/getRuleNames": {
+            "get": {
+                "description": "Returns RULE.RULE_NAME values for the given catalog. Used by the rule tree view.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rule-names"
+                ],
+                "summary": "List rule names for a catalog",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule catalog name",
+                        "name": "rule_catalog",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "rule_catalog query parameter is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rule names",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getRules": {
             "get": {
-                "description": "Returns rules from GET_RULES, optionally filtered by rule type (RULE_CATALOG.NAME).",
+                "description": "Returns one row per RULE_CATALOG, optionally filtered. rule_type controls how rule_name is interpreted: \"CATALOG\" or \"RULE\" -\u003e rule_name matches RULE_CATALOG.NAME; \"GROUP\" -\u003e rule_name matches RULE_GROUP.NAME. Omit / empty / \"All\" means no filter.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "rules"
                 ],
-                "summary": "List rules",
+                "summary": "List rule catalogs",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Process type filter",
-                        "name": "process_type",
+                        "description": "Filter value (catalog name or group name depending on rule_type)",
+                        "name": "rule_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "RULE_CATALOG.NAME filter",
-                        "name": "rule_catalog",
+                        "description": "CATALOG | GROUP | RULE",
+                        "name": "rule_type",
                         "in": "query"
                     }
                 ],
@@ -758,13 +813,13 @@ const docTemplate = `{
                 "environment": {
                     "type": "string"
                 },
-                "rule_command": {
-                    "type": "string"
-                },
-                "rule_id": {
+                "rule_catalog_id": {
                     "type": "integer"
                 },
-                "rule_name": {
+                "rule_catalog_name": {
+                    "type": "string"
+                },
+                "rule_command": {
                     "type": "string"
                 }
             }

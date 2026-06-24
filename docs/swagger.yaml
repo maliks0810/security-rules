@@ -82,11 +82,11 @@ definitions:
     properties:
       environment:
         type: string
-      rule_command:
-        type: string
-      rule_id:
+      rule_catalog_id:
         type: integer
-      rule_name:
+      rule_catalog_name:
+        type: string
+      rule_command:
         type: string
     type: object
 info:
@@ -112,14 +112,11 @@ paths:
       - events
   /v1/api/executeRules:
     get:
-      description: Runs every rule for the given process_type against the asset and
-        inserts any returned rows as security exceptions.
+      description: Runs rule catalogs against the asset and inserts any returned rows
+        as exceptions. rule_name + rule_type scope which catalogs run, using the same
+        semantics as /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP"
+        matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
       parameters:
-      - description: Process type
-        in: query
-        name: process_type
-        required: true
-        type: string
       - description: Asset ID
         in: query
         name: asset_id
@@ -128,6 +125,14 @@ paths:
       - description: Bloomberg global ID
         in: query
         name: id_bb_global
+        type: string
+      - description: Filter value (catalog name or group name depending on rule_type)
+        in: query
+        name: rule_name
+        type: string
+      - description: CATALOG | GROUP | RULE
+        in: query
+        name: rule_type
         type: string
       produces:
       - application/json
@@ -139,7 +144,7 @@ paths:
               type: string
             type: object
         "400":
-          description: process_type and asset_id are required
+          description: asset_id is required
           schema:
             additionalProperties:
               type: string
@@ -407,18 +412,54 @@ paths:
       summary: List rule group names
       tags:
       - rule-groups
-  /v1/api/getRules:
+  /v1/api/getRuleNames:
     get:
-      description: Returns rules from GET_RULES, optionally filtered by rule type
-        (RULE_CATALOG.NAME).
+      description: Returns RULE.RULE_NAME values for the given catalog. Used by the
+        rule tree view.
       parameters:
-      - description: Process type filter
-        in: query
-        name: process_type
-        type: string
-      - description: RULE_CATALOG.NAME filter
+      - description: Rule catalog name
         in: query
         name: rule_catalog
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: rule_catalog query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query rule names
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rule names for a catalog
+      tags:
+      - rule-names
+  /v1/api/getRules:
+    get:
+      description: 'Returns one row per RULE_CATALOG, optionally filtered. rule_type
+        controls how rule_name is interpreted: "CATALOG" or "RULE" -> rule_name matches
+        RULE_CATALOG.NAME; "GROUP" -> rule_name matches RULE_GROUP.NAME. Omit / empty
+        / "All" means no filter.'
+      parameters:
+      - description: Filter value (catalog name or group name depending on rule_type)
+        in: query
+        name: rule_name
+        type: string
+      - description: CATALOG | GROUP | RULE
+        in: query
+        name: rule_type
         type: string
       produces:
       - application/json
@@ -435,7 +476,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: List rules
+      summary: List rule catalogs
       tags:
       - rules
   /v1/api/getSeverityTypes:
