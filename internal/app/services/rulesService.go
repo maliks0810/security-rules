@@ -41,8 +41,8 @@ func GetRuleNames(ruleCatalog string) ([]string, error) {
 //     UPDATE_EXCEPTION_STATUS (flips Pending to Complete). Scoped to the
 //     rule IDs we actually produced this run, so rules not covered by any
 //     catalog source aren't accidentally marked Complete.
-func ExecuteRules(assetID string, idBbGlobal ...string) error {
-	catalogs, err := repositories.GetRules("", "")
+func ExecuteRules(ruleName, ruleType, assetID string, idBbGlobal ...string) error {
+	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
 		return err
 	}

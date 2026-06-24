@@ -270,11 +270,13 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules for an asset
-// @Description  Runs every rule catalog against the asset and inserts any returned rows as exceptions.
+// @Description  Runs rule catalogs against the asset and inserts any returned rows as exceptions. rule_name + rule_type scope which catalogs run, using the same semantics as /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
 // @Tags         rules
 // @Produce      json
 // @Param        asset_id      query     string  true   "Asset ID"
 // @Param        id_bb_global  query     string  false  "Bloomberg global ID"
+// @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
+// @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
 // @Success      200           {object}  map[string]string  "rules executed"
 // @Failure      400           {object}  map[string]string  "asset_id is required"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
@@ -286,12 +288,14 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	}
 
 	idBbGlobal := ctx.Query("id_bb_global")
+	ruleName := ctx.Query("rule_name")
+	ruleType := ctx.Query("rule_type")
 
 	var err error
 	if idBbGlobal == "" {
-		err = services.ExecuteRules(assetID)
+		err = services.ExecuteRules(ruleName, ruleType, assetID)
 	} else {
-		err = services.ExecuteRules(assetID, idBbGlobal)
+		err = services.ExecuteRules(ruleName, ruleType, assetID, idBbGlobal)
 	}
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
