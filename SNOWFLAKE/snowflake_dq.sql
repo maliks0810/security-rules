@@ -588,8 +588,7 @@ $$;
 -- GET_RULES -------------------------------------------------------------------
 -- One row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE (the SQL
 -- the Go ExecuteRule layer runs; the result set must include a RULE_ID
--- column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION. P_PROCESS_TYPE
--- is accepted for caller compatibility but ignored.
+-- column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
 --
 -- Filtering:
 --   P_RULE_TYPE = 'CATALOG' or 'RULE' (RULE behaves the same as CATALOG
@@ -598,9 +597,8 @@ $$;
 --     every catalog whose RULE_GROUP_ID resolves to that group.
 --   P_RULE_NAME NULL / empty / 'All' → no filter, return every catalog.
 CREATE OR REPLACE PROCEDURE GET_RULES(
-    P_PROCESS_TYPE VARCHAR,
-    P_RULE_NAME    VARCHAR DEFAULT NULL,
-    P_RULE_TYPE    VARCHAR DEFAULT NULL
+    P_RULE_NAME VARCHAR DEFAULT NULL,
+    P_RULE_TYPE VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
     "RULE_CATALOG_ID"   NUMBER,

@@ -251,18 +251,16 @@ func GetRuleNames(ctx *fiber.Ctx) error {
 // @Description  Returns one row per RULE_CATALOG, optionally filtered. rule_type controls how rule_name is interpreted: "CATALOG" or "RULE" -> rule_name matches RULE_CATALOG.NAME; "GROUP" -> rule_name matches RULE_GROUP.NAME. Omit / empty / "All" means no filter.
 // @Tags         rules
 // @Produce      json
-// @Param        process_type  query     string  false  "Process type (accepted for compatibility, currently ignored)"
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
 // @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
 // @Success      200           {array}   models.Rule
 // @Failure      500           {object}  map[string]string  "failed to query rules"
 // @Router       /v1/api/getRules [get]
 func GetRules(ctx *fiber.Ctx) error {
-	processType := ctx.Query("process_type")
 	ruleName := ctx.Query("rule_name")
 	ruleType := ctx.Query("rule_type")
 
-	rules, err := services.GetRules(processType, ruleName, ruleType)
+	rules, err := services.GetRules(ruleName, ruleType)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules"})
 	}
@@ -272,30 +270,28 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules for an asset
-// @Description  Runs every rule for the given process_type against the asset and inserts any returned rows as security exceptions.
+// @Description  Runs every rule catalog against the asset and inserts any returned rows as exceptions.
 // @Tags         rules
 // @Produce      json
-// @Param        process_type  query     string  true   "Process type"
 // @Param        asset_id      query     string  true   "Asset ID"
 // @Param        id_bb_global  query     string  false  "Bloomberg global ID"
 // @Success      200           {object}  map[string]string  "rules executed"
-// @Failure      400           {object}  map[string]string  "process_type and asset_id are required"
+// @Failure      400           {object}  map[string]string  "asset_id is required"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
 // @Router       /v1/api/executeRules [get]
 func ExecuteRules(ctx *fiber.Ctx) error {
-	processType := ctx.Query("process_type")
 	assetID := ctx.Query("asset_id")
-	if processType == "" || assetID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "process_type and asset_id are required"})
+	if assetID == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id is required"})
 	}
 
 	idBbGlobal := ctx.Query("id_bb_global")
 
 	var err error
 	if idBbGlobal == "" {
-		err = services.ExecuteRules(processType, assetID)
+		err = services.ExecuteRules(assetID)
 	} else {
-		err = services.ExecuteRules(processType, assetID, idBbGlobal)
+		err = services.ExecuteRules(assetID, idBbGlobal)
 	}
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})

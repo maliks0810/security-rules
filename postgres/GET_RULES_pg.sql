@@ -2,17 +2,16 @@ DROP FUNCTION IF EXISTS public."LIST_RULES"(character varying);
 DROP FUNCTION IF EXISTS public."GET_RULES"(character varying);
 DROP FUNCTION IF EXISTS public."GET_RULES"(character varying, text);
 DROP FUNCTION IF EXISTS public."GET_RULES"(character varying, text, text);
+DROP FUNCTION IF EXISTS public."GET_RULES"(text, text);
 
 -- Returns one row per RULE_CATALOG (see SNOWFLAKE/GET_RULES.sql for the
 -- full contract). Filter behavior:
 --   p_rule_type = 'CATALOG' or 'RULE' → p_rule_name matches RULE_CATALOG.NAME.
 --   p_rule_type = 'GROUP'             → p_rule_name matches RULE_GROUP.NAME.
 --   p_rule_name NULL / empty / 'All'  → no filter; return every catalog.
--- p_process_type is accepted for caller compatibility but ignored.
 CREATE OR REPLACE FUNCTION public."GET_RULES"(
-    "PROCESS_TYPE" character varying,
-    p_rule_name    text DEFAULT NULL,
-    p_rule_type    text DEFAULT NULL
+    p_rule_name text DEFAULT NULL,
+    p_rule_type text DEFAULT NULL
 )
 RETURNS TABLE(
     "RULE_CATALOG_ID"   numeric,

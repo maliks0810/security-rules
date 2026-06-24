@@ -1,7 +1,6 @@
 CREATE OR REPLACE PROCEDURE GET_RULES(
-    P_PROCESS_TYPE VARCHAR,
-    P_RULE_NAME    VARCHAR DEFAULT NULL,
-    P_RULE_TYPE    VARCHAR DEFAULT NULL
+    P_RULE_NAME VARCHAR DEFAULT NULL,
+    P_RULE_TYPE VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
     "RULE_CATALOG_ID"   NUMBER,
@@ -18,7 +17,6 @@ BEGIN
     -- Returns one row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE
     -- (the SQL the Go ExecuteRule layer runs; the result set must include
     -- a RULE_ID column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
-    -- P_PROCESS_TYPE is accepted for caller compatibility but ignored.
     --
     -- Filtering:
     --   P_RULE_TYPE = 'CATALOG' or 'RULE' (for now they behave the same)
