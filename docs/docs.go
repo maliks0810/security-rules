@@ -37,7 +37,7 @@ const docTemplate = `{
         },
         "/v1/api/executeRules": {
             "get": {
-                "description": "Runs rule catalogs and inserts any returned rows as exceptions. asset_id is optional — when omitted (or empty), every rule catalog runs against all assets the catalog source returns (the ${ASSET_ID} placeholder is bound to NULL). rule_name + rule_type scope which catalogs run, using the same semantics as /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
+                "description": "Runs rule catalogs and inserts any returned rows as exceptions. asset_id is optional — when omitted (or empty), every rule catalog runs against all assets the catalog source returns (the ${ASSET_ID} placeholder is bound to NULL). If id_bb_global is supplied, asset_id is required. rule_name + rule_type scope which catalogs run, using the same semantics as /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
                 "produces": [
                     "application/json"
                 ],
@@ -48,7 +48,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Asset ID (omit to run across all assets)",
+                        "description": "Asset ID (omit to run across all assets; required when id_bb_global is supplied)",
                         "name": "asset_id",
                         "in": "query"
                     },
@@ -74,6 +74,15 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "rules executed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "asset_id is required when id_bb_global is supplied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
