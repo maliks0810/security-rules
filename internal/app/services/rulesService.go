@@ -125,9 +125,13 @@ func ExecuteRules(ruleName, ruleType, assetID string, idBbGlobal ...string) erro
 	}
 
 	generated := len(inserts) + len(touches)
+	scope := assetID
+	if scope == "" {
+		scope = "all assets"
+	}
 	log.Logger.Info(fmt.Sprintf(
 		"rulesService: ExecuteRules - asset %s: inserted %d, touched %d, completed %d",
-		assetID, len(inserts), len(touches), completed,
+		scope, len(inserts), len(touches), completed,
 	))
 
 	if generated > 0 || completed > 0 {
