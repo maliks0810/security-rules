@@ -218,13 +218,15 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		return nil, err
 	}
 
-	ruleIdIdx, assetIdx, issueIdx, ruleNameIdx := -1, -1, -1, -1
+	ruleIdIdx, assetIdx, idBbIdx, issueIdx, ruleNameIdx := -1, -1, -1, -1, -1
 	for i, c := range cols {
 		switch strings.ToUpper(c) {
 		case "RULE_ID":
 			ruleIdIdx = i
 		case "ASSET_ID", "ALADDIN_ID":
 			assetIdx = i
+		case "ID_BB_GLOBAL", "FIGI":
+			idBbIdx = i
 		case "ISSUE_DESCRIPTION":
 			issueIdx = i
 		case "RULE_NAME":
@@ -277,6 +279,9 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		}
 		if assetIdx >= 0 && raw[assetIdx].Valid && raw[assetIdx].String != "" {
 			ex.AssetID = raw[assetIdx].String
+		}
+		if idBbIdx >= 0 && raw[idBbIdx].Valid && raw[idBbIdx].String != "" {
+			ex.IdBbGlobal = raw[idBbIdx].String
 		}
 		if issueIdx >= 0 {
 			ex.IssueDescription = sqlutil.NullStr(raw[issueIdx])

@@ -1,10 +1,10 @@
 -- RECON_BBG_COMPARE: SP shape of the deprecated RECON_BBG_COMPARE_VW.
--- Takes (ALADDIN_ID, ID_BB_GLOBAL) and reflects them back per row.
--- Returns one row per BBG-compare rule with RULE_ID resolved from the
--- RULE table by RULE_NAME so the Go ExecuteRule layer can tag each
--- emitted exception with its rule.
---
--- Params are renamed with p_ prefix to avoid collision with output columns.
+-- When a caller passes (p_aladdin_id, p_id_bb_global), it reflects that
+-- pair back per BBG-compare rule. When both are NULL/empty (the "run for
+-- all assets" path), it emits a fixed demo set of three assets so the
+-- pipeline still produces visible exceptions for testing.
+-- RULE_ID is resolved from the RULE table by RULE_NAME so the Go
+-- ExecuteRule layer can tag each emitted exception with its rule.
 
 DROP FUNCTION IF EXISTS public."RECON_BBG_COMPARE"(varchar, varchar);
 
@@ -38,14 +38,30 @@ AS $$
             '144A'::varchar,
             ('BBG Vs ALADDIN Registration : ALADDIN Registration:' ||
                 '144A' || ' BBG Registration:' || 'Reg S')::varchar
+    ),
+    -- Caller path: use the (aladdin, figi) pair when supplied; otherwise
+    -- emit the demo asset set so the unfiltered run still has output.
+    assets AS (
+        SELECT p_aladdin_id::varchar   AS aladdin_id,
+               p_id_bb_global::varchar AS id_bb_global
+         WHERE p_aladdin_id IS NOT NULL AND p_aladdin_id <> ''
+        UNION ALL
+        SELECT v.aladdin_id::varchar, v.id_bb_global::varchar
+        FROM (VALUES
+            ('73316NAC9', 'BBG000B7NKY4'),
+            ('45661EAB0', 'BBG000B06N81'),
+            ('466317AU8', 'BBG016XZK9N4')
+        ) AS v(aladdin_id, id_bb_global)
+        WHERE p_aladdin_id IS NULL OR p_aladdin_id = ''
     )
-    SELECT r."RULE_ID"::numeric           AS "RULE_ID",
-           src.rule_name                  AS "RULE_NAME",
-           p_aladdin_id::varchar          AS "ALADDIN_ID",
-           p_id_bb_global::varchar        AS "ID_BB_GLOBAL",
-           src.bbg_value                  AS "BBG_VALUE",
-           src.aladdin_value              AS "ALADDIN_VALUE",
-           src.issue_description          AS "ISSUE_DESCRIPTION"
-    FROM src
+    SELECT r."RULE_ID"::numeric        AS "RULE_ID",
+           src.rule_name               AS "RULE_NAME",
+           assets.aladdin_id           AS "ALADDIN_ID",
+           assets.id_bb_global         AS "ID_BB_GLOBAL",
+           src.bbg_value               AS "BBG_VALUE",
+           src.aladdin_value           AS "ALADDIN_VALUE",
+           src.issue_description       AS "ISSUE_DESCRIPTION"
+    FROM assets
+    CROSS JOIN src
     JOIN public."RULE" r ON r."RULE_NAME" = src.rule_name;
 $$;
