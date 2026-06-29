@@ -307,6 +307,42 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
 
+// ExecuteSecurityRules godoc
+// @Summary      Execute security rules
+// @Description  Same orchestration as /executeRules but routed through services.ExecuteSecurityRules so the security-rule flow can diverge later. Query params are identical: asset_id is optional (required when id_bb_global is supplied); rule_name + rule_type scope which catalogs run ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
+// @Tags         rules
+// @Produce      json
+// @Param        asset_id      query     string  false  "Asset ID (omit to run across all assets; required when id_bb_global is supplied)"
+// @Param        id_bb_global  query     string  false  "Bloomberg global ID"
+// @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
+// @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
+// @Success      200           {object}  map[string]string  "security rules executed"
+// @Failure      400           {object}  map[string]string  "asset_id is required when id_bb_global is supplied"
+// @Failure      500           {object}  map[string]string  "failed to execute security rules"
+// @Router       /v1/api/executeSecurityRules [get]
+func ExecuteSecurityRules(ctx *fiber.Ctx) error {
+	assetID := ctx.Query("asset_id")
+	idBbGlobal := ctx.Query("id_bb_global")
+	ruleName := ctx.Query("rule_name")
+	ruleType := ctx.Query("rule_type")
+
+	if idBbGlobal != "" && assetID == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id is required when id_bb_global is supplied"})
+	}
+
+	var err error
+	if idBbGlobal == "" {
+		err = services.ExecuteSecurityRules(ruleName, ruleType, assetID)
+	} else {
+		err = services.ExecuteSecurityRules(ruleName, ruleType, assetID, idBbGlobal)
+	}
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute security rules"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+}
+
 
 // UpdateAssignTo godoc
 // @Summary      Update EXCEPTION.ASSIGN_TO_ID for an asset

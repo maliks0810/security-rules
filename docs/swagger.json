@@ -95,6 +95,73 @@
                 }
             }
         },
+        "/v1/api/executeSecurityRules": {
+            "get": {
+                "description": "Same orchestration as /executeRules but routed through services.ExecuteSecurityRules so the security-rule flow can diverge later. Query params are identical: asset_id is optional (required when id_bb_global is supplied); rule_name + rule_type scope which catalogs run (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Execute security rules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Asset ID (omit to run across all assets; required when id_bb_global is supplied)",
+                        "name": "asset_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bloomberg global ID",
+                        "name": "id_bb_global",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter value (catalog name or group name depending on rule_type)",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CATALOG | GROUP | RULE",
+                        "name": "rule_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "security rules executed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "asset_id is required when id_bb_global is supplied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to execute security rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getAssets": {
             "get": {
                 "description": "Returns the deduplicated set of assets, optionally filtered by exception type CODE and severity (CATEGORY_TYPE.CODE).",

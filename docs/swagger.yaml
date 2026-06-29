@@ -161,6 +161,55 @@ paths:
       summary: Execute rules
       tags:
       - rules
+  /v1/api/executeSecurityRules:
+    get:
+      description: 'Same orchestration as /executeRules but routed through services.ExecuteSecurityRules
+        so the security-rule flow can diverge later. Query params are identical: asset_id
+        is optional (required when id_bb_global is supplied); rule_name + rule_type
+        scope which catalogs run ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP"
+        matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).'
+      parameters:
+      - description: Asset ID (omit to run across all assets; required when id_bb_global
+          is supplied)
+        in: query
+        name: asset_id
+        type: string
+      - description: Bloomberg global ID
+        in: query
+        name: id_bb_global
+        type: string
+      - description: Filter value (catalog name or group name depending on rule_type)
+        in: query
+        name: rule_name
+        type: string
+      - description: CATALOG | GROUP | RULE
+        in: query
+        name: rule_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: security rules executed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: asset_id is required when id_bb_global is supplied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to execute security rules
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Execute security rules
+      tags:
+      - rules
   /v1/api/getAssets:
     get:
       description: Returns the deduplicated set of assets, optionally filtered by
