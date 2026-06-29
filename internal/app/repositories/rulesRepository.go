@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,44 @@ func GetRuleGroups() ([]string, error) {
 		names = append(names, sqlutil.NullStr(name))
 	}
 	return names, nil
+}
+
+// GetRuleIDsByName returns a snapshot of RULE_NAME -> RULE_ID for every
+// row in the RULE table. Used by ExecuteRule as a fallback when a
+// catalog's RULE_CATALOG_SOURCE result row only carries RULE_NAME and
+// not RULE_ID — we resolve the ID via this map so the exception still
+// gets a valid foreign key.
+func GetRuleIDsByName() (map[string]int, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetRuleIDsByName - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(`SELECT "RULE_NAME", "RULE_ID" FROM "RULE"`)
+	} else {
+		log.Logger.Info("rulesRepository: GetRuleIDsByName - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT "RULE_NAME", "RULE_ID" FROM public."RULE"`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	m := make(map[string]int)
+	for rows.Next() {
+		var name sql.NullString
+		var id sql.NullInt64
+		if err := rows.Scan(&name, &id); err != nil {
+			return nil, err
+		}
+		if name.Valid && id.Valid {
+			m[name.String] = int(id.Int64)
+		}
+	}
+	return m, nil
 }
 
 func GetRuleNames(ruleCatalog string) ([]string, error) {
@@ -181,12 +220,17 @@ func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
 }
 
 // ExecuteRule runs a RULE_CATALOG_SOURCE command verbatim once and builds
-// new-model Exception rows from the result set. The result is expected to
-// include columns RULE_ID (which rule produced the row), ASSET_ID or
-// ALADDIN_ID, and ISSUE_DESCRIPTION; RULE_NAME is optional. One catalog
-// source feeds many rules — each result row is tagged with its own RULE_ID
-// so we avoid running the source once per rule. catalogName is used as a
-// fallback display label when a row has no RULE_NAME column.
+// new-model Exception rows from the result set. Expected columns:
+//   - RULE_ID  — preferred. When present and valid, used directly.
+//   - RULE_NAME — required when RULE_ID is absent; ExecuteRule looks the
+//     ID up from the RULE table via GetRuleIDsByName (lazy, once per
+//     call). Sources that supply RULE_ID never trigger the lookup.
+//   - ASSET_ID / ALADDIN_ID and ISSUE_DESCRIPTION — used to populate
+//     the exception row.
+// One catalog source feeds many rules — each result row is tagged with
+// its own RULE_ID so we avoid running the source once per rule.
+// catalogName is used as a fallback display label when a row has no
+// RULE_NAME column.
 func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, idBbGlobal ...string) ([]models.Exception, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -235,6 +279,7 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		}
 	}
 
+	var ruleIdByName map[string]int // lazy fallback cache
 	var exceptions []models.Exception
 	for rows.Next() {
 		raw := make([]sql.NullString, len(cols))
@@ -246,12 +291,27 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 			return nil, err
 		}
 
-		// RULE_ID is required — drop rows that don't carry it so we never
-		// emit an exception without a definite rule association.
 		rowRuleID := 0
 		if ruleIdIdx >= 0 && raw[ruleIdIdx].Valid {
 			if parsed, perr := strconv.Atoi(strings.TrimSpace(raw[ruleIdIdx].String)); perr == nil {
 				rowRuleID = parsed
+			}
+		}
+		// Fallback: source didn't project a RULE_ID but does carry a
+		// RULE_NAME — resolve via RULE.RULE_NAME -> RULE.RULE_ID. The
+		// lookup map is built lazily and reused for every subsequent row
+		// in this catalog's result set.
+		if rowRuleID == 0 && ruleNameIdx >= 0 && raw[ruleNameIdx].Valid && raw[ruleNameIdx].String != "" {
+			if ruleIdByName == nil {
+				if m, lerr := GetRuleIDsByName(); lerr == nil {
+					ruleIdByName = m
+				} else {
+					log.Logger.Error(fmt.Sprintf("rulesRepository: ExecuteRule - RULE_ID fallback lookup failed: %v", lerr))
+					ruleIdByName = map[string]int{}
+				}
+			}
+			if id, ok := ruleIdByName[raw[ruleNameIdx].String]; ok {
+				rowRuleID = id
 			}
 		}
 		if rowRuleID == 0 {
