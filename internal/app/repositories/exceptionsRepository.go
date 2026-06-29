@@ -314,7 +314,7 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 // blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime
 // flows into EXCEPTION_TIME (full timestamp). ResultData is the JSON
 // column-array of results pulled from RULE_CATALOG_SOURCE — SF wraps it
-// in PARSE_JSON so it binds to the OBJECT-typed param; PG casts to jsonb.
+// in PARSE_JSON so it binds to the OBJECT-typed param; PG casts to json.
 func InsertExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
 		if s == "" {
@@ -368,7 +368,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)`,
+			`SELECT public."INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
@@ -447,7 +447,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)`,
+			`SELECT public."UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
