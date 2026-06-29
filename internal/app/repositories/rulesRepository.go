@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"strconv"
@@ -290,20 +291,37 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		// elsewhere — keep it on the signature for caller-side context.
 		_ = catalogID
 
-		// Serialize the full row of column results as a JSON object keyed
-		// by column name so RESULT_DATA captures everything RULE_CATALOG_SOURCE
-		// produced (matches the EXCEPTION.RESULT_DATA OBJECT/jsonb shape).
-		resultObj := make(map[string]any, len(cols))
+		// Serialize the full row as a JSON object keyed by column name.
+		// Built by hand (not via json.Marshal on a map) because Go's encoder
+		// alphabetizes map keys, and Postgres jsonb would reorder them
+		// length-then-alphabetical anyway — we want SQL column order.
+		// Pair with EXCEPTION.RESULT_DATA stored as json (not jsonb) so the
+		// text round-trips intact.
+		var buf bytes.Buffer
+		buf.WriteByte('{')
 		for i, c := range cols {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			keyJSON, err := json.Marshal(c)
+			if err != nil {
+				continue
+			}
+			buf.Write(keyJSON)
+			buf.WriteByte(':')
 			if raw[i].Valid {
-				resultObj[c] = raw[i].String
+				valJSON, err := json.Marshal(raw[i].String)
+				if err != nil {
+					buf.WriteString("null")
+				} else {
+					buf.Write(valJSON)
+				}
 			} else {
-				resultObj[c] = nil
+				buf.WriteString("null")
 			}
 		}
-		if b, err := json.Marshal(resultObj); err == nil {
-			ex.ResultData = string(b)
-		}
+		buf.WriteByte('}')
+		ex.ResultData = buf.String()
 		exceptions = append(exceptions, ex)
 	}
 

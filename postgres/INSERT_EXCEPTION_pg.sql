@@ -22,7 +22,7 @@ CREATE OR REPLACE FUNCTION public."INSERT_EXCEPTION"(
     "STATUS_ID"         numeric,
     "EXCEPTION_TIME"    timestamp,
     "ISSUE_DESCRIPTION" text,
-    "RESULT_DATA"       jsonb,
+    "RESULT_DATA"       json,
     "ASSIGN_TO_ID"      numeric,
     "RESULT_TYPE_ID"    numeric,
     "CREATED_DATE"      timestamp,

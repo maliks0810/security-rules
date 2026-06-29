@@ -13,6 +13,10 @@ DROP FUNCTION IF EXISTS public."UPDATE_EXCEPTION"(
     numeric, varchar, date, varchar, numeric,
     timestamp, text, jsonb, numeric, numeric, timestamp, text
 );
+DROP FUNCTION IF EXISTS public."UPDATE_EXCEPTION"(
+    numeric, varchar, date, varchar, numeric,
+    timestamp, text, json, numeric, numeric, timestamp, text
+);
 
 CREATE OR REPLACE FUNCTION public."UPDATE_EXCEPTION"(
     p_rule_id           numeric,
@@ -22,7 +26,7 @@ CREATE OR REPLACE FUNCTION public."UPDATE_EXCEPTION"(
     p_status_id         numeric,
     p_exception_time    timestamp,
     p_issue_description text,
-    p_result_data       jsonb,
+    p_result_data       json,
     p_assign_to_id      numeric,
     p_result_type_id    numeric,
     p_created_date      timestamp,

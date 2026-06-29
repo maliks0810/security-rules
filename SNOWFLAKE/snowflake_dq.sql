@@ -281,7 +281,7 @@ CREATE OR REPLACE TABLE EXCEPTION (
     COMMENT_ID        INT,
     EXCEPTION_TIME    TIMESTAMP_NTZ(9),
     ISSUE_DESCRIPTION VARCHAR(512),
-    RESULT_DATA       OBJECT,
+    RESULT_DATA       VARCHAR,
     SUPPRESS_DATE     DATE,
     ASSIGN_TO_ID      INT,
     RESULT_TYPE_ID    INT,
@@ -302,7 +302,7 @@ CREATE OR REPLACE TABLE EXCEPTION_HIST (
     COMMENT_ID        INT,
     EXCEPTION_TIME    TIMESTAMP_NTZ(9),
     ISSUE_DESCRIPTION VARCHAR(512),
-    RESULT_DATA       OBJECT,
+    RESULT_DATA       VARCHAR,
     SUPPRESS_DATE     DATE,
     ASSIGN_TO_ID      INT,
     RESULT_TYPE_ID    INT,
@@ -336,13 +336,13 @@ CREATE OR REPLACE PROCEDURE RECON_BBG_COMPARE(
     P_ID_BB_GLOBAL VARCHAR
 )
 RETURNS TABLE(
-    "RULE_ID"           NUMBER,
     "RULE_NAME"         VARCHAR,
     "ALADDIN_ID"        VARCHAR,
     "ID_BB_GLOBAL"      VARCHAR,
     "BBG_VALUE"         VARCHAR,
     "ALADDIN_VALUE"     VARCHAR,
-    "ISSUE_DESCRIPTION" VARCHAR
+    "ISSUE_DESCRIPTION" VARCHAR,
+    "RULE_ID"           NUMBER
 )
 LANGUAGE SQL
 AS
@@ -380,13 +380,13 @@ BEGIN
             )
             WHERE :P_ALADDIN_ID IS NULL OR :P_ALADDIN_ID = ''
         )
-        SELECT r."RULE_ID"           AS "RULE_ID",
-               src.rule_name         AS "RULE_NAME",
+        SELECT src.rule_name         AS "RULE_NAME",
                assets.aladdin_id     AS "ALADDIN_ID",
                assets.id_bb_global   AS "ID_BB_GLOBAL",
                src.bbg_value         AS "BBG_VALUE",
                src.aladdin_value     AS "ALADDIN_VALUE",
-               src.issue_description AS "ISSUE_DESCRIPTION"
+               src.issue_description AS "ISSUE_DESCRIPTION",
+               r."RULE_ID"           AS "RULE_ID"
         FROM assets
         CROSS JOIN src
         JOIN "RULE" r ON r."RULE_NAME" = src.rule_name
@@ -404,7 +404,7 @@ CREATE OR REPLACE PROCEDURE INSERT_EXCEPTION(
     "STATUS_ID"         NUMBER,
     "EXCEPTION_TIME"    TIMESTAMP_NTZ,
     "ISSUE_DESCRIPTION" VARCHAR,
-    "RESULT_DATA"       OBJECT,
+    "RESULT_DATA"       VARCHAR,
     "ASSIGN_TO_ID"      NUMBER,
     "RESULT_TYPE_ID"    NUMBER,
     "CREATED_DATE"      TIMESTAMP_NTZ,
@@ -441,7 +441,7 @@ CREATE OR REPLACE PROCEDURE UPDATE_EXCEPTION(
     P_STATUS_ID         NUMBER,
     P_EXCEPTION_TIME    TIMESTAMP_NTZ,
     P_ISSUE_DESCRIPTION VARCHAR,
-    P_RESULT_DATA       OBJECT,
+    P_RESULT_DATA       VARCHAR,
     P_ASSIGN_TO_ID      NUMBER,
     P_RESULT_TYPE_ID    NUMBER,
     P_CREATED_DATE      TIMESTAMP_NTZ,

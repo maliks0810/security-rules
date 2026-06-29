@@ -10,7 +10,7 @@ CREATE TABLE public."EXCEPTION" (
     "COMMENT_ID"          integer,
     "EXCEPTION_TIME"      timestamp,
     "ISSUE_DESCRIPTION"   varchar(512),
-    "RESULT_DATA"         jsonb,
+    "RESULT_DATA"         json,
     "SUPPRESS_DATE"       date,
     "ASSIGN_TO_ID"        integer,
     "RESULT_TYPE_ID"      integer,

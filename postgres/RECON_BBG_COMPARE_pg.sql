@@ -13,13 +13,13 @@ CREATE OR REPLACE FUNCTION public."RECON_BBG_COMPARE"(
     p_id_bb_global varchar(15)
 )
 RETURNS TABLE(
-    "RULE_ID"           numeric,
     "RULE_NAME"         varchar,
     "ALADDIN_ID"        varchar,
     "ID_BB_GLOBAL"      varchar,
     "BBG_VALUE"         varchar,
     "ALADDIN_VALUE"     varchar,
-    "ISSUE_DESCRIPTION" varchar
+    "ISSUE_DESCRIPTION" varchar,
+    "RULE_ID"           numeric
 )
 LANGUAGE sql
 AS $$
@@ -54,13 +54,13 @@ AS $$
         ) AS v(aladdin_id, id_bb_global)
         WHERE p_aladdin_id IS NULL OR p_aladdin_id = ''
     )
-    SELECT r."RULE_ID"::numeric        AS "RULE_ID",
-           src.rule_name               AS "RULE_NAME",
+    SELECT src.rule_name               AS "RULE_NAME",
            assets.aladdin_id           AS "ALADDIN_ID",
            assets.id_bb_global         AS "ID_BB_GLOBAL",
            src.bbg_value               AS "BBG_VALUE",
            src.aladdin_value           AS "ALADDIN_VALUE",
-           src.issue_description       AS "ISSUE_DESCRIPTION"
+           src.issue_description       AS "ISSUE_DESCRIPTION",
+           r."RULE_ID"::numeric        AS "RULE_ID"
     FROM assets
     CROSS JOIN src
     JOIN public."RULE" r ON r."RULE_NAME" = src.rule_name;

@@ -3,13 +3,13 @@ CREATE OR REPLACE PROCEDURE RECON_BBG_COMPARE(
     P_ID_BB_GLOBAL VARCHAR
 )
 RETURNS TABLE(
-    "RULE_ID"           NUMBER,
     "RULE_NAME"         VARCHAR,
     "ALADDIN_ID"        VARCHAR,
     "ID_BB_GLOBAL"      VARCHAR,
     "BBG_VALUE"         VARCHAR,
     "ALADDIN_VALUE"     VARCHAR,
-    "ISSUE_DESCRIPTION" VARCHAR
+    "ISSUE_DESCRIPTION" VARCHAR,
+    "RULE_ID"           NUMBER
 )
 LANGUAGE SQL
 AS
@@ -53,13 +53,13 @@ BEGIN
             )
             WHERE :P_ALADDIN_ID IS NULL OR :P_ALADDIN_ID = ''
         )
-        SELECT r."RULE_ID"        AS "RULE_ID",
-               src.rule_name      AS "RULE_NAME",
+        SELECT src.rule_name      AS "RULE_NAME",
                assets.aladdin_id  AS "ALADDIN_ID",
                assets.id_bb_global AS "ID_BB_GLOBAL",
                src.bbg_value      AS "BBG_VALUE",
                src.aladdin_value  AS "ALADDIN_VALUE",
-               src.issue_description AS "ISSUE_DESCRIPTION"
+               src.issue_description AS "ISSUE_DESCRIPTION",
+               r."RULE_ID"        AS "RULE_ID"
         FROM assets
         CROSS JOIN src
         JOIN "RULE" r ON r."RULE_NAME" = src.rule_name
