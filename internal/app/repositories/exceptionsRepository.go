@@ -313,8 +313,8 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 // 12-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
 // blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime
 // flows into EXCEPTION_TIME (full timestamp). ResultData is the JSON
-// column-array of results pulled from RULE_CATALOG_SOURCE — SF wraps it
-// in PARSE_JSON so it binds to the OBJECT-typed param; PG casts to json.
+// column-array of results pulled from RULE_CATALOG_SOURCE — both SF and
+// PG store it as a string (SF VARCHAR, PG json via $8::json cast).
 func InsertExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
 		if s == "" {
@@ -339,7 +339,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: InsertExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL INSERT_EXCEPTION(?,?,?,?,?,?,?,PARSE_JSON(?),?,?,?,?)",
+				"CALL INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
@@ -418,7 +418,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: UpdateExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL UPDATE_EXCEPTION(?,?,?,?,?,?,?,PARSE_JSON(?),?,?,?,?)",
+				"CALL UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
