@@ -395,6 +395,42 @@ BEGIN
 END;
 $$;
 
+-- DELETE_EXCEPTIONS -----------------------------------------------------------
+-- Wipes the day's EXCEPTION rows for the catalogs implied by (P_RULE_NAME,
+-- P_RULE_TYPE). Scope rules match GET_RULES — CATALOG/RULE filter by
+-- RULE_CATALOG.NAME, GROUP filters by RULE_GROUP.NAME, empty/All matches
+-- every catalog. Returns the row count for diagnostics.
+CREATE OR REPLACE PROCEDURE DELETE_EXCEPTIONS(
+    P_RULE_NAME VARCHAR DEFAULT NULL,
+    P_RULE_TYPE VARCHAR DEFAULT NULL
+)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    affected NUMBER := 0;
+BEGIN
+    DELETE FROM "EXCEPTION"
+    WHERE "EXCEPTION_DATE" = CURRENT_DATE()
+      AND "RULE_ID" IN (
+          SELECT r."RULE_ID"
+          FROM "RULE" r
+          JOIN "RULE_CATALOG" rc      ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+          LEFT JOIN "RULE_GROUP" rg   ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+          WHERE :P_RULE_NAME IS NULL
+             OR :P_RULE_NAME = ''
+             OR :P_RULE_NAME = 'All'
+             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+                   AND rc."NAME" = :P_RULE_NAME)
+             OR (UPPER(:P_RULE_TYPE) = 'GROUP'
+                   AND rg."NAME"  = :P_RULE_NAME)
+      );
+    affected := SQLROWCOUNT;
+    RETURN affected;
+END;
+$$;
+
 -- INSERT_EXCEPTION ------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE INSERT_EXCEPTION(
     "RULE_ID"           NUMBER,

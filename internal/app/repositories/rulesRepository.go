@@ -47,6 +47,45 @@ func GetRuleGroups() ([]string, error) {
 	return names, nil
 }
 
+// DeleteExceptions calls the DELETE_EXCEPTIONS(P_RULE_NAME, P_RULE_TYPE)
+// SP which wipes today's EXCEPTION rows whose underlying RULE falls in
+// the catalog scope implied by (ruleName, ruleType). Returns the row count.
+// Empty strings flow through as SQL NULL so the SP's "all catalogs"
+// branch fires.
+func DeleteExceptions(ruleName, ruleType string) (int, error) {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: DeleteExceptions - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL DELETE_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("rulesRepository: DeleteExceptions - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."DELETE_EXCEPTIONS"($1, $2)`,
+		nilIfEmpty(ruleName), nilIfEmpty(ruleType),
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // GetRuleIDsByName returns a snapshot of RULE_NAME -> RULE_ID for every
 // row in the RULE table. Used by ExecuteRule as a fallback when a
 // catalog's RULE_CATALOG_SOURCE result row only carries RULE_NAME and

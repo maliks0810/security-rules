@@ -37,27 +37,15 @@ const docTemplate = `{
         },
         "/v1/api/executeRules": {
             "get": {
-                "description": "Runs rule catalogs and inserts any returned rows as exceptions. asset_id is optional — when omitted (or empty), every rule catalog runs against all assets the catalog source returns (the ${ASSET_ID} placeholder is bound to NULL). If id_bb_global is supplied, asset_id is required. rule_name + rule_type scope which catalogs run, using the same semantics as /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
+                "description": "Wipes today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) via DELETE_EXCEPTIONS, then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "rules"
                 ],
-                "summary": "Execute rules",
+                "summary": "Execute rules (delete-then-insert)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Asset ID (omit to run across all assets; required when id_bb_global is supplied)",
-                        "name": "asset_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Bloomberg global ID",
-                        "name": "id_bb_global",
-                        "in": "query"
-                    },
                     {
                         "type": "string",
                         "description": "Filter value (catalog name or group name depending on rule_type)",
@@ -74,15 +62,6 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "rules executed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "asset_id is required when id_bb_global is supplied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

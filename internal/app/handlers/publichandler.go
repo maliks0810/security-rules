@@ -269,38 +269,20 @@ func GetRules(ctx *fiber.Ctx) error {
 }
 
 // ExecuteRules godoc
-// @Summary      Execute rules
-// @Description  Runs rule catalogs and inserts any returned rows as exceptions. asset_id is optional — when omitted (or empty), every rule catalog runs against all assets the catalog source returns (the ${ASSET_ID} placeholder is bound to NULL). If id_bb_global is supplied, asset_id is required. rule_name + rule_type scope which catalogs run, using the same semantics as /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
+// @Summary      Execute rules (delete-then-insert)
+// @Description  Wipes today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) via DELETE_EXCEPTIONS, then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
 // @Tags         rules
 // @Produce      json
-// @Param        asset_id      query     string  false  "Asset ID (omit to run across all assets; required when id_bb_global is supplied)"
-// @Param        id_bb_global  query     string  false  "Bloomberg global ID"
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
 // @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
 // @Success      200           {object}  map[string]string  "rules executed"
-// @Failure      400           {object}  map[string]string  "asset_id is required when id_bb_global is supplied"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
 // @Router       /v1/api/executeRules [get]
 func ExecuteRules(ctx *fiber.Ctx) error {
-	assetID := ctx.Query("asset_id")
-	idBbGlobal := ctx.Query("id_bb_global")
 	ruleName := ctx.Query("rule_name")
 	ruleType := ctx.Query("rule_type")
 
-	// id_bb_global only makes sense as a per-asset qualifier — passing one
-	// without an asset_id would silently bind ${ASSET_ID} to NULL while the
-	// caller probably expected a single-asset run.
-	if idBbGlobal != "" && assetID == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "asset_id is required when id_bb_global is supplied"})
-	}
-
-	var err error
-	if idBbGlobal == "" {
-		err = services.ExecuteRules(ruleName, ruleType, assetID)
-	} else {
-		err = services.ExecuteRules(ruleName, ruleType, assetID, idBbGlobal)
-	}
-	if err != nil {
+	if err := services.ExecuteRules(ruleName, ruleType); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
 	}
 
