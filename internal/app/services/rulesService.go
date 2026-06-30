@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"time"
 
 	"securityrules/security-rules/internal/app/events"
 	"securityrules/security-rules/internal/app/models"
@@ -62,6 +63,16 @@ func ExecuteRules(ruleName, ruleType string) error {
 		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: deleted %d, inserted %d",
 		ruleName, ruleType, deleted, len(produced),
 	))
+
+	events.Publish(events.Event{
+		Type: "rules.executed",
+		Payload: map[string]any{
+			"rule_name": ruleName,
+			"rule_type": ruleType,
+			"count":     len(produced),
+			"time":      time.Now().UTC().Format(time.RFC3339),
+		},
+	})
 	return nil
 }
 
