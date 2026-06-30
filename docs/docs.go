@@ -530,14 +530,14 @@ const docTemplate = `{
         },
         "/v1/api/getRuleNames": {
             "get": {
-                "description": "Returns RULE.RULE_NAME values for the given catalog. Used by the rule tree view.",
+                "description": "Returns one {rule_name, rule_description} per RULE row in the given catalog. Used by the rule tree view to render the friendlier description on each leaf (falling back to rule_name when null/empty) and to label the Exceptions header when a specific rule is selected.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "rule-names"
                 ],
-                "summary": "List rule names for a catalog",
+                "summary": "List rule names + descriptions for a catalog",
                 "parameters": [
                     {
                         "type": "string",
@@ -553,7 +553,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "string"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleName"
                             }
                         }
                     },
@@ -865,6 +865,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "rule_command": {
+                    "type": "string"
+                }
+            }
+        },
+        "securityrules_security-rules_internal_app_models.RuleName": {
+            "type": "object",
+            "properties": {
+                "rule_description": {
+                    "type": "string"
+                },
+                "rule_name": {
                     "type": "string"
                 }
             }

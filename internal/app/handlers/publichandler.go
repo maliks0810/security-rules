@@ -223,12 +223,12 @@ func GetRuleCatalogs(ctx *fiber.Ctx) error {
 }
 
 // GetRuleNames godoc
-// @Summary      List rule names for a catalog
-// @Description  Returns RULE.RULE_NAME values for the given catalog. Used by the rule tree view.
+// @Summary      List rule names + descriptions for a catalog
+// @Description  Returns one {rule_name, rule_description} per RULE row in the given catalog. Used by the rule tree view to render the friendlier description on each leaf (falling back to rule_name when null/empty) and to label the Exceptions header when a specific rule is selected.
 // @Tags         rule-names
 // @Produce      json
 // @Param        rule_catalog  query     string  true  "Rule catalog name"
-// @Success      200           {array}   string
+// @Success      200           {array}   models.RuleName
 // @Failure      400           {object}  map[string]string  "rule_catalog query parameter is required"
 // @Failure      500           {object}  map[string]string  "failed to query rule names"
 // @Router       /v1/api/getRuleNames [get]

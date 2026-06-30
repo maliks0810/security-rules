@@ -22,7 +22,7 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 	return repositories.GetRuleCatalogs(ruleGroup)
 }
 
-func GetRuleNames(ruleCatalog string) ([]string, error) {
+func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 

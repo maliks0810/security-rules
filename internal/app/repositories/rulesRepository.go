@@ -124,7 +124,7 @@ func GetRuleIDsByName() (map[string]int, error) {
 	return m, nil
 }
 
-func GetRuleNames(ruleCatalog string) ([]string, error) {
+func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -143,13 +143,16 @@ func GetRuleNames(ruleCatalog string) ([]string, error) {
 	}
 	defer rows.Close()
 
-	names := []string{}
+	names := []models.RuleName{}
 	for rows.Next() {
-		var name sql.NullString
-		if err := rows.Scan(&name); err != nil {
+		var name, description sql.NullString
+		if err := rows.Scan(&name, &description); err != nil {
 			return nil, err
 		}
-		names = append(names, sqlutil.NullStr(name))
+		names = append(names, models.RuleName{
+			RuleName:        sqlutil.NullStr(name),
+			RuleDescription: sqlutil.NullStr(description),
+		})
 	}
 	return names, nil
 }

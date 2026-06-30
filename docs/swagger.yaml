@@ -89,6 +89,13 @@ definitions:
       rule_command:
         type: string
     type: object
+  securityrules_security-rules_internal_app_models.RuleName:
+    properties:
+      rule_description:
+        type: string
+      rule_name:
+        type: string
+    type: object
 info:
   contact: {}
   description: REST API for managing security rules, assets, and SECURITY_EXCEPTION
@@ -450,8 +457,10 @@ paths:
       - rule-groups
   /v1/api/getRuleNames:
     get:
-      description: Returns RULE.RULE_NAME values for the given catalog. Used by the
-        rule tree view.
+      description: Returns one {rule_name, rule_description} per RULE row in the given
+        catalog. Used by the rule tree view to render the friendlier description on
+        each leaf (falling back to rule_name when null/empty) and to label the Exceptions
+        header when a specific rule is selected.
       parameters:
       - description: Rule catalog name
         in: query
@@ -465,7 +474,7 @@ paths:
           description: OK
           schema:
             items:
-              type: string
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.RuleName'
             type: array
         "400":
           description: rule_catalog query parameter is required
@@ -479,7 +488,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: List rule names for a catalog
+      summary: List rule names + descriptions for a catalog
       tags:
       - rule-names
   /v1/api/getRules:

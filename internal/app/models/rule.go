@@ -10,3 +10,12 @@ type Rule struct {
 	RuleCommand     string `json:"rule_command"`
 	Environment     string `json:"environment"`
 }
+
+// RuleName carries a single RULE row's name and friendly description as
+// returned by GET_RULE_NAMES — used by the rule tree view (it renders
+// description when non-empty, falls back to name) and to populate the
+// Exceptions header subtitle when a specific rule is selected.
+type RuleName struct {
+	RuleName        string `json:"rule_name"`
+	RuleDescription string `json:"rule_description"`
+}
