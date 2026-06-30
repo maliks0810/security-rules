@@ -25,27 +25,13 @@ func GetRuleNames(ruleCatalog string) ([]string, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 
-// ExecuteRules is the new orchestration that writes to the slim EXCEPTION
-// table. GetRules now returns one row per RULE_CATALOG; we run each
-// catalog's RULE_CATALOG_SOURCE exactly once and the result rows carry
-// their own RULE_ID, so a single query feeds many rules in one shot.
-// Diff key is (RuleID, AssetID), built from the produced rule IDs.
-//
-//   - (RuleID, AssetID) is in the produced set but not in the snapshot →
-//     INSERT a new exception.
-//   - (RuleID, AssetID) is in both the snapshot and produced set →
-//     UPDATE_EXCEPTION (re-flags STATUS_ID to Pending and refreshes
-//     EXCEPTION_DATE/TIME, ISSUE_DESCRIPTION, and RESULT_DATA from the
-//     re-fired rule's result row).
-//   - (RuleID, AssetID) is in the snapshot but not in the produced set →
-//     UPDATE_EXCEPTION_STATUS (flips Pending to Complete). Scoped to the
-//     rule IDs we actually produced this run, so rules not covered by any
-//     catalog source aren't accidentally marked Complete.
 // ExecuteRules runs every catalog in (ruleName, ruleType) scope after first
 // wiping the day's EXCEPTION rows for that same scope via DELETE_EXCEPTIONS.
-// Then every produced exception is INSERTED — no touch/complete branches,
-// no diff against existing rows, no SSE event. Use ExecuteSecurityRules for
-// the full incremental flow.
+// Every row produced by every catalog source is INSERTED verbatim — no
+// (RuleID, AssetID) dedupe, no touch/complete branches, no diff against
+// existing rows, no SSE event. The grain of the result set is whatever
+// each RULE_CATALOG_SOURCE returns. Use ExecuteSecurityRules for the
+// asset-scoped, incremental flow that dedupes and touches/completes.
 func ExecuteRules(ruleName, ruleType string) error {
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
@@ -57,25 +43,13 @@ func ExecuteRules(ruleName, ruleType string) error {
 		return err
 	}
 
-	type ruleAsset struct {
-		RuleID  int
-		AssetID string
-	}
-	seen := make(map[ruleAsset]bool)
 	var produced []models.Exception
 	for _, c := range catalogs {
 		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, "")
 		if err != nil {
 			return err
 		}
-		for _, e := range exceptions {
-			key := ruleAsset{e.RuleID, e.AssetID}
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			produced = append(produced, e)
-		}
+		produced = append(produced, exceptions...)
 	}
 
 	if len(produced) > 0 {
