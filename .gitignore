@@ -24,3 +24,6 @@ go.work
 # VSCode settings
 .vscode/
 
+# Per-developer local env override (other env/.env.* variants stay
+# tracked as shared templates).
+env/.env.local
