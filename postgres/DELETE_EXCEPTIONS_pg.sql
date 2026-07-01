@@ -1,13 +1,13 @@
-DROP FUNCTION IF EXISTS public."DELETE_EXCEPTIONS"(text, text);
+﻿DROP FUNCTION IF EXISTS public."SP_DELETE_EXCEPTIONS"(text, text);
 
 -- Deletes EXCEPTION rows whose EXCEPTION_DATE = today and whose RULE
 -- falls inside the catalog scope implied by (p_rule_name, p_rule_type).
 -- Scope rules match GET_RULES:
---   p_rule_type = 'CATALOG' or 'RULE' → p_rule_name = RULE_CATALOG.NAME
---   p_rule_type = 'GROUP'             → p_rule_name = RULE_GROUP.NAME
---   p_rule_name NULL / empty / 'All'  → every catalog (full wipe of today)
+--   p_rule_type = 'CATALOG' or 'RULE' â†’ p_rule_name = RULE_CATALOG.NAME
+--   p_rule_type = 'GROUP'             â†’ p_rule_name = RULE_GROUP.NAME
+--   p_rule_name NULL / empty / 'All'  â†’ every catalog (full wipe of today)
 -- Returns the number of rows deleted.
-CREATE OR REPLACE FUNCTION public."DELETE_EXCEPTIONS"(
+CREATE OR REPLACE FUNCTION public."SP_DELETE_EXCEPTIONS"(
     p_rule_name text DEFAULT NULL,
     p_rule_type text DEFAULT NULL
 )

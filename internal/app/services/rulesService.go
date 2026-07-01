@@ -157,7 +157,7 @@ func ExecuteSecurityRules(ruleName, ruleType, assetID string, idBbGlobal ...stri
 		if producedKeys[k] {
 			continue
 		}
-		n, err := repositories.UpdateExceptionStatus(k.AssetID, k.RuleID, true)
+		n, err := repositories.UpdateExceptionState(k.AssetID, k.RuleID, true)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
--- RECON_BBG_COMPARE: SP shape of the deprecated RECON_BBG_COMPARE_VW.
+﻿-- RECON_BBG_COMPARE: SP shape of the deprecated RECON_BBG_COMPARE_VW.
 -- When a caller passes (p_aladdin_id, p_id_bb_global), it reflects that
 -- pair back per BBG-compare rule. When both are NULL/empty (the "run for
 -- all assets" path), it emits a fixed demo set of three assets so the
@@ -6,9 +6,9 @@
 -- RULE_ID is resolved from the RULE table by RULE_NAME so the Go
 -- ExecuteRule layer can tag each emitted exception with its rule.
 
-DROP FUNCTION IF EXISTS public."RECON_BBG_COMPARE"(varchar, varchar);
+DROP FUNCTION IF EXISTS public."SP_RECON_BBG_COMPARE"(varchar, varchar);
 
-CREATE OR REPLACE FUNCTION public."RECON_BBG_COMPARE"(
+CREATE OR REPLACE FUNCTION public."SP_RECON_BBG_COMPARE"(
     p_aladdin_id   varchar(15),
     p_id_bb_global varchar(15)
 )

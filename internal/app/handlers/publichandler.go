@@ -37,7 +37,7 @@ func GetInformation(ctx *fiber.Ctx) error {
 // @Param        rule_catalog      query     string  false  "RULE_CATALOG.NAME filter (reserved — RULE does not carry RULE_CATALOG_ID for filtering yet)"
 // @Param        rule_name         query     string  false  "RULE.RULE_NAME filter"
 // @Param        rule_group        query     string  false  "Reserved (RULE has no rule_group yet)"
-// @Param        exception_status  query     string  false  "EXCEPTION_STATUS.NAME filter"
+// @Param        exception_state  query     string  false  "EXCEPTION_STATE.NAME filter"
 // @Param        assign_to         query     string  false  "DM_USER.USER filter"
 // @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
 // @Success      200             {array}   models.Exception
@@ -51,11 +51,11 @@ func GetExceptions(ctx *fiber.Ctx) error {
 	ruleCatalog := ctx.Query("rule_catalog")
 	ruleName := ctx.Query("rule_name")
 	ruleGroup := ctx.Query("rule_group")
-	exceptionStatus := ctx.Query("exception_status")
+	exceptionState := ctx.Query("exception_state")
 	assignTo := ctx.Query("assign_to")
 	ruleNamePattern := ctx.Query("rule_name_pattern")
 
-	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern)
+	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exceptions"})
 	}
@@ -73,7 +73,7 @@ func GetExceptions(ctx *fiber.Ctx) error {
 // @Param        priority        query     string  false  "SEVERITY_TYPE.CODE filter"
 // @Param        rule_catalog       query     string  false  "RULE_CATALOG.NAME filter"
 // @Param        rule_name        query     string  false  "RULE.RULE_NAME filter"
-// @Param        exception_status query     string  false  "EXCEPTION_STATUS.CODE filter"
+// @Param        exception_state query     string  false  "EXCEPTION_STATE.CODE filter"
 // @Param        assign_to       query      string  false  "DM_USER.USER filter"
 // @Success      200             {array}   models.Asset
 // @Failure      500             {object}  map[string]string  "failed to query assets"
@@ -84,11 +84,11 @@ func GetAssets(ctx *fiber.Ctx) error {
 	priority := ctx.Query("priority")
 	ruleCatalog := ctx.Query("rule_catalog")
 	ruleName := ctx.Query("rule_name")
-	exceptionStatus := ctx.Query("exception_status")
+	exceptionState := ctx.Query("exception_state")
 	assignTo := ctx.Query("assign_to")
 	ruleGroup := ctx.Query("rule_group")
 
-	assets, err := services.GetAssets(exceptionType, severity, priority, ruleCatalog, ruleName, exceptionStatus, assignTo, ruleGroup)
+	assets, err := services.GetAssets(exceptionType, severity, priority, ruleCatalog, ruleName, exceptionState, assignTo, ruleGroup)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query assets"})
 	}
@@ -96,18 +96,18 @@ func GetAssets(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(assets)
 }
 
-// GetExceptionStatus godoc
-// @Summary      List exception status codes
-// @Description  Returns EXCEPTION_STATUS.CODE values ordered by SORT_ORDER.
-// @Tags         exception-status
+// GetExceptionState godoc
+// @Summary      List exception state codes
+// @Description  Returns EXCEPTION_STATE.CODE values ordered by SORT_ORDER.
+// @Tags         exception-state
 // @Produce      json
 // @Success      200  {array}   string
-// @Failure      500  {object}  map[string]string  "failed to query exception status"
-// @Router       /v1/api/getExceptionStatus [get]
-func GetExceptionStatus(ctx *fiber.Ctx) error {
-	codes, err := services.GetExceptionStatus()
+// @Failure      500  {object}  map[string]string  "failed to query exception state"
+// @Router       /v1/api/getExceptionState [get]
+func GetExceptionState(ctx *fiber.Ctx) error {
+	codes, err := services.GetExceptionState()
 	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception status"})
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception state"})
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(codes)

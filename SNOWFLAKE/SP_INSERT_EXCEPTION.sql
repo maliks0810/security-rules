@@ -1,9 +1,9 @@
-CREATE OR REPLACE PROCEDURE INSERT_EXCEPTION(
+﻿CREATE OR REPLACE PROCEDURE SP_INSERT_EXCEPTION(
     "RULE_ID"           NUMBER,
     "ASSET_ID"          VARCHAR,
     "EXCEPTION_DATE"    DATE,
     "ID_BB_GLOBAL"      VARCHAR,
-    "STATUS_ID"         NUMBER,
+    "STATE_ID"         NUMBER,
     "EXCEPTION_TIME"    TIMESTAMP_NTZ,
     "ISSUE_DESCRIPTION" VARCHAR,
     "RESULT_DATA"       VARCHAR,
@@ -18,16 +18,16 @@ AS
 $$
 BEGIN
     -- INSERT ... SELECT (not VALUES) so the COALESCE/NULLIF expression on
-    -- STATUS_ID is evaluated by the query planner rather than the VALUES
+    -- STATE_ID is evaluated by the query planner rather than the VALUES
     -- list, which rejects function calls against bound parameters in SF.
     INSERT INTO "EXCEPTION" (
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
-        "STATUS_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
+        "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
         "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY"
     )
     SELECT
         :RULE_ID, :ASSET_ID, :EXCEPTION_DATE, :ID_BB_GLOBAL,
-        COALESCE(NULLIF(:STATUS_ID, 0), 1),  -- default to Pending
+        COALESCE(NULLIF(:STATE_ID, 0), 1),  -- default to Pending
         :EXCEPTION_TIME, :ISSUE_DESCRIPTION, :RESULT_DATA,
         :ASSIGN_TO_ID, :RESULT_TYPE_ID, :CREATED_DATE, :CREATED_BY;
     RETURN 'OK';

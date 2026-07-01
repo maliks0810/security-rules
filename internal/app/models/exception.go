@@ -1,7 +1,7 @@
 package models
 
 // Exception represents a row from the slim EXCEPTION table, optionally
-// augmented with joined display strings (rule name, status name, priority
+// augmented with joined display strings (rule name, state name, priority
 // name, etc.) when returned by GET_EXCEPTIONS_2. The display fields use
 // omitempty so insert/update bodies don't need to set them.
 type Exception struct {
@@ -12,8 +12,8 @@ type Exception struct {
 	ExceptionDate    string `json:"exception_date,omitempty"`
 	ExceptionTime    string `json:"exception_time,omitempty"`
 	IdBbGlobal       string `json:"id_bb_global,omitempty"`
-	StatusID         int    `json:"status_id"`
-	ExceptionStatus  string `json:"exception_status,omitempty"`
+	StateID          int    `json:"state_id"`
+	ExceptionState   string `json:"exception_state,omitempty"`
 	CommentID        int    `json:"comment_id,omitempty"`
 	IssueDescription string `json:"issue_description,omitempty"`
 	ResultData       string `json:"result_data,omitempty"`

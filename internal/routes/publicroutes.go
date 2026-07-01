@@ -13,7 +13,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getExceptions", handlers.GetExceptions)
 	route.Get("/getAssets", handlers.GetAssets)
 	route.Get("/getExceptionTypes", handlers.GetExceptionTypes)
-	route.Get("/getExceptionStatus", handlers.GetExceptionStatus)
+	route.Get("/getExceptionState", handlers.GetExceptionState)
 	route.Get("/getSeverityTypes", handlers.GetSeverityTypes)
 	route.Get("/getPriorityTypes", handlers.GetPriorityTypes)
 	route.Get("/getRules", handlers.GetRules)

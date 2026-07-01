@@ -1,4 +1,4 @@
-package repositories
+﻿package repositories
 
 import (
 	"bytes"
@@ -23,13 +23,13 @@ func GetRuleGroups() ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRuleGroups - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_RULE_GROUPS()")
+		rows, err = snowflake.Query("CALL SP_GET_RULE_GROUPS()")
 	} else {
 		log.Logger.Info("rulesRepository: GetRuleGroups - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_GROUPS"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_GROUPS"()`)
 	}
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func DeleteExceptions(ruleName, ruleType string) (int, error) {
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: DeleteExceptions - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL DELETE_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
+		rows, err := snowflake.Query("CALL SP_DELETE_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
 		if err != nil {
 			return 0, err
 		}
@@ -77,7 +77,7 @@ func DeleteExceptions(ruleName, ruleType string) (int, error) {
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."DELETE_EXCEPTIONS"($1, $2)`,
+		`SELECT public."SP_DELETE_EXCEPTIONS"($1, $2)`,
 		nilIfEmpty(ruleName), nilIfEmpty(ruleType),
 	).Scan(&n)
 	if err != nil {
@@ -89,7 +89,7 @@ func DeleteExceptions(ruleName, ruleType string) (int, error) {
 // GetRuleIDsByName returns a snapshot of RULE_NAME -> RULE_ID for every
 // row in the RULE table. Used by ExecuteRule as a fallback when a
 // catalog's RULE_CATALOG_SOURCE result row only carries RULE_NAME and
-// not RULE_ID — we resolve the ID via this map so the exception still
+// not RULE_ID â€” we resolve the ID via this map so the exception still
 // gets a valid foreign key.
 func GetRuleIDsByName() (map[string]int, error) {
 	var rows *sql.Rows
@@ -130,13 +130,13 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRuleNames - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_RULE_NAMES(?)", ruleCatalog)
+		rows, err = snowflake.Query("CALL SP_GET_RULE_NAMES(?)", ruleCatalog)
 	} else {
 		log.Logger.Info("rulesRepository: GetRuleNames - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_NAMES"($1)`, ruleCatalog)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_NAMES"($1)`, ruleCatalog)
 	}
 	if err != nil {
 		return nil, err
@@ -163,13 +163,13 @@ func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRuleCatalogs - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_RULE_CATALOGS(?)", ruleGroup)
+		rows, err = snowflake.Query("CALL SP_GET_RULE_CATALOGS(?)", ruleGroup)
 	} else {
 		log.Logger.Info("rulesRepository: GetRuleCatalogs - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULE_CATALOGS"($1)`, ruleGroup)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_CATALOGS"($1)`, ruleGroup)
 	}
 	if err != nil {
 		return nil, err
@@ -203,13 +203,13 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("rulesRepository: GetRules - using SNOWFLAKE database environment")
 		// snowflake.Query reopens the connection and retries once if the auth token has expired.
-		rows, err = snowflake.Query("CALL GET_RULES(?, ?)", ruleNameArg, ruleTypeArg)
+		rows, err = snowflake.Query("CALL SP_GET_RULES(?, ?)", ruleNameArg, ruleTypeArg)
 	} else {
 		log.Logger.Info("rulesRepository: GetRules - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_RULES"($1, $2)`, ruleNameArg, ruleTypeArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULES"($1, $2)`, ruleNameArg, ruleTypeArg)
 	}
 	if err != nil {
 		return nil, err
@@ -263,13 +263,13 @@ func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
 
 // ExecuteRule runs a RULE_CATALOG_SOURCE command verbatim once and builds
 // new-model Exception rows from the result set. Expected columns:
-//   - RULE_ID  — preferred. When present and valid, used directly.
-//   - RULE_NAME — required when RULE_ID is absent; ExecuteRule looks the
+//   - RULE_ID  â€” preferred. When present and valid, used directly.
+//   - RULE_NAME â€” required when RULE_ID is absent; ExecuteRule looks the
 //     ID up from the RULE table via GetRuleIDsByName (lazy, once per
 //     call). Sources that supply RULE_ID never trigger the lookup.
-//   - ASSET_ID / ALADDIN_ID and ISSUE_DESCRIPTION — used to populate
+//   - ASSET_ID / ALADDIN_ID and ISSUE_DESCRIPTION â€” used to populate
 //     the exception row.
-// One catalog source feeds many rules — each result row is tagged with
+// One catalog source feeds many rules â€” each result row is tagged with
 // its own RULE_ID so we avoid running the source once per rule.
 // catalogName is used as a fallback display label when a row has no
 // RULE_NAME column.
@@ -340,7 +340,7 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 			}
 		}
 		// Fallback: source didn't project a RULE_ID but does carry a
-		// RULE_NAME — resolve via RULE.RULE_NAME -> RULE.RULE_ID. The
+		// RULE_NAME â€” resolve via RULE.RULE_NAME -> RULE.RULE_ID. The
 		// lookup map is built lazily and reused for every subsequent row
 		// in this catalog's result set.
 		if rowRuleID == 0 && ruleNameIdx >= 0 && raw[ruleNameIdx].Valid && raw[ruleNameIdx].String != "" {
@@ -376,7 +376,7 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 			IdBbGlobal:    idBb,
 			ExceptionDate: now,
 			ExceptionTime: now,
-			StatusID:      1, // Pending
+			StateID:       1, // Pending
 			CreatedDate:   now,
 			CreatedBy:     "system",
 		}
@@ -390,13 +390,13 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 			ex.IssueDescription = sqlutil.NullStr(raw[issueIdx])
 		}
 		// Suppress catalogID-unused warning when no usage path picks it up
-		// elsewhere — keep it on the signature for caller-side context.
+		// elsewhere â€” keep it on the signature for caller-side context.
 		_ = catalogID
 
 		// Serialize the full row as a JSON object keyed by column name.
 		// Built by hand (not via json.Marshal on a map) because Go's encoder
 		// alphabetizes map keys, and Postgres jsonb would reorder them
-		// length-then-alphabetical anyway — we want SQL column order.
+		// length-then-alphabetical anyway â€” we want SQL column order.
 		// Pair with EXCEPTION.RESULT_DATA stored as json (not jsonb) so the
 		// text round-trips intact.
 		var buf bytes.Buffer

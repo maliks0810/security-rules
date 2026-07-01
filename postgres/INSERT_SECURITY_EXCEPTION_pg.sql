@@ -1,7 +1,7 @@
--- INSERT_SECURITY_EXCEPTION now accepts ID_BB_GLOBAL (Bloomberg global id)
+﻿-- INSERT_SECURITY_EXCEPTION now accepts ID_BB_GLOBAL (Bloomberg global id)
 -- as the last parameter. SECURITY_EXCEPTION."ID_BB_GLOBAL" is varchar(15).
 
-DROP FUNCTION IF EXISTS public."INSERT_SECURITY_EXCEPTION"(
+DROP FUNCTION IF EXISTS public."SP_INSERT_SECURITY_EXCEPTION"(
     numeric,
     timestamp, timestamp, timestamp,
     numeric, numeric, numeric, numeric, numeric,
@@ -11,7 +11,7 @@ DROP FUNCTION IF EXISTS public."INSERT_SECURITY_EXCEPTION"(
     varchar
 );
 
-CREATE OR REPLACE FUNCTION public."INSERT_SECURITY_EXCEPTION"(
+CREATE OR REPLACE FUNCTION public."SP_INSERT_SECURITY_EXCEPTION"(
     "RULE_ID"               numeric,
     "RUN_DATE"              timestamp,
     "RUN_START"             timestamp,

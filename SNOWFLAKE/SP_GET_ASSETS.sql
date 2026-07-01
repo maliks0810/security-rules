@@ -1,10 +1,10 @@
-CREATE OR REPLACE PROCEDURE GET_ASSETS(
+﻿CREATE OR REPLACE PROCEDURE SP_GET_ASSETS(
     P_EXCEPTION_TYPE   VARCHAR DEFAULT NULL,
     P_SEVERITY         VARCHAR DEFAULT NULL,
     P_PRIORITY         VARCHAR DEFAULT NULL,
     P_RULE_CATALOG     VARCHAR DEFAULT NULL,
     P_RULE_NAME        VARCHAR DEFAULT NULL,
-    P_EXCEPTION_STATUS VARCHAR DEFAULT NULL,
+    P_EXCEPTION_STATE VARCHAR DEFAULT NULL,
     P_ASSIGN_TO        VARCHAR DEFAULT NULL,
     P_RULE_GROUP       VARCHAR DEFAULT NULL
 )
@@ -41,7 +41,7 @@ BEGIN
                 est."SORT_ORDER" AS severity_rank,
                 et."NAME"        AS type_name,
                 et."SORT_ORDER"  AS type_rank,
-                es."NAME"        AS status_name,
+                es."NAME"        AS state_name,
                 du."USER"        AS assign_to_user
             FROM "EXCEPTION" e
             JOIN "RULE" r
@@ -56,8 +56,8 @@ BEGIN
               ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
             LEFT JOIN "RULE_GROUP" rg
               ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
-            LEFT JOIN "EXCEPTION_STATUS" es
-              ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
+            LEFT JOIN "EXCEPTION_STATE" es
+              ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
             LEFT JOIN "DM_USER" du
               ON du."ID" = e."ASSIGN_TO_ID"
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
@@ -66,7 +66,7 @@ BEGIN
               AND (:P_RULE_GROUP       IS NULL OR :P_RULE_GROUP       = 'All' OR rg."NAME"      = :P_RULE_GROUP)
               AND (:P_RULE_CATALOG     IS NULL OR :P_RULE_CATALOG     = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
               AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
-              AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."NAME"      = :P_EXCEPTION_STATUS)
+              AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME"      = :P_EXCEPTION_STATE)
               AND (:P_ASSIGN_TO        IS NULL OR :P_ASSIGN_TO        = 'All' OR du."USER"      = :P_ASSIGN_TO)
         )
         SELECT
@@ -80,7 +80,7 @@ BEGIN
             'XYZ'                                                  AS "SECURITY_DESCRIPTION",
             'Colman Slain'                                         AS "TRADER",
             'ABS'                                                  AS "TRADING_TEAM",
-            COUNT_IF(COALESCE(status_name, '') <> 'Complete')      AS "EXCEPTION_COUNT",
+            COUNT_IF(COALESCE(state_name, '') <> 'Complete')      AS "EXCEPTION_COUNT",
             '10:55 AM'                                             AS "BBG_LAST_REFRESH",
             -- ALL_COMPLETE: asset-level property, true iff every EXCEPTION row
             -- for the asset (across all statuses, ignoring user filters) has
@@ -89,8 +89,8 @@ BEGIN
             (SELECT COUNT(*) > 0
                     AND COUNT_IF(COALESCE(es_all."NAME", '') <> 'Complete') = 0
                FROM "EXCEPTION" e_all
-               LEFT JOIN "EXCEPTION_STATUS" es_all
-                 ON es_all."EXCEPTION_STATUS_ID" = e_all."STATUS_ID"
+               LEFT JOIN "EXCEPTION_STATE" es_all
+                 ON es_all."EXCEPTION_STATE_ID" = e_all."STATE_ID"
               WHERE e_all."ASSET_ID" = filtered."ASSET_ID")        AS "ALL_COMPLETE"
         FROM filtered
         GROUP BY "ASSET_ID"

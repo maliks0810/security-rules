@@ -6,7 +6,7 @@ CREATE TABLE public."EXCEPTION_HIST" (
     "ASSET_ID"            varchar(100),
     "EXCEPTION_DATE"      date,
     "ID_BB_GLOBAL"        varchar(15),
-    "STATUS_ID"           integer,
+    "STATE_ID"            integer,
     "COMMENT_ID"          integer,
     "EXCEPTION_TIME"      timestamp,
     "ISSUE_DESCRIPTION"   varchar(512),

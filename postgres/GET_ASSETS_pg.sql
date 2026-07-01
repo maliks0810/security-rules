@@ -1,20 +1,20 @@
--- GET_ASSETS sources from the slim EXCEPTION table. Priority / severity /
+﻿-- GET_ASSETS sources from the slim EXCEPTION table. Priority / severity /
 -- type / rule-catalog all come from RULE (the rule's own attributes),
 -- joined to the corresponding EXCEPTION_*_TYPE lookups for their NAMEs.
 -- FIGI is the most-recent EXCEPTION.ID_BB_GLOBAL per asset, and ASSIGN_TO
 -- is the most-recent DM_USER.USER. The aggregate result is one row per
 -- asset that has at least one matching exception.
 
-DROP FUNCTION IF EXISTS public."GET_ASSETS"(text, text, text, text, text, text, text);
-DROP FUNCTION IF EXISTS public."GET_ASSETS"(text, text, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public."SP_GET_ASSETS"(text, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public."SP_GET_ASSETS"(text, text, text, text, text, text, text, text);
 
-CREATE OR REPLACE FUNCTION public."GET_ASSETS"(
+CREATE OR REPLACE FUNCTION public."SP_GET_ASSETS"(
     p_exception_type   text DEFAULT NULL,
     p_severity         text DEFAULT NULL,
     p_priority         text DEFAULT NULL,
     p_rule_catalog     text DEFAULT NULL,
     p_rule_name        text DEFAULT NULL,
-    p_exception_status text DEFAULT NULL,
+    p_exception_state  text DEFAULT NULL,
     p_assign_to        text DEFAULT NULL,
     p_rule_group       text DEFAULT NULL
 )
@@ -46,7 +46,7 @@ AS $$
             est."SORT_ORDER" AS severity_rank,
             et."NAME"        AS type_name,
             et."SORT_ORDER"  AS type_rank,
-            es."NAME"        AS status_name,
+            es."NAME"        AS state_name,
             du."USER"        AS assign_to_user
         FROM public."EXCEPTION" e
         JOIN public."RULE" r
@@ -61,8 +61,8 @@ AS $$
           ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
         LEFT JOIN public."RULE_GROUP" rg
           ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
-        LEFT JOIN public."EXCEPTION_STATUS" es
-          ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
+        LEFT JOIN public."EXCEPTION_STATE" es
+          ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
         LEFT JOIN public."DM_USER" du
           ON du."ID" = e."ASSIGN_TO_ID"
         WHERE (p_exception_type   IS NULL OR et."NAME"  = p_exception_type)
@@ -71,7 +71,7 @@ AS $$
           AND (p_rule_group       IS NULL OR p_rule_group       = 'All' OR rg."NAME"      = p_rule_group)
           AND (p_rule_catalog     IS NULL OR p_rule_catalog     = 'All' OR rc."NAME"      = p_rule_catalog)
           AND (p_rule_name        IS NULL OR p_rule_name        = 'All' OR r."RULE_NAME" = p_rule_name)
-          AND (p_exception_status IS NULL OR p_exception_status = 'All' OR es."NAME"      = p_exception_status)
+          AND (p_exception_state  IS NULL OR p_exception_state  = 'All' OR es."NAME"      = p_exception_state)
           AND (p_assign_to        IS NULL OR p_assign_to        = 'All' OR du."USER"      = p_assign_to)
     )
     SELECT
@@ -86,7 +86,7 @@ AS $$
         'XYZ'                                                                        AS "SECURITY_DESCRIPTION",
         'Colman Slain'                                                               AS "TRADER",
         'ABS'                                                                        AS "TRADING_TEAM",
-        COUNT(*) FILTER (WHERE f.status_name IS DISTINCT FROM 'Complete')::int       AS "EXCEPTION_COUNT",
+        COUNT(*) FILTER (WHERE f.state_name IS DISTINCT FROM 'Complete')::int        AS "EXCEPTION_COUNT",
         '10:55 AM'                                                                   AS "BBG_LAST_REFRESH",
         -- ALL_COMPLETE is an asset-level property: true iff every EXCEPTION row
         -- for the asset has status 'Complete', regardless of the user's filters.
@@ -96,8 +96,8 @@ AS $$
         (SELECT COUNT(*) > 0
                 AND COUNT(*) FILTER (WHERE es_all."NAME" IS DISTINCT FROM 'Complete') = 0
            FROM public."EXCEPTION" e_all
-           LEFT JOIN public."EXCEPTION_STATUS" es_all
-             ON es_all."EXCEPTION_STATUS_ID" = e_all."STATUS_ID"
+           LEFT JOIN public."EXCEPTION_STATE" es_all
+             ON es_all."EXCEPTION_STATE_ID" = e_all."STATE_ID"
           WHERE e_all."ASSET_ID" = f."ASSET_ID")                                     AS "ALL_COMPLETE"
     FROM filtered f
     GROUP BY f."ASSET_ID"

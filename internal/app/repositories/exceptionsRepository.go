@@ -1,4 +1,4 @@
-package repositories
+﻿package repositories
 
 import (
 	"database/sql"
@@ -18,13 +18,13 @@ func GetSeverityTypes() ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetSeverityTypes - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_SEVERITY_TYPE()")
+		rows, err = snowflake.Query("CALL SP_GET_SEVERITY_TYPE()")
 	} else {
 		log.Logger.Info("exceptionsRepository: GetSeverityTypes - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_SEVERITY_TYPE"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_SEVERITY_TYPE"()`)
 	}
 	if err != nil {
 		return nil, err
@@ -48,13 +48,13 @@ func GetPriorityTypes() ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetPriorityTypes - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_PRIORITY_TYPE()")
+		rows, err = snowflake.Query("CALL SP_GET_PRIORITY_TYPE()")
 	} else {
 		log.Logger.Info("exceptionsRepository: GetPriorityTypes - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_PRIORITY_TYPE"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_PRIORITY_TYPE"()`)
 	}
 	if err != nil {
 		return nil, err
@@ -72,19 +72,19 @@ func GetPriorityTypes() ([]string, error) {
 	return codes, nil
 }
 
-func GetExceptionStatus() ([]string, error) {
+func GetExceptionState() ([]string, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: GetExceptionStatus - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_EXCEPTION_STATUS()")
+		log.Logger.Info("exceptionsRepository: GetExceptionState - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_STATE()")
 	} else {
-		log.Logger.Info("exceptionsRepository: GetExceptionStatus - using POSTGRES database environment")
+		log.Logger.Info("exceptionsRepository: GetExceptionState - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTION_STATUS"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_STATE"()`)
 	}
 	if err != nil {
 		return nil, err
@@ -108,13 +108,13 @@ func GetExceptionTypes() ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptionTypes - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_EXCEPTION_TYPE()")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_TYPE()")
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptionTypes - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTION_TYPE"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_TYPE"()`)
 	}
 	if err != nil {
 		return nil, err
@@ -134,8 +134,8 @@ func GetExceptionTypes() ([]string, error) {
 
 // GetExceptions calls GET_EXCEPTIONS_2, which reads from the slim EXCEPTION
 // table and joins RULE + the lookup tables. Returns the new Exception
-// model (23-column shape — no dummy NULLs to fit the legacy struct).
-func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionStatus, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+// model (23-column shape â€” no dummy NULLs to fit the legacy struct).
+func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -152,19 +152,19 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	ruleCatalogArg := nilIfEmpty(ruleCatalog)
 	ruleNameArg := nilIfEmpty(ruleName)
 	ruleGroupArg := nilIfEmpty(ruleGroup)
-	exceptionStatusArg := nilIfEmpty(exceptionStatus)
+	exceptionStateArg := nilIfEmpty(exceptionState)
 	assignToArg := nilIfEmpty(assignTo)
 	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg, ruleNamePatternArg)
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStatusArg, assignToArg, ruleNamePatternArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg)
 	}
 	if err != nil {
 		return nil, err
@@ -181,8 +181,8 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			exceptionDate    sql.NullTime
 			exceptionTime    sql.NullTime
 			idBbGlobal       sql.NullString
-			statusID         sql.NullInt64
-			exceptionStatus  sql.NullString
+			stateID         sql.NullInt64
+			exceptionState  sql.NullString
 			commentID        sql.NullInt64
 			issueDescription sql.NullString
 			resultData       sql.NullString
@@ -202,7 +202,7 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		if err := rows.Scan(
 			&exceptionID, &ruleID, &ruleNameCol, &assetIDCol,
 			&exceptionDate, &exceptionTime, &idBbGlobal,
-			&statusID, &exceptionStatus, &commentID,
+			&stateID, &exceptionState, &commentID,
 			&issueDescription, &resultData, &suppressDate,
 			&assignToID, &assignToCol, &resultTypeID,
 			&priorityCol, &severityCol, &exceptionTypeCol,
@@ -219,8 +219,8 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			ExceptionDate:    sqlutil.NullTime(exceptionDate),
 			ExceptionTime:    sqlutil.NullTime(exceptionTime),
 			IdBbGlobal:       sqlutil.NullStr(idBbGlobal),
-			StatusID:         sqlutil.NullInt(statusID),
-			ExceptionStatus:  sqlutil.NullStr(exceptionStatus),
+			StateID:         sqlutil.NullInt(stateID),
+			ExceptionState:  sqlutil.NullStr(exceptionState),
 			CommentID:        sqlutil.NullInt(commentID),
 			IssueDescription: sqlutil.NullStr(issueDescription),
 			ResultData:       sqlutil.NullStr(resultData),
@@ -252,7 +252,7 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: UpdateAssignTo - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL UPDATE_ASSIGN_TO(?, ?)", assetID, assignTo)
+		rows, err := snowflake.Query("CALL SP_UPDATE_ASSIGN_TO(?, ?)", assetID, assignTo)
 		if err != nil {
 			return 0, err
 		}
@@ -267,7 +267,7 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."UPDATE_ASSIGN_TO"($1, $2)`,
+		`SELECT public."SP_UPDATE_ASSIGN_TO"($1, $2)`,
 		assetID, assignTo,
 	).Scan(&n)
 	if err != nil {
@@ -276,16 +276,16 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return n, nil
 }
 
-// UpdateExceptionStatus stamps MODIFIED_DATE / MODIFIED_BY on every EXCEPTION
+// UpdateExceptionState stamps MODIFIED_DATE / MODIFIED_BY on every EXCEPTION
 // row matching (ASSET_ID, RULE_ID). When complete is true, also flips
-// STATUS_ID to 4 (Complete). When false, status is left untouched — the
+// STATE_ID to 4 (Complete). When false, status is left untouched â€” the
 // "touch" case for ExecuteRules where a rule re-fires for an existing
 // (RuleID, AssetID).
-func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, error) {
+func UpdateExceptionState(assetID string, ruleID int, complete bool) (int, error) {
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: UpdateExceptionStatus - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL UPDATE_EXCEPTION_STATUS(?, ?, ?)", assetID, ruleID, complete)
+		log.Logger.Info("exceptionsRepository: UpdateExceptionState - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_STATE(?, ?, ?)", assetID, ruleID, complete)
 		if err != nil {
 			return 0, err
 		}
@@ -295,12 +295,12 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 		}
 		return n, nil
 	}
-	log.Logger.Info("exceptionsRepository: UpdateExceptionStatus - using POSTGRES database environment")
+	log.Logger.Info("exceptionsRepository: UpdateExceptionState - using POSTGRES database environment")
 	if postgres.DB == nil {
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."UPDATE_EXCEPTION_STATUS"($1, $2, $3)`,
+		`SELECT public."SP_UPDATE_EXCEPTION_STATE"($1, $2, $3)`,
 		assetID, ruleID, complete,
 	).Scan(&n)
 	if err != nil {
@@ -313,7 +313,7 @@ func UpdateExceptionStatus(assetID string, ruleID int, complete bool) (int, erro
 // 12-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
 // blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime
 // flows into EXCEPTION_TIME (full timestamp). ResultData is the JSON
-// column-array of results pulled from RULE_CATALOG_SOURCE — both SF and
+// column-array of results pulled from RULE_CATALOG_SOURCE â€” both SF and
 // PG store it as a string (SF VARCHAR, PG json via $8::json cast).
 func InsertExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
@@ -339,12 +339,12 @@ func InsertExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: InsertExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL SP_INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
 				nilIfEmpty(e.IdBbGlobal),
-				e.StatusID,
+				e.StateID,
 				nilIfEmpty(e.ExceptionTime),
 				nilIfEmpty(e.IssueDescription),
 				nilIfEmpty(e.ResultData),
@@ -368,12 +368,12 @@ func InsertExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
+			`SELECT public."SP_INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
 			nilIfEmpty(e.IdBbGlobal),
-			e.StatusID,
+			e.StateID,
 			nilIfEmpty(e.ExceptionTime),
 			nilIfEmpty(e.IssueDescription),
 			nilIfEmpty(e.ResultData),
@@ -390,9 +390,9 @@ func InsertExceptions(exceptions []models.Exception) error {
 }
 
 // UpdateExceptions updates each EXCEPTION row identified by (ASSET_ID, RULE_ID)
-// via UPDATE_EXCEPTION. STATUS_ID is force-reset to 1 (Pending) inside the SP
+// via UPDATE_EXCEPTION. STATE_ID is force-reset to 1 (Pending) inside the SP
 // regardless of what the caller passes. A NULL ResultData preserves the
-// existing column via COALESCE inside the SP — same pattern as ID_BB_GLOBAL
+// existing column via COALESCE inside the SP â€” same pattern as ID_BB_GLOBAL
 // and ASSIGN_TO_ID.
 func UpdateExceptions(exceptions []models.Exception) error {
 	nilIfEmpty := func(s string) any {
@@ -418,12 +418,12 @@ func UpdateExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: UpdateExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL SP_UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
 				nilIfEmpty(e.IdBbGlobal),
-				e.StatusID,
+				e.StateID,
 				nilIfEmpty(e.ExceptionTime),
 				nilIfEmpty(e.IssueDescription),
 				nilIfEmpty(e.ResultData),
@@ -447,12 +447,12 @@ func UpdateExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
+			`SELECT public."SP_UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
 			nilIfEmpty(e.IdBbGlobal),
-			e.StatusID,
+			e.StateID,
 			nilIfEmpty(e.ExceptionTime),
 			nilIfEmpty(e.IssueDescription),
 			nilIfEmpty(e.ResultData),

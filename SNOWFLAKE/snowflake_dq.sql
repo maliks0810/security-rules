@@ -1,19 +1,19 @@
--- =============================================================================
+﻿-- =============================================================================
 -- snowflake_dq.sql
 --
 -- Combined Snowflake setup for the security-rules / DQM application.
 -- Database: TCW_CORE_DEV, Schema: DATA_QUALITY.
--- This is the canonical "fresh environment" script — running it brings the
+-- This is the canonical "fresh environment" script â€” running it brings the
 -- DATA_QUALITY schema to the objects + seed data the Go service expects.
 --
 -- RERUNNABILITY:
---   * Every object uses CREATE OR REPLACE — tables, views, procedures.
+--   * Every object uses CREATE OR REPLACE â€” tables, views, procedures.
 --   * Lookup AND operational tables (DM_USER, RULE_GROUP, RULE_CATALOG, RULE,
---     EXCEPTION, EXCEPTION_HIST, EXCEPTION_STATUS, EXCEPTION_TYPE,
+--     EXCEPTION, EXCEPTION_HIST, EXCEPTION_STATE, EXCEPTION_TYPE,
 --     EXCEPTION_PRIORITY_TYPE, EXCEPTION_SEVERITY_TYPE) are dropped and
 --     recreated on each run, then re-seeded from the literal VALUES in
 --     this script. Running this file destroys existing row data in those
---     tables — that is the intended semantic for repeatable environment
+--     tables â€” that is the intended semantic for repeatable environment
 --     setup.
 --   * If you need to preserve production data on a given table, comment
 --     that table's CREATE OR REPLACE block before running the script.
@@ -40,16 +40,16 @@ USE SCHEMA DATA_QUALITY;
 -- 1. LOOKUP TABLES (seeded, idempotent via CREATE OR REPLACE)
 -- =============================================================================
 
--- EXCEPTION_STATUS ------------------------------------------------------------
-CREATE OR REPLACE TABLE EXCEPTION_STATUS (
-    EXCEPTION_STATUS_ID INT,
+-- EXCEPTION_STATE ------------------------------------------------------------
+CREATE OR REPLACE TABLE EXCEPTION_STATE (
+    EXCEPTION_STATE_ID INT,
     NAME                VARCHAR(100),
     SORT_ORDER          INT,
     CREATED_BY          VARCHAR(100),
     CREATED_DATE        TIMESTAMP_NTZ(9)
 );
 
-INSERT INTO EXCEPTION_STATUS (EXCEPTION_STATUS_ID, NAME, SORT_ORDER, CREATED_BY, CREATED_DATE) VALUES
+INSERT INTO EXCEPTION_STATE (EXCEPTION_STATE_ID, NAME, SORT_ORDER, CREATED_BY, CREATED_DATE) VALUES
     (1, 'Pending',  10, CURRENT_USER(), CURRENT_TIMESTAMP()),
     (5, 'OnHold',   15, CURRENT_USER(), CURRENT_TIMESTAMP()),
     (2, 'Assigned', 20, CURRENT_USER(), CURRENT_TIMESTAMP()),
@@ -111,7 +111,7 @@ INSERT INTO EXCEPTION_SEVERITY_TYPE (EXCEPTION_SEVERITY_TYPE_ID, NAME, SORT_ORDE
 
 
 -- =============================================================================
--- 2. OPERATIONAL DATA TABLES (CREATE OR REPLACE — resets data on rerun)
+-- 2. OPERATIONAL DATA TABLES (CREATE OR REPLACE â€” resets data on rerun)
 -- =============================================================================
 
 -- DM_USER ---------------------------------------------------------------------
@@ -158,7 +158,7 @@ SELECT
     'Bloomberg Compare Differences',
     'Bloomberg Compare Differences',
     (SELECT RULE_GROUP_ID FROM RULE_GROUP WHERE NAME = 'Security Master'),
-    'CALL RECON_BBG_COMPARE(${ASSET_ID}, ${ID_BB_GLOBAL})',
+    'CALL SP_RECON_BBG_COMPARE(${ASSET_ID}, ${ID_BB_GLOBAL})',
     'SQL',
     'DE_SNOWFLAKE',
     CURRENT_TIMESTAMP(),
@@ -277,7 +277,7 @@ CREATE OR REPLACE TABLE EXCEPTION (
     ASSET_ID          VARCHAR(100),
     EXCEPTION_DATE    DATE,
     ID_BB_GLOBAL      VARCHAR(15),
-    STATUS_ID         INT,
+    STATE_ID         INT,
     COMMENT_ID        INT,
     EXCEPTION_TIME    TIMESTAMP_NTZ(9),
     ISSUE_DESCRIPTION VARCHAR(512),
@@ -298,7 +298,7 @@ CREATE OR REPLACE TABLE EXCEPTION_HIST (
     ASSET_ID          VARCHAR(100),
     EXCEPTION_DATE    DATE,
     ID_BB_GLOBAL      VARCHAR(15),
-    STATUS_ID         INT,
+    STATE_ID         INT,
     COMMENT_ID        INT,
     EXCEPTION_TIME    TIMESTAMP_NTZ(9),
     ISSUE_DESCRIPTION VARCHAR(512),
@@ -331,7 +331,7 @@ DROP VIEW IF EXISTS RECON_BBG_COMPARE_VW;
 -- produces visible exceptions for testing. RULE_ID is resolved from RULE
 -- by RULE_NAME so the Go ExecuteRule layer can tag each emitted exception
 -- with its rule (it drops rows that lack RULE_ID).
-CREATE OR REPLACE PROCEDURE RECON_BBG_COMPARE(
+CREATE OR REPLACE PROCEDURE SP_RECON_BBG_COMPARE(
     P_ALADDIN_ID   VARCHAR,
     P_ID_BB_GLOBAL VARCHAR
 )
@@ -397,10 +397,10 @@ $$;
 
 -- DELETE_EXCEPTIONS -----------------------------------------------------------
 -- Wipes the day's EXCEPTION rows for the catalogs implied by (P_RULE_NAME,
--- P_RULE_TYPE). Scope rules match GET_RULES — CATALOG/RULE filter by
+-- P_RULE_TYPE). Scope rules match GET_RULES â€” CATALOG/RULE filter by
 -- RULE_CATALOG.NAME, GROUP filters by RULE_GROUP.NAME, empty/All matches
 -- every catalog. Returns the row count for diagnostics.
-CREATE OR REPLACE PROCEDURE DELETE_EXCEPTIONS(
+CREATE OR REPLACE PROCEDURE SP_DELETE_EXCEPTIONS(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
@@ -432,12 +432,12 @@ END;
 $$;
 
 -- INSERT_EXCEPTION ------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE INSERT_EXCEPTION(
+CREATE OR REPLACE PROCEDURE SP_INSERT_EXCEPTION(
     "RULE_ID"           NUMBER,
     "ASSET_ID"          VARCHAR,
     "EXCEPTION_DATE"    DATE,
     "ID_BB_GLOBAL"      VARCHAR,
-    "STATUS_ID"         NUMBER,
+    "STATE_ID"         NUMBER,
     "EXCEPTION_TIME"    TIMESTAMP_NTZ,
     "ISSUE_DESCRIPTION" VARCHAR,
     "RESULT_DATA"       VARCHAR,
@@ -452,16 +452,16 @@ AS
 $$
 BEGIN
     -- INSERT ... SELECT (not VALUES) so the COALESCE/NULLIF expression on
-    -- STATUS_ID is evaluated by the query planner rather than the VALUES
+    -- STATE_ID is evaluated by the query planner rather than the VALUES
     -- list, which rejects function calls against bound parameters in SF.
     INSERT INTO "EXCEPTION" (
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
-        "STATUS_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
+        "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
         "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY"
     )
     SELECT
         :RULE_ID, :ASSET_ID, :EXCEPTION_DATE, :ID_BB_GLOBAL,
-        COALESCE(NULLIF(:STATUS_ID, 0), 1),  -- default to Pending
+        COALESCE(NULLIF(:STATE_ID, 0), 1),  -- default to Pending
         :EXCEPTION_TIME, :ISSUE_DESCRIPTION, :RESULT_DATA,
         :ASSIGN_TO_ID, :RESULT_TYPE_ID, :CREATED_DATE, :CREATED_BY;
     RETURN 'OK';
@@ -469,12 +469,12 @@ END;
 $$;
 
 -- UPDATE_EXCEPTION ------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE UPDATE_EXCEPTION(
+CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION(
     P_RULE_ID           NUMBER,
     P_ASSET_ID          VARCHAR,
     P_EXCEPTION_DATE    DATE,
     P_ID_BB_GLOBAL      VARCHAR,
-    P_STATUS_ID         NUMBER,
+    P_STATE_ID         NUMBER,
     P_EXCEPTION_TIME    TIMESTAMP_NTZ,
     P_ISSUE_DESCRIPTION VARCHAR,
     P_RESULT_DATA       VARCHAR,
@@ -491,7 +491,7 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "EXCEPTION_DATE"    = :P_EXCEPTION_DATE,
            "EXCEPTION_TIME"    = :P_EXCEPTION_TIME,
-           "STATUS_ID"         = 1,  -- re-flagged -> Pending
+           "STATE_ID"         = 1,  -- re-flagged -> Pending
            "ISSUE_DESCRIPTION" = :P_ISSUE_DESCRIPTION,
            "RESULT_DATA"       = COALESCE(:P_RESULT_DATA, "RESULT_DATA"),
            "ASSIGN_TO_ID"      = COALESCE(:P_ASSIGN_TO_ID, "ASSIGN_TO_ID"),
@@ -505,10 +505,10 @@ BEGIN
 END;
 $$;
 
--- UPDATE_EXCEPTION_STATUS -----------------------------------------------------
--- Bumps MODIFIED_DATE / MODIFIED_BY on every matching row. Flips STATUS_ID
+-- UPDATE_EXCEPTION_STATE -----------------------------------------------------
+-- Bumps MODIFIED_DATE / MODIFIED_BY on every matching row. Flips STATE_ID
 -- to 4 (Complete) only when P_COMPLETE is true.
-CREATE OR REPLACE PROCEDURE UPDATE_EXCEPTION_STATUS(
+CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION_STATE(
     P_ASSET_ID VARCHAR,
     P_RULE_ID  NUMBER,
     P_COMPLETE BOOLEAN DEFAULT FALSE
@@ -521,7 +521,7 @@ DECLARE
     affected NUMBER := 0;
 BEGIN
     UPDATE "EXCEPTION"
-       SET "STATUS_ID"     = CASE WHEN :P_COMPLETE THEN 4 ELSE "STATUS_ID" END,
+       SET "STATE_ID"     = CASE WHEN :P_COMPLETE THEN 4 ELSE "STATE_ID" END,
            "MODIFIED_DATE" = CURRENT_TIMESTAMP::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "ASSET_ID"      = :P_ASSET_ID
@@ -532,7 +532,7 @@ END;
 $$;
 
 -- UPDATE_ASSIGN_TO ------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE UPDATE_ASSIGN_TO(
+CREATE OR REPLACE PROCEDURE SP_UPDATE_ASSIGN_TO(
     P_ASSET_ID  VARCHAR,
     P_ASSIGN_TO VARCHAR
 )
@@ -563,7 +563,7 @@ END;
 $$;
 
 -- GET_DM_USERS ----------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_DM_USERS()
+CREATE OR REPLACE PROCEDURE SP_GET_DM_USERS()
 RETURNS TABLE("USER" VARCHAR)
 LANGUAGE SQL
 AS
@@ -581,7 +581,7 @@ END;
 $$;
 
 -- GET_RULE_GROUPS -------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_RULE_GROUPS()
+CREATE OR REPLACE PROCEDURE SP_GET_RULE_GROUPS()
 RETURNS TABLE("NAME" VARCHAR)
 LANGUAGE SQL
 AS
@@ -599,7 +599,7 @@ END;
 $$;
 
 -- GET_RULE_CATALOGS -----------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_RULE_CATALOGS(
+CREATE OR REPLACE PROCEDURE SP_GET_RULE_CATALOGS(
     P_RULE_GROUP VARCHAR
 )
 RETURNS TABLE("RULE_CATALOG_NAME" VARCHAR)
@@ -626,7 +626,7 @@ $$;
 -- given catalog. Used by the tcw-dqm tree view to display the friendlier
 -- description on the leaf when present (fall back to RULE_NAME) and to
 -- populate the Exceptions header subtitle when a specific rule is selected.
-CREATE OR REPLACE PROCEDURE GET_RULE_NAMES(
+CREATE OR REPLACE PROCEDURE SP_GET_RULE_NAMES(
     P_RULE_CATALOG VARCHAR
 )
 RETURNS TABLE(
@@ -659,11 +659,11 @@ $$;
 --
 -- Filtering:
 --   P_RULE_TYPE = 'CATALOG' or 'RULE' (RULE behaves the same as CATALOG
---     for now) → P_RULE_NAME matches RULE_CATALOG.NAME.
---   P_RULE_TYPE = 'GROUP'  → P_RULE_NAME matches RULE_GROUP.NAME; returns
+--     for now) â†’ P_RULE_NAME matches RULE_CATALOG.NAME.
+--   P_RULE_TYPE = 'GROUP'  â†’ P_RULE_NAME matches RULE_GROUP.NAME; returns
 --     every catalog whose RULE_GROUP_ID resolves to that group.
---   P_RULE_NAME NULL / empty / 'All' → no filter, return every catalog.
-CREATE OR REPLACE PROCEDURE GET_RULES(
+--   P_RULE_NAME NULL / empty / 'All' â†’ no filter, return every catalog.
+CREATE OR REPLACE PROCEDURE SP_GET_RULES(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
@@ -699,8 +699,8 @@ BEGIN
 END;
 $$;
 
--- GET_EXCEPTION_STATUS --------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_EXCEPTION_STATUS()
+-- GET_EXCEPTION_STATE --------------------------------------------------------
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_STATE()
 RETURNS TABLE("NAME" VARCHAR)
 LANGUAGE SQL
 AS
@@ -710,7 +710,7 @@ DECLARE
 BEGIN
     res := (
         SELECT "NAME"
-        FROM "EXCEPTION_STATUS"
+        FROM "EXCEPTION_STATE"
         ORDER BY "SORT_ORDER" ASC, "NAME" ASC
     );
     RETURN TABLE(res);
@@ -718,7 +718,7 @@ END;
 $$;
 
 -- GET_EXCEPTION_TYPE ----------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_EXCEPTION_TYPE()
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_TYPE()
 RETURNS TABLE("NAME" VARCHAR)
 LANGUAGE SQL
 AS
@@ -736,7 +736,7 @@ END;
 $$;
 
 -- GET_PRIORITY_TYPE -----------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_PRIORITY_TYPE()
+CREATE OR REPLACE PROCEDURE SP_GET_PRIORITY_TYPE()
 RETURNS TABLE("NAME" VARCHAR)
 LANGUAGE SQL
 AS
@@ -754,7 +754,7 @@ END;
 $$;
 
 -- GET_SEVERITY_TYPE -----------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_SEVERITY_TYPE()
+CREATE OR REPLACE PROCEDURE SP_GET_SEVERITY_TYPE()
 RETURNS TABLE("NAME" VARCHAR)
 LANGUAGE SQL
 AS
@@ -772,7 +772,7 @@ END;
 $$;
 
 -- GET_EXCEPTIONS --------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_EXCEPTIONS(
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     P_ASSET_ID          VARCHAR DEFAULT NULL,
     P_EXCEPTION_TYPE    VARCHAR DEFAULT NULL,
     P_SEVERITY          VARCHAR DEFAULT NULL,
@@ -780,7 +780,7 @@ CREATE OR REPLACE PROCEDURE GET_EXCEPTIONS(
     P_RULE_CATALOG      VARCHAR DEFAULT NULL,
     P_RULE_NAME         VARCHAR DEFAULT NULL,
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
-    P_EXCEPTION_STATUS  VARCHAR DEFAULT NULL,
+    P_EXCEPTION_STATE  VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
     P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
 )
@@ -792,8 +792,8 @@ RETURNS TABLE (
     "EXCEPTION_DATE"    DATE,
     "EXCEPTION_TIME"    TIMESTAMP_NTZ,
     "ID_BB_GLOBAL"      VARCHAR,
-    "STATUS_ID"         NUMBER,
-    "EXCEPTION_STATUS"  VARCHAR,
+    "STATE_ID"         NUMBER,
+    "EXCEPTION_STATE"  VARCHAR,
     "COMMENT_ID"        NUMBER,
     "ISSUE_DESCRIPTION" VARCHAR,
     "RESULT_DATA"       VARCHAR,
@@ -823,8 +823,8 @@ BEGIN
                e."EXCEPTION_DATE"          AS "EXCEPTION_DATE",
                e."EXCEPTION_TIME"          AS "EXCEPTION_TIME",
                e."ID_BB_GLOBAL"            AS "ID_BB_GLOBAL",
-               e."STATUS_ID"               AS "STATUS_ID",
-               es."NAME"                   AS "EXCEPTION_STATUS",
+               e."STATE_ID"               AS "STATE_ID",
+               es."NAME"                   AS "EXCEPTION_STATE",
                e."COMMENT_ID"              AS "COMMENT_ID",
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
@@ -846,7 +846,7 @@ BEGIN
         LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
         LEFT JOIN "RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
-        LEFT JOIN "EXCEPTION_STATUS"        es  ON es."EXCEPTION_STATUS_ID"         = e."STATUS_ID"
+        LEFT JOIN "EXCEPTION_STATE"        es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "DM_USER"                 du  ON du."ID"                          = e."ASSIGN_TO_ID"
         WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
@@ -855,7 +855,7 @@ BEGIN
           AND (:P_RULE_CATALOG      IS NULL OR :P_RULE_CATALOG  = 'All' OR rc."NAME" = :P_RULE_CATALOG)
           AND (:P_RULE_NAME         IS NULL OR :P_RULE_NAME  = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
           AND (:P_RULE_GROUP        IS NULL OR :P_RULE_GROUP = 'All' OR rg."NAME" = :P_RULE_GROUP)
-          AND (:P_EXCEPTION_STATUS  IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."NAME" = :P_EXCEPTION_STATUS)
+          AND (:P_EXCEPTION_STATE  IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
           AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
           AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
     );
@@ -864,13 +864,13 @@ END;
 $$;
 
 -- GET_ASSETS ------------------------------------------------------------------
-CREATE OR REPLACE PROCEDURE GET_ASSETS(
+CREATE OR REPLACE PROCEDURE SP_GET_ASSETS(
     P_EXCEPTION_TYPE   VARCHAR DEFAULT NULL,
     P_SEVERITY         VARCHAR DEFAULT NULL,
     P_PRIORITY         VARCHAR DEFAULT NULL,
     P_RULE_CATALOG     VARCHAR DEFAULT NULL,
     P_RULE_NAME        VARCHAR DEFAULT NULL,
-    P_EXCEPTION_STATUS VARCHAR DEFAULT NULL,
+    P_EXCEPTION_STATE VARCHAR DEFAULT NULL,
     P_ASSIGN_TO        VARCHAR DEFAULT NULL,
     P_RULE_GROUP       VARCHAR DEFAULT NULL
 )
@@ -907,7 +907,7 @@ BEGIN
                 est."SORT_ORDER" AS severity_rank,
                 et."NAME"        AS type_name,
                 et."SORT_ORDER"  AS type_rank,
-                es."NAME"        AS status_name,
+                es."NAME"        AS state_name,
                 du."USER"        AS assign_to_user
             FROM "EXCEPTION" e
             JOIN "RULE" r
@@ -922,8 +922,8 @@ BEGIN
               ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
             LEFT JOIN "RULE_GROUP" rg
               ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
-            LEFT JOIN "EXCEPTION_STATUS" es
-              ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
+            LEFT JOIN "EXCEPTION_STATE" es
+              ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
             LEFT JOIN "DM_USER" du
               ON du."ID" = e."ASSIGN_TO_ID"
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
@@ -932,7 +932,7 @@ BEGIN
               AND (:P_RULE_GROUP       IS NULL OR :P_RULE_GROUP       = 'All' OR rg."NAME"      = :P_RULE_GROUP)
               AND (:P_RULE_CATALOG     IS NULL OR :P_RULE_CATALOG     = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
               AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME"  = :P_RULE_NAME)
-              AND (:P_EXCEPTION_STATUS IS NULL OR :P_EXCEPTION_STATUS = 'All' OR es."NAME"      = :P_EXCEPTION_STATUS)
+              AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME"      = :P_EXCEPTION_STATE)
               AND (:P_ASSIGN_TO        IS NULL OR :P_ASSIGN_TO        = 'All' OR du."USER"      = :P_ASSIGN_TO)
         )
         SELECT
@@ -946,7 +946,7 @@ BEGIN
             'XYZ'                                                  AS "SECURITY_DESCRIPTION",
             'Colman Slain'                                         AS "TRADER",
             'ABS'                                                  AS "TRADING_TEAM",
-            COUNT_IF(COALESCE(status_name, '') <> 'Complete')      AS "EXCEPTION_COUNT",
+            COUNT_IF(COALESCE(state_name, '') <> 'Complete')      AS "EXCEPTION_COUNT",
             '10:55 AM'                                             AS "BBG_LAST_REFRESH",
             -- ALL_COMPLETE: asset-level property, true iff every EXCEPTION row
             -- for the asset (across all statuses, ignoring user filters) has
@@ -955,8 +955,8 @@ BEGIN
             (SELECT COUNT(*) > 0
                     AND COUNT_IF(COALESCE(es_all."NAME", '') <> 'Complete') = 0
                FROM "EXCEPTION" e_all
-               LEFT JOIN "EXCEPTION_STATUS" es_all
-                 ON es_all."EXCEPTION_STATUS_ID" = e_all."STATUS_ID"
+               LEFT JOIN "EXCEPTION_STATE" es_all
+                 ON es_all."EXCEPTION_STATE_ID" = e_all."STATE_ID"
               WHERE e_all."ASSET_ID" = filtered."ASSET_ID")        AS "ALL_COMPLETE"
         FROM filtered
         GROUP BY "ASSET_ID"
@@ -969,7 +969,7 @@ $$;
 -- INSERT_SECURITY_EXCEPTION ---------------------------------------------------
 -- Legacy procedure kept for ad-hoc backfills against the SECURITY_EXCEPTION
 -- table (not created here; managed externally). No active Go caller.
-CREATE OR REPLACE PROCEDURE INSERT_SECURITY_EXCEPTION(
+CREATE OR REPLACE PROCEDURE SP_INSERT_SECURITY_EXCEPTION(
     "RULE_ID"               NUMBER,
     "RUN_DATE"              TIMESTAMP_NTZ,
     "RUN_START"             TIMESTAMP_NTZ,
@@ -1032,7 +1032,7 @@ $$;
 
 
 -- =============================================================================
--- 5. MIGRATION SCRIPTS (one-time — DO NOT include in repeated rerun)
+-- 5. MIGRATION SCRIPTS (one-time â€” DO NOT include in repeated rerun)
 -- =============================================================================
 -- These INSERT...SELECT scripts copy data from one table to another.
 -- Rerunning them duplicates rows. Uncomment + run manually only when needed.
@@ -1041,13 +1041,13 @@ $$;
 -- Copy EXCEPTION snapshot into EXCEPTION_HIST.
 INSERT INTO DATA_QUALITY.EXCEPTION_HIST (
     EXCEPTION_ID, RULE_ID, ASSET_ID, EXCEPTION_DATE, ID_BB_GLOBAL,
-    STATUS_ID, COMMENT_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION,
+    STATE_ID, COMMENT_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION,
     RESULT_DATA, SUPPRESS_DATE, ASSIGN_TO_ID, RESULT_TYPE_ID,
     CREATED_DATE, CREATED_BY, MODIFIED_DATE, MODIFIED_BY
 )
 SELECT
     EXCEPTION_ID, RULE_ID, ASSET_ID, EXCEPTION_DATE, ID_BB_GLOBAL,
-    STATUS_ID, COMMENT_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION,
+    STATE_ID, COMMENT_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION,
     RESULT_DATA, SUPPRESS_DATE, ASSIGN_TO_ID, RESULT_TYPE_ID,
     CREATED_DATE, CREATED_BY, MODIFIED_DATE, MODIFIED_BY
 FROM DATA_QUALITY.EXCEPTION;
@@ -1057,7 +1057,7 @@ FROM DATA_QUALITY.EXCEPTION;
 -- SECURITY_EXCEPTION table itself is no longer maintained here).
 INSERT INTO DATA_QUALITY.EXCEPTION (
     EXCEPTION_ID, RULE_ID, ASSET_ID, EXCEPTION_DATE, ID_BB_GLOBAL,
-    STATUS_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION, ASSIGN_TO_ID,
+    STATE_ID, EXCEPTION_TIME, ISSUE_DESCRIPTION, ASSIGN_TO_ID,
     RESULT_TYPE_ID, CREATED_DATE, CREATED_BY
 )
 SELECT

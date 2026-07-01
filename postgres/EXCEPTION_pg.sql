@@ -6,7 +6,7 @@ CREATE TABLE public."EXCEPTION" (
     "ASSET_ID"            varchar(100),
     "EXCEPTION_DATE"      date,
     "ID_BB_GLOBAL"        varchar(15),
-    "STATUS_ID"           integer,
+    "STATE_ID"           integer,
     "COMMENT_ID"          integer,
     "EXCEPTION_TIME"      timestamp,
     "ISSUE_DESCRIPTION"   varchar(512),
@@ -22,7 +22,7 @@ CREATE TABLE public."EXCEPTION" (
 
 INSERT INTO public."EXCEPTION" (
     "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
-    "STATUS_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "ASSIGN_TO_ID",
+    "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "ASSIGN_TO_ID",
     "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY"
 )
 SELECT

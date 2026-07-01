@@ -1,15 +1,15 @@
-DROP FUNCTION IF EXISTS public."LIST_RULES"(character varying);
-DROP FUNCTION IF EXISTS public."GET_RULES"(character varying);
-DROP FUNCTION IF EXISTS public."GET_RULES"(character varying, text);
-DROP FUNCTION IF EXISTS public."GET_RULES"(character varying, text, text);
-DROP FUNCTION IF EXISTS public."GET_RULES"(text, text);
+﻿DROP FUNCTION IF EXISTS public."LIST_RULES"(character varying);
+DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying);
+DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text);
+DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text, text);
+DROP FUNCTION IF EXISTS public."SP_GET_RULES"(text, text);
 
 -- Returns one row per RULE_CATALOG (see SNOWFLAKE/GET_RULES.sql for the
 -- full contract). Filter behavior:
---   p_rule_type = 'CATALOG' or 'RULE' → p_rule_name matches RULE_CATALOG.NAME.
---   p_rule_type = 'GROUP'             → p_rule_name matches RULE_GROUP.NAME.
---   p_rule_name NULL / empty / 'All'  → no filter; return every catalog.
-CREATE OR REPLACE FUNCTION public."GET_RULES"(
+--   p_rule_type = 'CATALOG' or 'RULE' â†’ p_rule_name matches RULE_CATALOG.NAME.
+--   p_rule_type = 'GROUP'             â†’ p_rule_name matches RULE_GROUP.NAME.
+--   p_rule_name NULL / empty / 'All'  â†’ no filter; return every catalog.
+CREATE OR REPLACE FUNCTION public."SP_GET_RULES"(
     p_rule_name text DEFAULT NULL,
     p_rule_type text DEFAULT NULL
 )

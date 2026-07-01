@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE DELETE_EXCEPTIONS(
+﻿CREATE OR REPLACE PROCEDURE SP_DELETE_EXCEPTIONS(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
@@ -12,9 +12,9 @@ BEGIN
     -- Deletes EXCEPTION rows whose EXCEPTION_DATE = today and whose RULE
     -- falls inside the catalog scope implied by (P_RULE_NAME, P_RULE_TYPE).
     -- Scope rules match GET_RULES:
-    --   P_RULE_TYPE = 'CATALOG' or 'RULE' → P_RULE_NAME = RULE_CATALOG.NAME
-    --   P_RULE_TYPE = 'GROUP'             → P_RULE_NAME = RULE_GROUP.NAME
-    --   P_RULE_NAME NULL / empty / 'All'  → every catalog (full wipe of today)
+    --   P_RULE_TYPE = 'CATALOG' or 'RULE' â†’ P_RULE_NAME = RULE_CATALOG.NAME
+    --   P_RULE_TYPE = 'GROUP'             â†’ P_RULE_NAME = RULE_GROUP.NAME
+    --   P_RULE_NAME NULL / empty / 'All'  â†’ every catalog (full wipe of today)
     DELETE FROM "EXCEPTION"
     WHERE "EXCEPTION_DATE" = CURRENT_DATE()
       AND "RULE_ID" IN (

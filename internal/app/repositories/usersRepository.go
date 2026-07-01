@@ -1,4 +1,4 @@
-package repositories
+﻿package repositories
 
 import (
 	"database/sql"
@@ -17,13 +17,13 @@ func GetDMUsers() ([]string, error) {
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("usersRepository: GetDMUsers - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL GET_DM_USERS()")
+		rows, err = snowflake.Query("CALL SP_GET_DM_USERS()")
 	} else {
 		log.Logger.Info("usersRepository: GetDMUsers - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."GET_DM_USERS"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_DM_USERS"()`)
 	}
 	if err != nil {
 		return nil, err

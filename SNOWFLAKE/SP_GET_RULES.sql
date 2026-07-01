@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE GET_RULES(
+﻿CREATE OR REPLACE PROCEDURE SP_GET_RULES(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
@@ -20,12 +20,12 @@ BEGIN
     --
     -- Filtering:
     --   P_RULE_TYPE = 'CATALOG' or 'RULE' (for now they behave the same)
-    --     → P_RULE_NAME matched against RULE_CATALOG.NAME.
+    --     â†’ P_RULE_NAME matched against RULE_CATALOG.NAME.
     --   P_RULE_TYPE = 'GROUP'
-    --     → P_RULE_NAME matched against RULE_GROUP.NAME; returns every
+    --     â†’ P_RULE_NAME matched against RULE_GROUP.NAME; returns every
     --       catalog whose RULE_GROUP_ID resolves to that group.
     --   P_RULE_TYPE NULL / unset OR P_RULE_NAME NULL / empty / 'All'
-    --     → no filter, return every catalog.
+    --     â†’ no filter, return every catalog.
     res := (
         SELECT rc."RULE_CATALOG_ID"         AS "RULE_CATALOG_ID",
                rc."NAME"                    AS "RULE_CATALOG_NAME",

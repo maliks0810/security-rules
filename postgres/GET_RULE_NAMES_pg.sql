@@ -1,11 +1,11 @@
-DROP FUNCTION IF EXISTS public."GET_RULE_NAMES"(text);
+﻿DROP FUNCTION IF EXISTS public."SP_GET_RULE_NAMES"(text);
 
 -- Returns individual RULE_NAMEs (and their RULE_DESCRIPTION) belonging
 -- to a given catalog. Used by the tcw-dqm tree view to display the
 -- friendlier description on the leaf when present (fall back to
 -- RULE_NAME) and to populate the Exceptions header subtitle when a
 -- specific rule is selected.
-CREATE OR REPLACE FUNCTION public."GET_RULE_NAMES"(
+CREATE OR REPLACE FUNCTION public."SP_GET_RULE_NAMES"(
     p_rule_catalog text
 )
 RETURNS TABLE(

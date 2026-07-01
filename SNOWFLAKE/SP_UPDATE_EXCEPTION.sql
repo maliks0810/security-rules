@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE UPDATE_EXCEPTION(
+﻿CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION(
     P_RULE_ID           NUMBER,
     P_ASSET_ID          VARCHAR,
     P_EXCEPTION_DATE    DATE,
@@ -20,7 +20,7 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "EXCEPTION_DATE"    = :P_EXCEPTION_DATE,
            "EXCEPTION_TIME"    = :P_EXCEPTION_TIME,
-           "STATUS_ID"         = 1,  -- re-flagged → Pending
+           "STATUS_ID"         = 1,  -- re-flagged â†’ Pending
            "ISSUE_DESCRIPTION" = :P_ISSUE_DESCRIPTION,
            "RESULT_DATA"       = COALESCE(:P_RESULT_DATA, "RESULT_DATA"),
            "ASSIGN_TO_ID"      = COALESCE(:P_ASSIGN_TO_ID, "ASSIGN_TO_ID"),
