@@ -19,3 +19,13 @@ type RuleName struct {
 	RuleName        string `json:"rule_name"`
 	RuleDescription string `json:"rule_description"`
 }
+
+// RuleGroup is one row from RULE_GROUP surfaced through SP_GET_RULE_GROUPS.
+// FlagStatusVisible drives the "show STATUS filter + column" UI on the
+// Exceptions grid; FlagCommentsVisible drives the "show COMMENTS column"
+// (editable free-text) — both are opt-in per rule group.
+type RuleGroup struct {
+	Name                string `json:"name"`
+	FlagStatusVisible   bool   `json:"flag_status_visible"`
+	FlagCommentsVisible bool   `json:"flag_comments_visible"`
+}

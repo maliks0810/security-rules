@@ -16,7 +16,7 @@ LANGUAGE sql
 AS $$
     WITH deleted AS (
         DELETE FROM public."EXCEPTION"
-        WHERE "EXCEPTION_DATE" = CURRENT_DATE
+        WHERE "EXCEPTION_DATE" = (NOW() AT TIME ZONE 'UTC')::date
           AND "RULE_ID" IN (
               SELECT r."RULE_ID"
               FROM public."RULE" r

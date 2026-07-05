@@ -14,7 +14,7 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	return repositories.GetRules(ruleName, ruleType)
 }
 
-func GetRuleGroups() ([]string, error) {
+func GetRuleGroups() ([]models.RuleGroup, error) {
 	return repositories.GetRuleGroups()
 }
 

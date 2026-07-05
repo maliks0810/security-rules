@@ -14,7 +14,9 @@ type Exception struct {
 	IdBbGlobal       string `json:"id_bb_global,omitempty"`
 	StateID          int    `json:"state_id"`
 	ExceptionState   string `json:"exception_state,omitempty"`
-	CommentID        int    `json:"comment_id,omitempty"`
+	StatusID         int    `json:"status_id,omitempty"`
+	ExceptionStatus  string `json:"exception_status,omitempty"`
+	Comments         string `json:"comments,omitempty"`
 	IssueDescription string `json:"issue_description,omitempty"`
 	ResultData       string `json:"result_data,omitempty"`
 	SuppressDate     string `json:"suppress_date,omitempty"`

@@ -28,7 +28,9 @@ RETURNS TABLE(
     "ID_BB_GLOBAL"      character varying,
     "STATE_ID"          integer,
     "EXCEPTION_STATE"   text,
-    "COMMENT_ID"        integer,
+    "STATUS_ID"         integer,
+    "EXCEPTION_STATUS"  text,
+    "COMMENTS"          text,
     "ISSUE_DESCRIPTION" text,
     "RESULT_DATA"       text,
     "SUPPRESS_DATE"     date,
@@ -54,7 +56,9 @@ AS $$
            e."ID_BB_GLOBAL",
            e."STATE_ID",
            es."NAME"::text                AS "EXCEPTION_STATE",
-           e."COMMENT_ID",
+           e."STATUS_ID",
+           est_s."NAME"::text             AS "EXCEPTION_STATUS",
+           e."COMMENTS"::text,
            e."ISSUE_DESCRIPTION"::text,
            e."RESULT_DATA"::text,
            e."SUPPRESS_DATE",
@@ -75,7 +79,8 @@ AS $$
     LEFT JOIN public."EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
     LEFT JOIN public."RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
     LEFT JOIN public."RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
-    LEFT JOIN public."EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"          = e."STATE_ID"
+    LEFT JOIN public."EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"          = e."STATE_ID"
+    LEFT JOIN public."EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"       = e."STATUS_ID"
     LEFT JOIN public."DM_USER"                 du  ON du."ID"                          = e."ASSIGN_TO_ID"
     WHERE (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
       AND (p_exception_type    IS NULL OR et."NAME"     = p_exception_type)

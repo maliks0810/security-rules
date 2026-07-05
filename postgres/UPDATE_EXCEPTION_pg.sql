@@ -17,6 +17,10 @@ DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION"(
     numeric, varchar, date, varchar, numeric,
     timestamp, text, json, numeric, numeric, timestamp, text
 );
+DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION"(
+    numeric, varchar, date, varchar, numeric,
+    timestamp, text, json, numeric, numeric, timestamp, text, numeric
+);
 
 CREATE OR REPLACE FUNCTION public."SP_UPDATE_EXCEPTION"(
     p_rule_id           numeric,
@@ -30,7 +34,8 @@ CREATE OR REPLACE FUNCTION public."SP_UPDATE_EXCEPTION"(
     p_assign_to_id      numeric,
     p_result_type_id    numeric,
     p_created_date      timestamp,
-    p_created_by        text
+    p_created_by        text,
+    p_status_id         numeric DEFAULT NULL
 )
 RETURNS void
 LANGUAGE sql
@@ -45,7 +50,8 @@ AS $$
            "RESULT_TYPE_ID"    = p_result_type_id::int,
            "CREATED_DATE"      = p_created_date,
            "CREATED_BY"        = p_created_by,
-           "ID_BB_GLOBAL"      = COALESCE(p_id_bb_global, "ID_BB_GLOBAL")
+           "ID_BB_GLOBAL"      = COALESCE(p_id_bb_global, "ID_BB_GLOBAL"),
+           "STATUS_ID"         = COALESCE(p_status_id::int, "STATUS_ID")
      WHERE "ASSET_ID" = p_asset_id
        AND "RULE_ID"  = p_rule_id::int;
 $$;

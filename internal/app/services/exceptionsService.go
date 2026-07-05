@@ -13,6 +13,18 @@ func GetExceptionState() ([]string, error) {
 	return repositories.GetExceptionState()
 }
 
+func GetExceptionStatus() ([]string, error) {
+	return repositories.GetExceptionStatus()
+}
+
+func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
+	return repositories.UpdateExceptionStatus(exceptionID, statusName)
+}
+
+func UpdateExceptionComments(exceptionID int64, comments string) (int, error) {
+	return repositories.UpdateExceptionComments(exceptionID, comments)
+}
+
 func GetSeverityTypes() ([]string, error) {
 	return repositories.GetSeverityTypes()
 }

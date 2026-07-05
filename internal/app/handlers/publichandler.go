@@ -113,6 +113,98 @@ func GetExceptionState(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
+// UpdateExceptionStatus godoc
+// @Summary      Update EXCEPTION.STATUS_ID for a single row
+// @Description  Resolves the status name against EXCEPTION_STATUS and updates
+// @Description  the STATUS_ID for the row identified by exception_id.
+// @Tags         exceptions
+// @Produce      json
+// @Param        exception_id  query     int     true   "EXCEPTION_ID"
+// @Param        status        query     string  true   "EXCEPTION_STATUS.NAME"
+// @Success      200           {object}  map[string]int   "rows updated"
+// @Failure      400           {object}  map[string]string "invalid params"
+// @Failure      500           {object}  map[string]string "failed to update exception status"
+// @Router       /v1/api/updateExceptionStatus [get]
+func UpdateExceptionStatus(ctx *fiber.Ctx) error {
+	exceptionID, err := ctx.ParamsInt("exception_id")
+	if err != nil || exceptionID == 0 {
+		if v := ctx.Query("exception_id"); v != "" {
+			var parsed int64
+			_, perr := fmt.Sscanf(v, "%d", &parsed)
+			if perr != nil || parsed == 0 {
+				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_id is required"})
+			}
+			status := ctx.Query("status")
+			if status == "" {
+				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
+			}
+			n, err := services.UpdateExceptionStatus(parsed, status)
+			if err != nil {
+				return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status"})
+			}
+			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+		}
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_id is required"})
+	}
+	status := ctx.Query("status")
+	if status == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
+	}
+	n, err := services.UpdateExceptionStatus(int64(exceptionID), status)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+// UpdateExceptionComments godoc
+// @Summary      Update EXCEPTION.COMMENTS for a single row
+// @Description  Sets the free-text COMMENTS on the row identified by exception_id.
+// @Tags         exceptions
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateExceptionCommentsBody  true  "exception_id + comments"
+// @Success      200  {object}  map[string]int   "rows updated"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update exception comments"
+// @Router       /v1/api/updateExceptionComments [post]
+func UpdateExceptionComments(ctx *fiber.Ctx) error {
+	var body updateExceptionCommentsBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if body.ExceptionID == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_id is required"})
+	}
+	n, err := services.UpdateExceptionComments(body.ExceptionID, body.Comments)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception comments"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+type updateExceptionCommentsBody struct {
+	ExceptionID int64  `json:"exception_id"`
+	Comments    string `json:"comments"`
+}
+
+// GetExceptionStatus godoc
+// @Summary      List exception status names
+// @Description  Returns EXCEPTION_STATUS.NAME values ordered by SORT_ORDER.
+// @Tags         exception-status
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query exception status"
+// @Router       /v1/api/getExceptionStatus [get]
+func GetExceptionStatus(ctx *fiber.Ctx) error {
+	codes, err := services.GetExceptionStatus()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception status"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(codes)
+}
+
 // GetExceptionTypes godoc
 // @Summary      List exception type names
 // @Description  Returns EXCEPTION_TYPE.NAME values ordered by SORT_ORDER.
@@ -182,20 +274,20 @@ func GetDMUsers(ctx *fiber.Ctx) error {
 }
 
 // GetRuleGroups godoc
-// @Summary      List rule group names
-// @Description  Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.
+// @Summary      List rule groups
+// @Description  Returns RULE_GROUP rows (name + flag_status_visible) ordered by RULE_GROUP_ID.
 // @Tags         rule-groups
 // @Produce      json
-// @Success      200  {array}   string
+// @Success      200  {array}   models.RuleGroup
 // @Failure      500  {object}  map[string]string  "failed to query rule groups"
 // @Router       /v1/api/getRuleGroups [get]
 func GetRuleGroups(ctx *fiber.Ctx) error {
-	names, err := services.GetRuleGroups()
+	groups, err := services.GetRuleGroups()
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule groups"})
 	}
 
-	return ctx.Status(fiber.StatusOK).JSON(names)
+	return ctx.Status(fiber.StatusOK).JSON(groups)
 }
 
 // GetRuleCatalogs godoc

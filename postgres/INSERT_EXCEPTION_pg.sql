@@ -17,6 +17,10 @@ DROP FUNCTION IF EXISTS public."SP_INSERT_EXCEPTION"(
     numeric, varchar, date, varchar, numeric,
     timestamp, text, json, numeric, numeric, timestamp, text
 );
+DROP FUNCTION IF EXISTS public."SP_INSERT_EXCEPTION"(
+    numeric, varchar, date, varchar, numeric,
+    timestamp, text, json, numeric, numeric, timestamp, text, numeric
+);
 
 CREATE OR REPLACE FUNCTION public."SP_INSERT_EXCEPTION"(
     "RULE_ID"           numeric,
@@ -30,7 +34,8 @@ CREATE OR REPLACE FUNCTION public."SP_INSERT_EXCEPTION"(
     "ASSIGN_TO_ID"      numeric,
     "RESULT_TYPE_ID"    numeric,
     "CREATED_DATE"      timestamp,
-    "CREATED_BY"        text
+    "CREATED_BY"        text,
+    "STATUS_ID"         numeric DEFAULT 1
 )
 RETURNS void
 LANGUAGE sql
@@ -38,11 +43,13 @@ AS $$
     INSERT INTO public."EXCEPTION" (
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY"
+        "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY",
+        "STATUS_ID"
     ) VALUES (
         "RULE_ID"::int, "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         COALESCE(NULLIF("STATE_ID"::int, 0), 1),  -- default to Pending
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "ASSIGN_TO_ID"::int, "RESULT_TYPE_ID"::int, "CREATED_DATE", "CREATED_BY"
+        "ASSIGN_TO_ID"::int, "RESULT_TYPE_ID"::int, "CREATED_DATE", "CREATED_BY",
+        COALESCE(NULLIF("STATUS_ID"::int, 0), 1)  -- default to New
     );
 $$;

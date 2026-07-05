@@ -20,7 +20,9 @@ RETURNS TABLE (
     "ID_BB_GLOBAL"      VARCHAR,
     "STATE_ID"         NUMBER,
     "EXCEPTION_STATE"  VARCHAR,
-    "COMMENT_ID"        NUMBER,
+    "STATUS_ID"        NUMBER,
+    "EXCEPTION_STATUS" VARCHAR,
+    "COMMENTS"          VARCHAR,
     "ISSUE_DESCRIPTION" VARCHAR,
     "RESULT_DATA"       VARCHAR,
     "SUPPRESS_DATE"     DATE,
@@ -51,7 +53,9 @@ BEGIN
                e."ID_BB_GLOBAL"            AS "ID_BB_GLOBAL",
                e."STATE_ID"               AS "STATE_ID",
                es."NAME"                   AS "EXCEPTION_STATE",
-               e."COMMENT_ID"              AS "COMMENT_ID",
+               e."STATUS_ID"               AS "STATUS_ID",
+               est_s."NAME"                AS "EXCEPTION_STATUS",
+               e."COMMENTS"                AS "COMMENTS",
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
@@ -72,8 +76,9 @@ BEGIN
         LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
         LEFT JOIN "RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
-        LEFT JOIN "EXCEPTION_STATE"        es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
-        LEFT JOIN "DM_USER"                 du  ON du."ID"                          = e."ASSIGN_TO_ID"
+        LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID"                          = e."ASSIGN_TO_ID"
         WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)

@@ -17,7 +17,7 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetRuleGroups() ([]string, error) {
+func GetRuleGroups() ([]models.RuleGroup, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -36,15 +36,23 @@ func GetRuleGroups() ([]string, error) {
 	}
 	defer rows.Close()
 
-	names := []string{}
+	groups := []models.RuleGroup{}
 	for rows.Next() {
-		var name sql.NullString
-		if err := rows.Scan(&name); err != nil {
+		var (
+			name            sql.NullString
+			statusVisible   sql.NullBool
+			commentsVisible sql.NullBool
+		)
+		if err := rows.Scan(&name, &statusVisible, &commentsVisible); err != nil {
 			return nil, err
 		}
-		names = append(names, sqlutil.NullStr(name))
+		groups = append(groups, models.RuleGroup{
+			Name:                sqlutil.NullStr(name),
+			FlagStatusVisible:   statusVisible.Valid && statusVisible.Bool,
+			FlagCommentsVisible: commentsVisible.Valid && commentsVisible.Bool,
+		})
 	}
-	return names, nil
+	return groups, nil
 }
 
 // DeleteExceptions calls the DELETE_EXCEPTIONS(P_RULE_NAME, P_RULE_TYPE)

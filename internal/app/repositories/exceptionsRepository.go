@@ -72,6 +72,99 @@ func GetPriorityTypes() ([]string, error) {
 	return codes, nil
 }
 
+// UpdateExceptionStatus flips STATUS_ID on a single EXCEPTION row keyed
+// by EXCEPTION_ID, resolving the status name against EXCEPTION_STATUS.
+// Returns the number of rows updated (0 if the exception_id doesn't
+// exist or the status name doesn't resolve).
+func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateExceptionStatus - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_STATUS(?, ?)", exceptionID, statusName)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateExceptionStatus - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_EXCEPTION_STATUS"($1, $2)`,
+		exceptionID, statusName,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// UpdateExceptionComments sets EXCEPTION.COMMENTS on a single row keyed by
+// EXCEPTION_ID. Empty p_comments is stored as-is (blank string clears the
+// cell). Returns the number of rows updated.
+func UpdateExceptionComments(exceptionID int64, comments string) (int, error) {
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateExceptionComments - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_COMMENTS(?, ?)", exceptionID, comments)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateExceptionComments - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_EXCEPTION_COMMENTS"($1, $2)`,
+		exceptionID, comments,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func GetExceptionStatus() ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionStatus - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_STATUS()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionStatus - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_STATUS"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	codes := []string{}
+	for rows.Next() {
+		var code sql.NullString
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, sqlutil.NullStr(code))
+	}
+	return codes, nil
+}
+
 func GetExceptionState() ([]string, error) {
 	var rows *sql.Rows
 	var err error
@@ -183,7 +276,9 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			idBbGlobal       sql.NullString
 			stateID         sql.NullInt64
 			exceptionState  sql.NullString
-			commentID        sql.NullInt64
+			statusID        sql.NullInt64
+			exceptionStatus sql.NullString
+			commentsCol      sql.NullString
 			issueDescription sql.NullString
 			resultData       sql.NullString
 			suppressDate     sql.NullTime
@@ -202,7 +297,9 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		if err := rows.Scan(
 			&exceptionID, &ruleID, &ruleNameCol, &assetIDCol,
 			&exceptionDate, &exceptionTime, &idBbGlobal,
-			&stateID, &exceptionState, &commentID,
+			&stateID, &exceptionState,
+			&statusID, &exceptionStatus,
+			&commentsCol,
 			&issueDescription, &resultData, &suppressDate,
 			&assignToID, &assignToCol, &resultTypeID,
 			&priorityCol, &severityCol, &exceptionTypeCol,
@@ -221,7 +318,9 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			IdBbGlobal:       sqlutil.NullStr(idBbGlobal),
 			StateID:         sqlutil.NullInt(stateID),
 			ExceptionState:  sqlutil.NullStr(exceptionState),
-			CommentID:        sqlutil.NullInt(commentID),
+			StatusID:         sqlutil.NullInt(statusID),
+			ExceptionStatus:  sqlutil.NullStr(exceptionStatus),
+			Comments:         sqlutil.NullStr(commentsCol),
 			IssueDescription: sqlutil.NullStr(issueDescription),
 			ResultData:       sqlutil.NullStr(resultData),
 			SuppressDate:     sqlutil.NullTime(suppressDate),
@@ -339,7 +438,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: InsertExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL SP_INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL SP_INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
@@ -352,6 +451,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 				e.ResultTypeID,
 				nilIfEmpty(e.CreatedDate),
 				e.CreatedBy,
+				nilIfZero(e.StatusID),
 			)
 			if err != nil {
 				return err
@@ -368,7 +468,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."SP_INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
+			`SELECT public."SP_INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12,$13)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
@@ -381,6 +481,7 @@ func InsertExceptions(exceptions []models.Exception) error {
 			e.ResultTypeID,
 			nilIfEmpty(e.CreatedDate),
 			e.CreatedBy,
+			nilIfZero(e.StatusID),
 		)
 		if err != nil {
 			return err
@@ -418,7 +519,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 		log.Logger.Info("exceptionsRepository: UpdateExceptions - using SNOWFLAKE database environment")
 		for _, e := range exceptions {
 			rows, err := snowflake.Query(
-				"CALL SP_UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?)",
+				"CALL SP_UPDATE_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?)",
 				e.RuleID,
 				e.AssetID,
 				dateOrTime(e),
@@ -431,6 +532,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 				e.ResultTypeID,
 				nilIfEmpty(e.CreatedDate),
 				e.CreatedBy,
+				nilIfZero(e.StatusID),
 			)
 			if err != nil {
 				return err
@@ -447,7 +549,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 
 	for _, e := range exceptions {
 		_, err := postgres.DB.Exec(
-			`SELECT public."SP_UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12)`,
+			`SELECT public."SP_UPDATE_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12,$13)`,
 			e.RuleID,
 			e.AssetID,
 			dateOrTime(e),
@@ -460,6 +562,7 @@ func UpdateExceptions(exceptions []models.Exception) error {
 			e.ResultTypeID,
 			nilIfEmpty(e.CreatedDate),
 			e.CreatedBy,
+			nilIfZero(e.StatusID),
 		)
 		if err != nil {
 			return err

@@ -16,7 +16,7 @@ BEGIN
     --   P_RULE_TYPE = 'GROUP'             â†’ P_RULE_NAME = RULE_GROUP.NAME
     --   P_RULE_NAME NULL / empty / 'All'  â†’ every catalog (full wipe of today)
     DELETE FROM "EXCEPTION"
-    WHERE "EXCEPTION_DATE" = CURRENT_DATE()
+    WHERE "EXCEPTION_DATE" = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP))
       AND "RULE_ID" IN (
           SELECT r."RULE_ID"
           FROM "RULE" r
