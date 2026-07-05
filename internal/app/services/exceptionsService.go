@@ -25,6 +25,10 @@ func UpdateExceptionComments(exceptionID int64, comments string) (int, error) {
 	return repositories.UpdateExceptionComments(exceptionID, comments)
 }
 
+func UpdateExceptionSuppressDate(exceptionID int64, suppressDate string) (int, error) {
+	return repositories.UpdateExceptionSuppressDate(exceptionID, suppressDate)
+}
+
 func GetSeverityTypes() ([]string, error) {
 	return repositories.GetSeverityTypes()
 }

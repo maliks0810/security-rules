@@ -104,6 +104,44 @@ func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
 	return n, nil
 }
 
+// UpdateExceptionSuppressDate sets EXCEPTION.SUPPRESS_DATE on a single row
+// keyed by EXCEPTION_ID. Empty suppressDate ("") is passed as SQL NULL so
+// the cell is cleared; otherwise the parsed YYYY-MM-DD value is stored.
+// Returns the number of rows updated.
+func UpdateExceptionSuppressDate(exceptionID int64, suppressDate string) (int, error) {
+	var arg any
+	if suppressDate == "" {
+		arg = nil
+	} else {
+		arg = suppressDate
+	}
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateExceptionSuppressDate - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_SUPPRESS_DATE(?, ?)", exceptionID, arg)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateExceptionSuppressDate - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_EXCEPTION_SUPPRESS_DATE"($1, $2)`,
+		exceptionID, arg,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UpdateExceptionComments sets EXCEPTION.COMMENTS on a single row keyed by
 // EXCEPTION_ID. Empty p_comments is stored as-is (blank string clears the
 // cell). Returns the number of rows updated.

@@ -17,6 +17,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getExceptionStatus", handlers.GetExceptionStatus)
 	route.Get("/updateExceptionStatus", handlers.UpdateExceptionStatus)
 	route.Post("/updateExceptionComments", handlers.UpdateExceptionComments)
+	route.Post("/updateExceptionSuppressDate", handlers.UpdateExceptionSuppressDate)
 	route.Get("/getSeverityTypes", handlers.GetSeverityTypes)
 	route.Get("/getPriorityTypes", handlers.GetPriorityTypes)
 	route.Get("/getRules", handlers.GetRules)

@@ -188,6 +188,38 @@ type updateExceptionCommentsBody struct {
 	Comments    string `json:"comments"`
 }
 
+// UpdateExceptionSuppressDate godoc
+// @Summary      Update EXCEPTION.SUPPRESS_DATE for a single row
+// @Description  Sets the SUPPRESS_DATE (YYYY-MM-DD) on the row identified by
+// @Description  exception_id. Empty suppress_date clears the cell.
+// @Tags         exceptions
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateExceptionSuppressDateBody  true  "exception_id + suppress_date"
+// @Success      200  {object}  map[string]int   "rows updated"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update exception suppress_date"
+// @Router       /v1/api/updateExceptionSuppressDate [post]
+func UpdateExceptionSuppressDate(ctx *fiber.Ctx) error {
+	var body updateExceptionSuppressDateBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if body.ExceptionID == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_id is required"})
+	}
+	n, err := services.UpdateExceptionSuppressDate(body.ExceptionID, body.SuppressDate)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception suppress_date"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+type updateExceptionSuppressDateBody struct {
+	ExceptionID  int64  `json:"exception_id"`
+	SuppressDate string `json:"suppress_date"`
+}
+
 // GetExceptionStatus godoc
 // @Summary      List exception status names
 // @Description  Returns EXCEPTION_STATUS.NAME values ordered by SORT_ORDER.

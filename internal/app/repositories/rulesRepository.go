@@ -42,14 +42,16 @@ func GetRuleGroups() ([]models.RuleGroup, error) {
 			name            sql.NullString
 			statusVisible   sql.NullBool
 			commentsVisible sql.NullBool
+			suppressDate    sql.NullBool
 		)
-		if err := rows.Scan(&name, &statusVisible, &commentsVisible); err != nil {
+		if err := rows.Scan(&name, &statusVisible, &commentsVisible, &suppressDate); err != nil {
 			return nil, err
 		}
 		groups = append(groups, models.RuleGroup{
 			Name:                sqlutil.NullStr(name),
 			FlagStatusVisible:   statusVisible.Valid && statusVisible.Bool,
 			FlagCommentsVisible: commentsVisible.Valid && commentsVisible.Bool,
+			FlagSuppressDate:    suppressDate.Valid && suppressDate.Bool,
 		})
 	}
 	return groups, nil
