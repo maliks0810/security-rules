@@ -873,6 +873,24 @@ BEGIN
 END;
 $$;
 
+-- GET_EXCEPTION_STATUS -------------------------------------------------------
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_STATUS()
+RETURNS TABLE("NAME" VARCHAR)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT "NAME"
+        FROM "EXCEPTION_STATUS"
+        ORDER BY "SORT_ORDER" ASC, "NAME" ASC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
 -- GET_EXCEPTION_TYPE ----------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_TYPE()
 RETURNS TABLE("NAME" VARCHAR)
