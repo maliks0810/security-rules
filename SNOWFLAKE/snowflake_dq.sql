@@ -56,6 +56,25 @@ INSERT INTO EXCEPTION_STATE (EXCEPTION_STATE_ID, NAME, SORT_ORDER, CREATED_BY, C
     (3, 'WorkedOn', 30, CURRENT_USER(), CURRENT_TIMESTAMP()),
     (4, 'Complete', 40, CURRENT_USER(), CURRENT_TIMESTAMP());
 
+-- EXCEPTION_STATUS -----------------------------------------------------------
+-- Human triage workflow for individual exceptions (independent of the
+-- rule-engine EXCEPTION_STATE lifecycle). Matches EXCEPTION_STATUS_pg.sql.
+CREATE OR REPLACE TABLE EXCEPTION_STATUS (
+    EXCEPTION_STATUS_ID INT,
+    NAME                VARCHAR(100),
+    SORT_ORDER          INT,
+    CREATED_BY          VARCHAR(100),
+    CREATED_DATE        TIMESTAMP_NTZ(9)
+);
+
+INSERT INTO EXCEPTION_STATUS (EXCEPTION_STATUS_ID, NAME, SORT_ORDER, CREATED_BY, CREATED_DATE) VALUES
+    (1, 'New',       10, CURRENT_USER(), CURRENT_TIMESTAMP()),
+    (2, 'Accept',    20, CURRENT_USER(), CURRENT_TIMESTAMP()),
+    (3, 'Suppress',  30, CURRENT_USER(), CURRENT_TIMESTAMP()),
+    (4, 'Challenge', 40, CURRENT_USER(), CURRENT_TIMESTAMP()),
+    (5, 'Override',  50, CURRENT_USER(), CURRENT_TIMESTAMP()),
+    (6, 'Research',  60, CURRENT_USER(), CURRENT_TIMESTAMP());
+
 -- EXCEPTION_TYPE --------------------------------------------------------------
 CREATE OR REPLACE TABLE EXCEPTION_TYPE (
     EXCEPTION_TYPE_ID INT,
