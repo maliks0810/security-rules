@@ -63,6 +63,70 @@ func GetExceptions(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(exceptions)
 }
 
+// GetExceptionsHist godoc
+// @Summary      List history-table exceptions for a specific EXCEPTION_DATE
+// @Description  Same shape as /getExceptions but reads from EXCEPTION_HIST
+// @Description  and only returns rows belonging to that day's LATEST BATCH_ID
+// @Description  within the caller's rule/catalog/group scope. Powers the "DQM
+// @Description  Date" back-in-time selector on the sidebar.
+// @Tags         exceptions
+// @Produce      json
+// @Param        exception_date    query     string  true   "ISO YYYY-MM-DD"
+// @Param        asset_id          query     string  false  "Asset ID filter"
+// @Param        exception_type    query     string  false  "EXCEPTION_TYPE.NAME filter"
+// @Param        severity          query     string  false  "EXCEPTION_SEVERITY_TYPE.NAME filter"
+// @Param        priority          query     string  false  "EXCEPTION_PRIORITY_TYPE.NAME filter"
+// @Param        rule_catalog      query     string  false  "RULE_CATALOG.NAME filter"
+// @Param        rule_name         query     string  false  "RULE.RULE_NAME filter"
+// @Param        rule_group        query     string  false  "RULE_GROUP.NAME filter"
+// @Param        exception_state   query     string  false  "EXCEPTION_STATE.NAME filter"
+// @Param        assign_to         query     string  false  "DM_USER.USER filter"
+// @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
+// @Success      200               {array}   models.Exception
+// @Failure      400               {object}  map[string]string  "exception_date is required"
+// @Failure      500               {object}  map[string]string  "failed to query exception history"
+// @Router       /v1/api/getExceptionsHist [get]
+func GetExceptionsHist(ctx *fiber.Ctx) error {
+	exceptionDate := ctx.Query("exception_date")
+	if exceptionDate == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_date is required"})
+	}
+	assetID := ctx.Query("asset_id")
+	exceptionType := ctx.Query("exception_type")
+	severity := ctx.Query("severity")
+	priority := ctx.Query("priority")
+	ruleCatalog := ctx.Query("rule_catalog")
+	ruleName := ctx.Query("rule_name")
+	ruleGroup := ctx.Query("rule_group")
+	exceptionState := ctx.Query("exception_state")
+	assignTo := ctx.Query("assign_to")
+	ruleNamePattern := ctx.Query("rule_name_pattern")
+
+	exceptions, err := services.GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception history"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(exceptions)
+}
+
+// GetExceptionHistDates godoc
+// @Summary      Distinct EXCEPTION_DATEs available in EXCEPTION_HIST
+// @Description  Returns ISO date strings for the last 60 days that have any
+// @Description  EXCEPTION_HIST activity, most recent first. Powers the
+// @Description  "DQM Date" dropdown options.
+// @Tags         exceptions
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query exception history dates"
+// @Router       /v1/api/getExceptionHistDates [get]
+func GetExceptionHistDates(ctx *fiber.Ctx) error {
+	dates, err := services.GetExceptionHistDates()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception history dates"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(dates)
+}
+
 // GetAssets godoc
 // @Summary      List assets with exception summary
 // @Description  Returns the deduplicated set of assets, optionally filtered by exception type CODE and severity (CATEGORY_TYPE.CODE).
@@ -218,6 +282,39 @@ func UpdateExceptionSuppressDate(ctx *fiber.Ctx) error {
 type updateExceptionSuppressDateBody struct {
 	ExceptionID  int64  `json:"exception_id"`
 	SuppressDate string `json:"suppress_date"`
+}
+
+// UpdateExceptionAssignTo godoc
+// @Summary      Update EXCEPTION.ASSIGN_TO_ID for a single row
+// @Description  Resolves assign_to against DM_USER and updates the single
+// @Description  EXCEPTION row keyed by exception_id. Empty assign_to clears
+// @Description  the assignment.
+// @Tags         exceptions
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateExceptionAssignToBody  true  "exception_id + assign_to"
+// @Success      200  {object}  map[string]int   "rows updated"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update exception assign_to"
+// @Router       /v1/api/updateExceptionAssignTo [post]
+func UpdateExceptionAssignTo(ctx *fiber.Ctx) error {
+	var body updateExceptionAssignToBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if body.ExceptionID == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_id is required"})
+	}
+	n, err := services.UpdateExceptionAssignTo(body.ExceptionID, body.AssignTo)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception assign_to"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+type updateExceptionAssignToBody struct {
+	ExceptionID int64  `json:"exception_id"`
+	AssignTo    string `json:"assign_to"`
 }
 
 // GetExceptionStatus godoc

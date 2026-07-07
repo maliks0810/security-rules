@@ -134,6 +134,39 @@ func ExpireSuppressDates() (int, error) {
 	return n, nil
 }
 
+// UpdateExceptionAssignTo sets EXCEPTION.ASSIGN_TO_ID on a single row keyed
+// by EXCEPTION_ID, resolving the assign_to name against DM_USER. Empty
+// assignTo clears the assignment. Returns the number of rows updated.
+// Distinct from UpdateAssignTo which mutates every row for an asset via
+// the Assets grid path.
+func UpdateExceptionAssignTo(exceptionID int64, assignTo string) (int, error) {
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateExceptionAssignTo - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_ASSIGN_TO(?, ?)", exceptionID, assignTo)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateExceptionAssignTo - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_EXCEPTION_ASSIGN_TO"($1, $2)`,
+		exceptionID, assignTo,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UpdateExceptionSuppressDate sets EXCEPTION.SUPPRESS_DATE on a single row
 // keyed by EXCEPTION_ID. Empty suppressDate ("") is passed as SQL NULL so
 // the cell is cleared; otherwise the parsed YYYY-MM-DD value is stored.
@@ -342,6 +375,13 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	}
 	defer rows.Close()
 
+	return scanExceptionRows(rows)
+}
+
+// scanExceptionRows walks the sql.Rows returned by SP_GET_EXCEPTIONS or
+// SP_GET_EXCEPTIONS_HIST (same 25-column shape) into models.Exception
+// values. Extracted so both the live and history paths share one scan.
+func scanExceptionRows(rows *sql.Rows) ([]models.Exception, error) {
 	var exceptions []models.Exception
 	for rows.Next() {
 		var (
@@ -352,10 +392,10 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			exceptionDate    sql.NullTime
 			exceptionTime    sql.NullTime
 			idBbGlobal       sql.NullString
-			stateID         sql.NullInt64
-			exceptionState  sql.NullString
-			statusID        sql.NullInt64
-			exceptionStatus sql.NullString
+			stateID          sql.NullInt64
+			exceptionState   sql.NullString
+			statusID         sql.NullInt64
+			exceptionStatus  sql.NullString
 			commentsCol      sql.NullString
 			issueDescription sql.NullString
 			resultData       sql.NullString
@@ -371,7 +411,6 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			modifiedDate     sql.NullTime
 			modifiedBy       sql.NullString
 		)
-
 		if err := rows.Scan(
 			&exceptionID, &ruleID, &ruleNameCol, &assetIDCol,
 			&exceptionDate, &exceptionTime, &idBbGlobal,
@@ -385,7 +424,6 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		); err != nil {
 			return nil, err
 		}
-
 		exceptions = append(exceptions, models.Exception{
 			ExceptionID:      exceptionID.Int64,
 			RuleID:           sqlutil.NullInt(ruleID),
@@ -394,8 +432,8 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			ExceptionDate:    sqlutil.NullTime(exceptionDate),
 			ExceptionTime:    sqlutil.NullTime(exceptionTime),
 			IdBbGlobal:       sqlutil.NullStr(idBbGlobal),
-			StateID:         sqlutil.NullInt(stateID),
-			ExceptionState:  sqlutil.NullStr(exceptionState),
+			StateID:          sqlutil.NullInt(stateID),
+			ExceptionState:   sqlutil.NullStr(exceptionState),
 			StatusID:         sqlutil.NullInt(statusID),
 			ExceptionStatus:  sqlutil.NullStr(exceptionStatus),
 			Comments:         sqlutil.NullStr(commentsCol),
@@ -414,11 +452,98 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 			ModifiedBy:       sqlutil.NullStr(modifiedBy),
 		})
 	}
-
 	if exceptions == nil {
 		exceptions = []models.Exception{}
 	}
 	return exceptions, nil
+}
+
+// GetExceptionsHist calls SP_GET_EXCEPTIONS_HIST for a specific
+// EXCEPTION_DATE and returns the rows from that day's LATEST BATCH_ID
+// within the caller's rule/catalog/group scope. Column shape mirrors
+// SP_GET_EXCEPTIONS so scanExceptionRows handles both.
+func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+	if exceptionDate == "" {
+		return nil, sql.ErrNoRows
+	}
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	dateArg := exceptionDate
+	assetArg := nilIfEmpty(assetID)
+	typeArg := nilIfEmpty(exceptionType)
+	severityArg := nilIfEmpty(severity)
+	priorityArg := nilIfEmpty(priority)
+	ruleCatalogArg := nilIfEmpty(ruleCatalog)
+	ruleNameArg := nilIfEmpty(ruleName)
+	ruleGroupArg := nilIfEmpty(ruleGroup)
+	exceptionStateArg := nilIfEmpty(exceptionState)
+	assignToArg := nilIfEmpty(assignTo)
+	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
+
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionsHist - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(
+			"CALL SP_GET_EXCEPTIONS_HIST(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			dateArg, assetArg, typeArg, severityArg, priorityArg,
+			ruleCatalogArg, ruleNameArg, ruleGroupArg,
+			exceptionStateArg, assignToArg, ruleNamePatternArg,
+		)
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionsHist - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(
+			`SELECT * FROM public."SP_GET_EXCEPTIONS_HIST"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			dateArg, assetArg, typeArg, severityArg, priorityArg,
+			ruleCatalogArg, ruleNameArg, ruleGroupArg,
+			exceptionStateArg, assignToArg, ruleNamePatternArg,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanExceptionRows(rows)
+}
+
+// GetExceptionHistDates returns the distinct EXCEPTION_DATEs present in
+// EXCEPTION_HIST within the last 60 days (UTC), most recent first, as
+// ISO YYYY-MM-DD strings. Powers the "DQM Date" dropdown.
+func GetExceptionHistDates() ([]string, error) {
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionHistDates - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_HIST_DATES()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionHistDates - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_HIST_DATES"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	dates := []string{}
+	for rows.Next() {
+		var t sql.NullTime
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		if t.Valid {
+			dates = append(dates, t.Time.Format("2006-01-02"))
+		}
+	}
+	return dates, nil
 }
 
 // UpdateAssignTo sets ASSIGN_TO_ID for every EXCEPTION row of the given

@@ -41,6 +41,14 @@ func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ru
 	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
 }
 
+func GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+	return repositories.GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
+}
+
+func GetExceptionHistDates() ([]string, error) {
+	return repositories.GetExceptionHistDates()
+}
+
 func InsertExceptions(exceptions []models.Exception) error {
 	return repositories.InsertExceptions(exceptions)
 }
@@ -55,4 +63,8 @@ func UpdateExceptionState(assetID string, ruleID int, complete bool) (int, error
 
 func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return repositories.UpdateAssignTo(assetID, assignTo)
+}
+
+func UpdateExceptionAssignTo(exceptionID int64, assignTo string) (int, error) {
+	return repositories.UpdateExceptionAssignTo(exceptionID, assignTo)
 }

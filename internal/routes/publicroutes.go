@@ -11,6 +11,8 @@ func PublicRoutes(app *fiber.App) {
 
 	route.Get("/info", handlers.GetInformation)
 	route.Get("/getExceptions", handlers.GetExceptions)
+	route.Get("/getExceptionsHist", handlers.GetExceptionsHist)
+	route.Get("/getExceptionHistDates", handlers.GetExceptionHistDates)
 	route.Get("/getAssets", handlers.GetAssets)
 	route.Get("/getExceptionTypes", handlers.GetExceptionTypes)
 	route.Get("/getExceptionState", handlers.GetExceptionState)
@@ -18,6 +20,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/updateExceptionStatus", handlers.UpdateExceptionStatus)
 	route.Post("/updateExceptionComments", handlers.UpdateExceptionComments)
 	route.Post("/updateExceptionSuppressDate", handlers.UpdateExceptionSuppressDate)
+	route.Post("/updateExceptionAssignTo", handlers.UpdateExceptionAssignTo)
 	route.Get("/getSeverityTypes", handlers.GetSeverityTypes)
 	route.Get("/getPriorityTypes", handlers.GetPriorityTypes)
 	route.Get("/getRules", handlers.GetRules)

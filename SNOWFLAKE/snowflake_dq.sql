@@ -149,18 +149,19 @@ INSERT INTO DM_USER ("USER") VALUES
 
 -- RULE_GROUP ------------------------------------------------------------------
 CREATE OR REPLACE TABLE RULE_GROUP (
-    RULE_GROUP_ID         NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
-    NAME                  VARCHAR(100),
-    DESCRIPTION           VARCHAR(512),
-    FLAG_STATUS_VISIBLE   BOOLEAN DEFAULT FALSE,
-    FLAG_COMMENTS_VISIBLE BOOLEAN DEFAULT FALSE,
-    FLAG_SUPPRESS_DATE    BOOLEAN DEFAULT FALSE,
-    CREATED_DATE          TIMESTAMP_NTZ(9),
-    CREATED_BY            VARCHAR(100)
+    RULE_GROUP_ID          NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
+    NAME                   VARCHAR(100),
+    DESCRIPTION            VARCHAR(512),
+    FLAG_STATUS_VISIBLE    BOOLEAN DEFAULT FALSE,
+    FLAG_COMMENTS_VISIBLE  BOOLEAN DEFAULT FALSE,
+    FLAG_SUPPRESS_DATE     BOOLEAN DEFAULT FALSE,
+    FLAG_ASSIGN_TO_VISIBLE BOOLEAN DEFAULT FALSE,
+    CREATED_DATE           TIMESTAMP_NTZ(9),
+    CREATED_BY             VARCHAR(100)
 );
 
-INSERT INTO RULE_GROUP (NAME, DESCRIPTION, FLAG_STATUS_VISIBLE, FLAG_COMMENTS_VISIBLE, FLAG_SUPPRESS_DATE, CREATED_DATE, CREATED_BY) VALUES
-    ('Security Master', 'Security Master', TRUE, TRUE, TRUE, CURRENT_TIMESTAMP(), CURRENT_USER());
+INSERT INTO RULE_GROUP (NAME, DESCRIPTION, FLAG_STATUS_VISIBLE, FLAG_COMMENTS_VISIBLE, FLAG_SUPPRESS_DATE, FLAG_ASSIGN_TO_VISIBLE, CREATED_DATE, CREATED_BY) VALUES
+    ('Security Master', 'Security Master', TRUE, TRUE, TRUE, TRUE, CURRENT_TIMESTAMP(), CURRENT_USER());
 
 -- RULE_CATALOG ----------------------------------------------------------------
 CREATE OR REPLACE TABLE RULE_CATALOG (
@@ -842,6 +843,41 @@ BEGIN
 END;
 $$;
 
+-- UPDATE_EXCEPTION_ASSIGN_TO --------------------------------------------------
+-- Single-row variant. Sets EXCEPTION.ASSIGN_TO_ID on the row identified
+-- by P_EXCEPTION_ID, resolving P_ASSIGN_TO against DM_USER.USER.
+-- Empty/NULL clears the assignment. Distinct from SP_UPDATE_ASSIGN_TO
+-- which mutates every EXCEPTION row for an ASSET_ID.
+CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION_ASSIGN_TO(
+    P_EXCEPTION_ID NUMBER,
+    P_ASSIGN_TO    VARCHAR
+)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    affected NUMBER := 0;
+    user_id  NUMBER := NULL;
+BEGIN
+    IF (:P_ASSIGN_TO IS NOT NULL AND :P_ASSIGN_TO <> '') THEN
+        SELECT "ID" INTO :user_id
+        FROM "DM_USER"
+        WHERE "USER" = :P_ASSIGN_TO
+        LIMIT 1;
+    END IF;
+
+    UPDATE "EXCEPTION"
+       SET "ASSIGN_TO_ID"  = :user_id,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_BY"   = 'system'
+     WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;
+
+    affected := SQLROWCOUNT;
+    RETURN affected;
+END;
+$$;
+
 -- UPDATE_ASSIGN_TO ------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SP_UPDATE_ASSIGN_TO(
     P_ASSET_ID  VARCHAR,
@@ -893,7 +929,7 @@ $$;
 
 -- GET_RULE_GROUPS -------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SP_GET_RULE_GROUPS()
-RETURNS TABLE("NAME" VARCHAR, "FLAG_STATUS_VISIBLE" BOOLEAN, "FLAG_COMMENTS_VISIBLE" BOOLEAN, "FLAG_SUPPRESS_DATE" BOOLEAN)
+RETURNS TABLE("NAME" VARCHAR, "FLAG_STATUS_VISIBLE" BOOLEAN, "FLAG_COMMENTS_VISIBLE" BOOLEAN, "FLAG_SUPPRESS_DATE" BOOLEAN, "FLAG_ASSIGN_TO_VISIBLE" BOOLEAN)
 LANGUAGE SQL
 AS
 $$
@@ -902,9 +938,10 @@ DECLARE
 BEGIN
     res := (
         SELECT "NAME",
-               COALESCE("FLAG_STATUS_VISIBLE",   FALSE) AS "FLAG_STATUS_VISIBLE",
-               COALESCE("FLAG_COMMENTS_VISIBLE", FALSE) AS "FLAG_COMMENTS_VISIBLE",
-               COALESCE("FLAG_SUPPRESS_DATE",    FALSE) AS "FLAG_SUPPRESS_DATE"
+               COALESCE("FLAG_STATUS_VISIBLE",    FALSE) AS "FLAG_STATUS_VISIBLE",
+               COALESCE("FLAG_COMMENTS_VISIBLE",  FALSE) AS "FLAG_COMMENTS_VISIBLE",
+               COALESCE("FLAG_SUPPRESS_DATE",     FALSE) AS "FLAG_SUPPRESS_DATE",
+               COALESCE("FLAG_ASSIGN_TO_VISIBLE", FALSE) AS "FLAG_ASSIGN_TO_VISIBLE"
         FROM "RULE_GROUP"
         ORDER BY "RULE_GROUP_ID" ASC
     );
@@ -1193,6 +1230,143 @@ BEGIN
           AND (:P_RULE_NAME         IS NULL OR :P_RULE_NAME  = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
           AND (:P_RULE_GROUP        IS NULL OR :P_RULE_GROUP = 'All' OR rg."NAME" = :P_RULE_GROUP)
           AND (:P_EXCEPTION_STATE  IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
+          AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
+          AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_EXCEPTION_HIST_DATES ---------------------------------------------------
+-- Distinct EXCEPTION_DATEs from EXCEPTION_HIST within the last 60 days
+-- (UTC), most recent first. Powers the "DQM Date" dropdown.
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_HIST_DATES()
+RETURNS TABLE("EXCEPTION_DATE" DATE)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT DISTINCT "EXCEPTION_DATE"
+          FROM "EXCEPTION_HIST"
+         WHERE "EXCEPTION_DATE" IS NOT NULL
+           AND "EXCEPTION_DATE" >= DATEADD(day, -60, TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)))
+         ORDER BY "EXCEPTION_DATE" DESC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_EXCEPTIONS_HIST --------------------------------------------------------
+-- Same column shape as SP_GET_EXCEPTIONS. Reads EXCEPTION_HIST for the
+-- given P_EXCEPTION_DATE and only the LATEST BATCH_ID within the caller's
+-- rule/catalog/group scope, so the grid shows the last archived snapshot
+-- for that day.
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
+    P_EXCEPTION_DATE    DATE,
+    P_ASSET_ID          VARCHAR DEFAULT NULL,
+    P_EXCEPTION_TYPE    VARCHAR DEFAULT NULL,
+    P_SEVERITY          VARCHAR DEFAULT NULL,
+    P_PRIORITY          VARCHAR DEFAULT NULL,
+    P_RULE_CATALOG      VARCHAR DEFAULT NULL,
+    P_RULE_NAME         VARCHAR DEFAULT NULL,
+    P_RULE_GROUP        VARCHAR DEFAULT NULL,
+    P_EXCEPTION_STATE   VARCHAR DEFAULT NULL,
+    P_ASSIGN_TO         VARCHAR DEFAULT NULL,
+    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    "EXCEPTION_ID"      NUMBER,
+    "RULE_ID"           NUMBER,
+    "RULE_NAME"         VARCHAR,
+    "ASSET_ID"          VARCHAR,
+    "EXCEPTION_DATE"    DATE,
+    "EXCEPTION_TIME"    TIMESTAMP_NTZ,
+    "ID_BB_GLOBAL"      VARCHAR,
+    "STATE_ID"          NUMBER,
+    "EXCEPTION_STATE"   VARCHAR,
+    "STATUS_ID"         NUMBER,
+    "EXCEPTION_STATUS"  VARCHAR,
+    "COMMENTS"          VARCHAR,
+    "ISSUE_DESCRIPTION" VARCHAR,
+    "RESULT_DATA"       VARCHAR,
+    "SUPPRESS_DATE"     DATE,
+    "ASSIGN_TO_ID"      NUMBER,
+    "ASSIGN_TO"         VARCHAR,
+    "RESULT_TYPE_ID"    NUMBER,
+    "PRIORITY"          VARCHAR,
+    "SEVERITY"          VARCHAR,
+    "EXCEPTION_TYPE"    VARCHAR,
+    "CREATED_DATE"      TIMESTAMP_NTZ,
+    "CREATED_BY"        VARCHAR,
+    "MODIFIED_DATE"     TIMESTAMP_NTZ,
+    "MODIFIED_BY"       VARCHAR
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        WITH max_batch AS (
+            SELECT MAX(h."BATCH_ID") AS mb
+              FROM "EXCEPTION_HIST" h
+              LEFT JOIN "RULE"         r  ON r."RULE_ID"          = h."RULE_ID"
+              LEFT JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+              LEFT JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+             WHERE h."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+               AND (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)
+               AND (:P_RULE_NAME    IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+               AND (:P_RULE_GROUP   IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"     = :P_RULE_GROUP)
+        )
+        SELECT e."EXCEPTION_ID"            AS "EXCEPTION_ID",
+               e."RULE_ID"                 AS "RULE_ID",
+               r."RULE_NAME"               AS "RULE_NAME",
+               e."ASSET_ID"                AS "ASSET_ID",
+               e."EXCEPTION_DATE"          AS "EXCEPTION_DATE",
+               e."EXCEPTION_TIME"          AS "EXCEPTION_TIME",
+               e."ID_BB_GLOBAL"            AS "ID_BB_GLOBAL",
+               e."STATE_ID"                AS "STATE_ID",
+               es."NAME"                   AS "EXCEPTION_STATE",
+               e."STATUS_ID"               AS "STATUS_ID",
+               est_s."NAME"                AS "EXCEPTION_STATUS",
+               e."COMMENTS"                AS "COMMENTS",
+               e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
+               TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
+               e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
+               e."ASSIGN_TO_ID"            AS "ASSIGN_TO_ID",
+               du."USER"                   AS "ASSIGN_TO",
+               e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
+               ept."NAME"                  AS "PRIORITY",
+               est."NAME"                  AS "SEVERITY",
+               et."NAME"                   AS "EXCEPTION_TYPE",
+               e."CREATED_DATE"            AS "CREATED_DATE",
+               e."CREATED_BY"              AS "CREATED_BY",
+               e."MODIFIED_DATE"           AS "MODIFIED_DATE",
+               e."MODIFIED_BY"             AS "MODIFIED_BY"
+        FROM "EXCEPTION_HIST" e
+        LEFT JOIN "RULE"                    r     ON r."RULE_ID"                     = e."RULE_ID"
+        LEFT JOIN "EXCEPTION_TYPE"          et    ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept   ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est   ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+        LEFT JOIN "RULE_CATALOG"            rc    ON rc."RULE_CATALOG_ID"            = r."RULE_CATALOG_ID"
+        LEFT JOIN "RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
+        LEFT JOIN "EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID"                         = e."ASSIGN_TO_ID"
+        WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+          AND e."BATCH_ID" = (SELECT mb FROM max_batch)
+          AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
+          AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
+          AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
+          AND (:P_PRIORITY          IS NULL OR ept."NAME"   = :P_PRIORITY)
+          AND (:P_RULE_CATALOG      IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME" = :P_RULE_CATALOG)
+          AND (:P_RULE_NAME         IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+          AND (:P_RULE_GROUP        IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"     = :P_RULE_GROUP)
+          AND (:P_EXCEPTION_STATE   IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
           AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
           AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
     );

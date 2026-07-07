@@ -39,12 +39,13 @@ func GetRuleGroups() ([]models.RuleGroup, error) {
 	groups := []models.RuleGroup{}
 	for rows.Next() {
 		var (
-			name            sql.NullString
-			statusVisible   sql.NullBool
-			commentsVisible sql.NullBool
-			suppressDate    sql.NullBool
+			name             sql.NullString
+			statusVisible    sql.NullBool
+			commentsVisible  sql.NullBool
+			suppressDate     sql.NullBool
+			assignToVisible  sql.NullBool
 		)
-		if err := rows.Scan(&name, &statusVisible, &commentsVisible, &suppressDate); err != nil {
+		if err := rows.Scan(&name, &statusVisible, &commentsVisible, &suppressDate, &assignToVisible); err != nil {
 			return nil, err
 		}
 		groups = append(groups, models.RuleGroup{
@@ -52,6 +53,7 @@ func GetRuleGroups() ([]models.RuleGroup, error) {
 			FlagStatusVisible:   statusVisible.Valid && statusVisible.Bool,
 			FlagCommentsVisible: commentsVisible.Valid && commentsVisible.Bool,
 			FlagSuppressDate:    suppressDate.Valid && suppressDate.Bool,
+			FlagAssignToVisible: assignToVisible.Valid && assignToVisible.Bool,
 		})
 	}
 	return groups, nil
