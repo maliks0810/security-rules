@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"securityrules/security-rules/configs"
@@ -99,6 +100,35 @@ func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
 		exceptionID, statusName,
 	).Scan(&n)
 	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// ExpireSuppressDates reverts every EXCEPTION whose SUPPRESS_DATE has
+// already passed back to STATUS_ID=1 ("New") and clears SUPPRESS_DATE.
+// Returns the number of rows expired. Intended to be called at the top of
+// GetExceptions as a best-effort cleanup — the caller should log-and-
+// continue on error so a stale-row sweep failure doesn't blank the grid.
+func ExpireSuppressDates() (int, error) {
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		rows, err := snowflake.Query("CALL SP_EXPIRE_SUPPRESS_DATES()")
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	if err := postgres.DB.QueryRow(
+		`SELECT public."SP_EXPIRE_SUPPRESS_DATES"()`,
+	).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -267,6 +297,16 @@ func GetExceptionTypes() ([]string, error) {
 // table and joins RULE + the lookup tables. Returns the new Exception
 // model (23-column shape â€” no dummy NULLs to fit the legacy struct).
 func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+	// Best-effort auto-expire before the read so any Suppress row whose
+	// SUPPRESS_DATE has passed reverts to STATUS_ID=1 (New) with a null
+	// SUPPRESS_DATE. Logged and swallowed on failure — a sweep error must
+	// not blank the grid.
+	if n, expErr := ExpireSuppressDates(); expErr != nil {
+		log.Logger.Warn(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates failed, continuing: %v", expErr))
+	} else if n > 0 {
+		log.Logger.Info(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates - reverted %d row(s) to New", n))
+	}
+
 	var rows *sql.Rows
 	var err error
 

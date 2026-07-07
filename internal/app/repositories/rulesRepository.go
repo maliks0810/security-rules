@@ -57,12 +57,14 @@ func GetRuleGroups() ([]models.RuleGroup, error) {
 	return groups, nil
 }
 
-// DeleteExceptions calls the DELETE_EXCEPTIONS(P_RULE_NAME, P_RULE_TYPE)
-// SP which wipes today's EXCEPTION rows whose underlying RULE falls in
-// the catalog scope implied by (ruleName, ruleType). Returns the row count.
+// ArchiveExceptions calls the SP_ARCHIVE_EXCEPTIONS(P_RULE_NAME, P_RULE_TYPE)
+// SP which moves today's EXCEPTION rows whose underlying RULE falls in
+// the catalog scope implied by (ruleName, ruleType) into EXCEPTION_HIST
+// with a per-EXCEPTION_DATE BATCH_ID (fresh count each day, starts at 1),
+// then deletes the source rows from EXCEPTION. Returns the row count moved.
 // Empty strings flow through as SQL NULL so the SP's "all catalogs"
 // branch fires.
-func DeleteExceptions(ruleName, ruleType string) (int, error) {
+func ArchiveExceptions(ruleName, ruleType string) (int, error) {
 	nilIfEmpty := func(s string) any {
 		if s == "" {
 			return nil
@@ -71,8 +73,8 @@ func DeleteExceptions(ruleName, ruleType string) (int, error) {
 	}
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("rulesRepository: DeleteExceptions - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL SP_DELETE_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
+		log.Logger.Info("rulesRepository: ArchiveExceptions - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_ARCHIVE_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
 		if err != nil {
 			return 0, err
 		}
@@ -82,12 +84,53 @@ func DeleteExceptions(ruleName, ruleType string) (int, error) {
 		}
 		return n, nil
 	}
-	log.Logger.Info("rulesRepository: DeleteExceptions - using POSTGRES database environment")
+	log.Logger.Info("rulesRepository: ArchiveExceptions - using POSTGRES database environment")
 	if postgres.DB == nil {
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."SP_DELETE_EXCEPTIONS"($1, $2)`,
+		`SELECT public."SP_ARCHIVE_EXCEPTIONS"($1, $2)`,
+		nilIfEmpty(ruleName), nilIfEmpty(ruleType),
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// InheritExceptionStatuses calls SP_INHERIT_EXCEPTION_STATUSES(P_RULE_NAME,
+// P_RULE_TYPE), which for every EXCEPTION row in scope copies STATUS_ID
+// from the most recent EXCEPTION_HIST row for the same (RULE_ID, ASSET_ID).
+// Intended to be called immediately after InsertExceptions in ExecuteRules
+// so freshly-inserted rows carry the last-known triage state forward
+// instead of resetting to STATUS_ID=1 ("New"). Returns the row count
+// whose STATUS_ID actually changed.
+func InheritExceptionStatuses(ruleName, ruleType string) (int, error) {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: InheritExceptionStatuses - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_INHERIT_EXCEPTION_STATUSES(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("rulesRepository: InheritExceptionStatuses - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_INHERIT_EXCEPTION_STATUSES"($1, $2)`,
 		nilIfEmpty(ruleName), nilIfEmpty(ruleType),
 	).Scan(&n)
 	if err != nil {

@@ -393,8 +393,8 @@ func GetRules(ctx *fiber.Ctx) error {
 }
 
 // ExecuteRules godoc
-// @Summary      Execute rules (delete-then-insert)
-// @Description  Wipes today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) via DELETE_EXCEPTIONS, then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
+// @Summary      Execute rules (archive-then-insert)
+// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
 // @Tags         rules
 // @Produce      json
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"

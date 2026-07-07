@@ -5,6 +5,7 @@ CREATE TABLE public."EXCEPTION_HIST" (
     "RULE_ID"             integer,
     "ASSET_ID"            varchar(100),
     "EXCEPTION_DATE"      date,
+    "BATCH_ID"            bigint,
     "ID_BB_GLOBAL"        varchar(15),
     "STATE_ID"            integer,
     "STATUS_ID"           integer,

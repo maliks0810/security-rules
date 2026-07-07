@@ -39,7 +39,7 @@ func ExecuteRules(ruleName, ruleType string) error {
 		return err
 	}
 
-	deleted, err := repositories.DeleteExceptions(ruleName, ruleType)
+	archived, err := repositories.ArchiveExceptions(ruleName, ruleType)
 	if err != nil {
 		return err
 	}
@@ -59,9 +59,22 @@ func ExecuteRules(ruleName, ruleType string) error {
 		}
 	}
 
+	// After inserting the fresh batch, carry the last-known STATUS_ID
+	// forward from EXCEPTION_HIST so previously-triaged rows don't reset
+	// to "New". Best-effort: log-and-continue on error, since a failed
+	// inheritance shouldn't blow up the whole run.
+	inherited := 0
+	if n, ierr := repositories.InheritExceptionStatuses(ruleName, ruleType); ierr != nil {
+		log.Logger.Warn(fmt.Sprintf(
+			"rulesService: ExecuteRules - InheritExceptionStatuses failed, continuing: %v", ierr,
+		))
+	} else {
+		inherited = n
+	}
+
 	log.Logger.Info(fmt.Sprintf(
-		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: deleted %d, inserted %d",
-		ruleName, ruleType, deleted, len(produced),
+		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d",
+		ruleName, ruleType, archived, len(produced), inherited,
 	))
 
 	events.Publish(events.Event{

@@ -320,6 +320,7 @@ CREATE OR REPLACE TABLE EXCEPTION_HIST (
     RULE_ID           INT,
     ASSET_ID          VARCHAR(100),
     EXCEPTION_DATE    DATE,
+    BATCH_ID          NUMBER,
     ID_BB_GLOBAL      VARCHAR(15),
     STATE_ID         INT,
     STATUS_ID         INT,
@@ -358,6 +359,41 @@ CREATE OR REPLACE TABLE EXCEPTION_OVERRIDE (
     MODIFIED_DATE     TIMESTAMP_NTZ(9),
     MODIFIED_BY       VARCHAR(100)
 );
+
+-- BBG_TDC_EXCEPTIONS_VW -------------------------------------------------------
+-- EXCEPTION rows for the 'Bloomberg Compare Differences' RULE_CATALOG,
+-- plus the four RESULT_DATA-only JSON keys (RULE_NAME, ALADDIN_ID,
+-- BBG_VALUE, ALADDIN_VALUE) exposed as their own VARCHAR columns.
+-- Overlapping keys (RULE_ID, ID_BB_GLOBAL, ISSUE_DESCRIPTION) are
+-- intentionally omitted from the JSON projection so the EXCEPTION-side
+-- value wins. The RESULT_DATA column itself is NOT projected — the
+-- parsed keys already cover what callers need.
+CREATE OR REPLACE VIEW BBG_TDC_EXCEPTIONS_VW AS
+SELECT e."EXCEPTION_ID",
+       e."RULE_ID",
+       e."ASSET_ID",
+       e."EXCEPTION_DATE",
+       e."ID_BB_GLOBAL",
+       e."STATE_ID",
+       e."STATUS_ID",
+       e."COMMENTS",
+       e."EXCEPTION_TIME",
+       e."ISSUE_DESCRIPTION",
+       e."SUPPRESS_DATE",
+       e."ASSIGN_TO_ID",
+       e."RESULT_TYPE_ID",
+       e."CREATED_DATE",
+       e."CREATED_BY",
+       e."MODIFIED_DATE",
+       e."MODIFIED_BY",
+       PARSE_JSON(e."RESULT_DATA"):"RULE_NAME"::VARCHAR     AS "RULE_NAME",
+       PARSE_JSON(e."RESULT_DATA"):"ALADDIN_ID"::VARCHAR    AS "ALADDIN_ID",
+       PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS "BBG_VALUE",
+       PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS "ALADDIN_VALUE"
+  FROM "EXCEPTION" e
+  JOIN "RULE"          r  ON r."RULE_ID"          = e."RULE_ID"
+  JOIN "RULE_CATALOG"  rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+ WHERE rc."NAME" = 'Bloomberg Compare Differences';
 
 
 -- =============================================================================
@@ -442,12 +478,16 @@ BEGIN
 END;
 $$;
 
--- DELETE_EXCEPTIONS -----------------------------------------------------------
--- Wipes the day's EXCEPTION rows for the catalogs implied by (P_RULE_NAME,
--- P_RULE_TYPE). Scope rules match GET_RULES â€” CATALOG/RULE filter by
+-- ARCHIVE_EXCEPTIONS ----------------------------------------------------------
+-- Moves the day's EXCEPTION rows for the catalogs implied by (P_RULE_NAME,
+-- P_RULE_TYPE) into EXCEPTION_HIST, stamping each with a per-date BATCH_ID
+-- (max BATCH_ID for that EXCEPTION_DATE, +1; NULL → 1 for the first run of a
+-- new day). Scope rules match GET_RULES — CATALOG/RULE filter by
 -- RULE_CATALOG.NAME, GROUP filters by RULE_GROUP.NAME, empty/All matches
--- every catalog. Returns the row count for diagnostics.
-CREATE OR REPLACE PROCEDURE SP_DELETE_EXCEPTIONS(
+-- every catalog. Returns the row count moved.
+DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
+
+CREATE OR REPLACE PROCEDURE SP_ARCHIVE_EXCEPTIONS(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
@@ -456,10 +496,47 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-    affected NUMBER := 0;
+    exc_date   DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP));
+    next_batch NUMBER := 0;
+    affected   NUMBER := 0;
 BEGIN
+    next_batch := COALESCE(
+        (SELECT MAX("BATCH_ID") FROM "EXCEPTION_HIST"
+          WHERE "EXCEPTION_DATE" = :exc_date), 0
+    ) + 1;
+
+    INSERT INTO "EXCEPTION_HIST" (
+        "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
+        "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
+        "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
+        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
+    )
+    SELECT
+        e."EXCEPTION_ID", e."RULE_ID", e."ASSET_ID", e."EXCEPTION_DATE", :next_batch,
+        e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
+        e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
+        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
+    FROM "EXCEPTION" e
+    WHERE e."EXCEPTION_DATE" = :exc_date
+      AND e."RULE_ID" IN (
+          SELECT r."RULE_ID"
+          FROM "RULE" r
+          JOIN "RULE_CATALOG" rc      ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+          LEFT JOIN "RULE_GROUP" rg   ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+          WHERE :P_RULE_NAME IS NULL
+             OR :P_RULE_NAME = ''
+             OR :P_RULE_NAME = 'All'
+             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+                   AND rc."NAME" = :P_RULE_NAME)
+             OR (UPPER(:P_RULE_TYPE) = 'GROUP'
+                   AND rg."NAME"  = :P_RULE_NAME)
+      );
+    affected := SQLROWCOUNT;
+
     DELETE FROM "EXCEPTION"
-    WHERE "EXCEPTION_DATE" = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP))
+    WHERE "EXCEPTION_DATE" = :exc_date
       AND "RULE_ID" IN (
           SELECT r."RULE_ID"
           FROM "RULE" r
@@ -473,6 +550,63 @@ BEGIN
              OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                    AND rg."NAME"  = :P_RULE_NAME)
       );
+
+    RETURN affected;
+END;
+$$;
+
+-- INHERIT_EXCEPTION_STATUSES --------------------------------------------------
+-- For each EXCEPTION row in scope, carry the last-known STATUS_ID from
+-- EXCEPTION_HIST forward, keyed by (RULE_ID, ASSET_ID). Row picked by
+-- (EXCEPTION_DATE DESC, BATCH_ID DESC) — today's max batch wins when
+-- today has archives; else falls back to the most recent prior date's
+-- max batch. Scope matches SP_ARCHIVE_EXCEPTIONS / SP_GET_RULES.
+CREATE OR REPLACE PROCEDURE SP_INHERIT_EXCEPTION_STATUSES(
+    P_RULE_NAME VARCHAR DEFAULT NULL,
+    P_RULE_TYPE VARCHAR DEFAULT NULL
+)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    affected NUMBER := 0;
+BEGIN
+    UPDATE "EXCEPTION" e
+       SET "STATUS_ID"     = h."STATUS_ID",
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_BY"   = 'system'
+      FROM (
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID"
+            FROM (
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID",
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "RULE_ID", "ASSET_ID"
+                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
+                                    "BATCH_ID"       DESC NULLS LAST
+                       ) AS rn
+                  FROM "EXCEPTION_HIST"
+                 WHERE "STATUS_ID" IS NOT NULL
+            )
+           WHERE rn = 1
+      ) h
+     WHERE e."RULE_ID"  = h."RULE_ID"
+       AND e."ASSET_ID" = h."ASSET_ID"
+       AND (e."STATUS_ID" IS NULL OR e."STATUS_ID" <> h."STATUS_ID")
+       AND e."EXCEPTION_ID" IN (
+           SELECT e2."EXCEPTION_ID"
+             FROM "EXCEPTION" e2
+             JOIN "RULE"          r  ON r."RULE_ID"          = e2."RULE_ID"
+             JOIN "RULE_CATALOG"  rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+             LEFT JOIN "RULE_GROUP" rg ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+            WHERE :P_RULE_NAME IS NULL
+               OR :P_RULE_NAME = ''
+               OR :P_RULE_NAME = 'All'
+               OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+                     AND rc."NAME" = :P_RULE_NAME)
+               OR (UPPER(:P_RULE_TYPE) = 'GROUP'
+                     AND rg."NAME"  = :P_RULE_NAME)
+       );
     affected := SQLROWCOUNT;
     RETURN affected;
 END;
@@ -679,6 +813,30 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;
+    affected := SQLROWCOUNT;
+    RETURN affected;
+END;
+$$;
+
+-- EXPIRE_SUPPRESS_DATES -------------------------------------------------------
+-- Reverts every EXCEPTION row whose SUPPRESS_DATE has passed (< today UTC)
+-- back to STATUS_ID=1 ("New") and clears SUPPRESS_DATE. Called at the top
+-- of GetExceptions in Go so the grid never shows a stale Suppress row.
+CREATE OR REPLACE PROCEDURE SP_EXPIRE_SUPPRESS_DATES()
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    affected NUMBER := 0;
+BEGIN
+    UPDATE "EXCEPTION"
+       SET "STATUS_ID"     = 1,
+           "SUPPRESS_DATE" = NULL,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_BY"   = 'system'
+     WHERE "SUPPRESS_DATE" IS NOT NULL
+       AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP));
     affected := SQLROWCOUNT;
     RETURN affected;
 END;
