@@ -1,4 +1,4 @@
--- For each EXCEPTION row in scope, carry the last-known STATUS_ID from
+﻿-- For each EXCEPTION row in scope, carry the last-known STATUS_ID from
 -- EXCEPTION_HIST forward, keyed by (RULE_ID, ASSET_ID). The "last" row
 -- is picked by (EXCEPTION_DATE DESC, BATCH_ID DESC), which naturally
 -- gives today's max batch when today has archives, else falls back to
@@ -19,7 +19,7 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = h."STATUS_ID",
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
           SELECT "RULE_ID", "ASSET_ID", "STATUS_ID"

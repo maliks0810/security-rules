@@ -1,4 +1,4 @@
--- Drop the retired outright-delete SP so a redeploy against a legacy
+﻿-- Drop the retired outright-delete SP so a redeploy against a legacy
 -- SF instance ends up with only SP_ARCHIVE_EXCEPTIONS. IF EXISTS makes
 -- this a no-op on a fresh install.
 DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
@@ -6,9 +6,9 @@ DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
 -- Moves today's EXCEPTION rows in scope into EXCEPTION_HIST (stamping a
 -- per-date BATCH_ID) instead of deleting them outright. Scope semantics
 -- match SP_GET_RULES / the retired SP_DELETE_EXCEPTIONS:
---   P_RULE_TYPE = 'CATALOG' or 'RULE'  → P_RULE_NAME = RULE_CATALOG.NAME
---   P_RULE_TYPE = 'GROUP'              → P_RULE_NAME = RULE_GROUP.NAME
---   P_RULE_NAME NULL / empty / 'All'   → every catalog (full archive of today)
+--   P_RULE_TYPE = 'CATALOG' or 'RULE'  â†’ P_RULE_NAME = RULE_CATALOG.NAME
+--   P_RULE_TYPE = 'GROUP'              â†’ P_RULE_NAME = RULE_GROUP.NAME
+--   P_RULE_NAME NULL / empty / 'All'   â†’ every catalog (full archive of today)
 --
 -- BATCH_ID is per EXCEPTION_DATE. First run of a day starts at 1;
 -- subsequent same-day runs increment. A new day resets the counter
@@ -26,7 +26,7 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-    exc_date   DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP));
+    exc_date   DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     next_batch NUMBER := 0;
     affected   NUMBER := 0;
 BEGIN

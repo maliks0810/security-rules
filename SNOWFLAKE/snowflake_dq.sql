@@ -229,69 +229,69 @@ INSERT INTO RULE (
     EXCEPTION_PRIORITY_TYPE_ID, EXCEPTION_SOURCE, CREATED_BY, CREATED_DATE
 )
 VALUES
-    (1, 'DM_BBG_ACCRUAL_DT',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_ADC_TICKER',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BARC_LVL_1',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BARC_LVL_2',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BARC_LVL_3',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BARC_LVL_4',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BOND_TYPE_ABS',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BOND_TYPE_CMBS',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BOND_TYPE_CMO_AGENY',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_BOND_TYPE_CMO_NON_AGENCY',         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CALC_TYP',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CALL_PUT_SINK',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_COMPOUNDING_INTEREST_INDICATOR',   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CORP_GOVT_CLASS',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_COUNTRY',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CPN_FREQ',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CPN_TYP',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CRNCY',                            NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_CUR_CPN',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_DAY_CONV',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_DEAL_AMT',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_DEAL_COLLATERAL',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_DUMMY_ID_TO_CUSIP',                NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_FACTOR',                           NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_FIRST_CPN_DT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_FIRST_PRIN_DT',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_GLOBAL_FACILITY_AMT',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_INACTIVE_BANK_LOAN',               NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_ISSUER_LEI',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_LEAD_MGR',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_LIEN_TYPE',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_LOAN_FACILITY',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MATURITY_DT',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_DEAL_NAME',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_FIRST_RST_DT',                 NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_IS_PAID_OFF',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_LIFE_CAP',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_LIFE_FLOOR',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_NOTL_PRINC_FLAG',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MTG_PAY_DELAY',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_MUNI_TAX_CODE',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_NON_TBA_MIN_INCREMENT',            NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_NON_TBA_MIN_TRD_SIZE',             NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_PMT_CALENDAR',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_PRIN_FREQ',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_REFERENCE_INDEX',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_REG_RIGHTS',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_REGISTRATION',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_REREMIC',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RESET_IDX',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_DBRS_LT',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_FITCH_LT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_FITCH_ST',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_KROLL_LT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_MOODYS_LT',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_RTG_SNP_LT',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_SEC_GROUP_TYPE',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_STRUCTURE',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_TICKER',                           NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_USE_OF_PROCEEDS',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_BBG_WHEN_ISSUED',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_RTG_FORM_REVIEW',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP),
-    (1, 'DM_TDC_COUNTRY_OF_RISK',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP);
+    (1, 'DM_BBG_ACCRUAL_DT',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_ADC_TICKER',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BARC_LVL_1',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BARC_LVL_2',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BARC_LVL_3',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BARC_LVL_4',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BOND_TYPE_ABS',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BOND_TYPE_CMBS',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BOND_TYPE_CMO_AGENY',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_BOND_TYPE_CMO_NON_AGENCY',         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CALC_TYP',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CALL_PUT_SINK',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_COMPOUNDING_INTEREST_INDICATOR',   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CORP_GOVT_CLASS',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_COUNTRY',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CPN_FREQ',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CPN_TYP',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CRNCY',                            NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_CUR_CPN',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_DAY_CONV',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_DEAL_AMT',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_DEAL_COLLATERAL',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_DUMMY_ID_TO_CUSIP',                NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_FACTOR',                           NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_FIRST_CPN_DT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_FIRST_PRIN_DT',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_GLOBAL_FACILITY_AMT',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_INACTIVE_BANK_LOAN',               NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_ISSUER_LEI',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_LEAD_MGR',                         NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_LIEN_TYPE',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_LOAN_FACILITY',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MATURITY_DT',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_DEAL_NAME',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_FIRST_RST_DT',                 NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_IS_PAID_OFF',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_LIFE_CAP',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_LIFE_FLOOR',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_NOTL_PRINC_FLAG',              NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MTG_PAY_DELAY',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_MUNI_TAX_CODE',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_NON_TBA_MIN_INCREMENT',            NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_NON_TBA_MIN_TRD_SIZE',             NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_PMT_CALENDAR',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_PRIN_FREQ',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_REFERENCE_INDEX',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_REG_RIGHTS',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_REGISTRATION',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_REREMIC',                          NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RESET_IDX',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_DBRS_LT',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_FITCH_LT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_FITCH_ST',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_KROLL_LT',                     NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_MOODYS_LT',                    NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_RTG_SNP_LT',                       NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_SEC_GROUP_TYPE',                   NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_STRUCTURE',                        NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_TICKER',                           NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_USE_OF_PROCEEDS',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_BBG_WHEN_ISSUED',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_RTG_FORM_REVIEW',                      NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP()),
+    (1, 'DM_TDC_COUNTRY_OF_RISK',                  NULL, 1, 1, 1, 1, 1, 1, 'SYSTEM', CURRENT_TIMESTAMP());
 
 -- EXCEPTION -------------------------------------------------------------------
 CREATE OR REPLACE TABLE EXCEPTION (
@@ -497,7 +497,7 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-    exc_date   DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP));
+    exc_date   DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     next_batch NUMBER := 0;
     affected   NUMBER := 0;
 BEGIN
@@ -575,7 +575,7 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = h."STATUS_ID",
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
           SELECT "RULE_ID", "ASSET_ID", "STATUS_ID"
@@ -709,7 +709,7 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION"
        SET "STATE_ID"     = CASE WHEN :P_COMPLETE THEN 4 ELSE "STATE_ID" END,
-           "MODIFIED_DATE" = CURRENT_TIMESTAMP::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CURRENT_TIMESTAMP()::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "ASSET_ID"      = :P_ASSET_ID
        AND "RULE_ID"       = :P_RULE_ID;
@@ -740,7 +740,7 @@ BEGIN
                WHERE "NAME" = :P_STATUS_NAME
                LIMIT 1
            ),
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID
        AND EXISTS (
@@ -787,7 +787,7 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION"
        SET "COMMENTS"      = :P_COMMENTS,
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;
     affected := SQLROWCOUNT;
@@ -811,7 +811,7 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION"
        SET "SUPPRESS_DATE" = :P_SUPPRESS_DATE,
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;
     affected := SQLROWCOUNT;
@@ -834,10 +834,10 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "STATUS_ID"     = 1,
            "SUPPRESS_DATE" = NULL,
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "SUPPRESS_DATE" IS NOT NULL
-       AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP));
+       AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     affected := SQLROWCOUNT;
     RETURN affected;
 END;
@@ -869,7 +869,7 @@ BEGIN
 
     UPDATE "EXCEPTION"
        SET "ASSIGN_TO_ID"  = :user_id,
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;
 
@@ -900,7 +900,7 @@ BEGIN
 
     UPDATE "EXCEPTION"
        SET "ASSIGN_TO_ID"  = :user_id,
-           "MODIFIED_DATE" = CURRENT_TIMESTAMP::TIMESTAMP_NTZ,
+           "MODIFIED_DATE" = CURRENT_TIMESTAMP()::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "ASSET_ID" = :P_ASSET_ID;
 
@@ -1252,7 +1252,7 @@ BEGIN
         SELECT DISTINCT "EXCEPTION_DATE"
           FROM "EXCEPTION_HIST"
          WHERE "EXCEPTION_DATE" IS NOT NULL
-           AND "EXCEPTION_DATE" >= DATEADD(day, -60, TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP)))
+           AND "EXCEPTION_DATE" >= DATEADD(day, -60, TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
          ORDER BY "EXCEPTION_DATE" DESC
     );
     RETURN TABLE(res);
