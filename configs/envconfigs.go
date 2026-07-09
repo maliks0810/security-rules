@@ -32,6 +32,7 @@ type envConfigs struct {
 	PostgresUser                string `mapstructure:"POSTGRES_USER"`
 	PostgresPassword            string `mapstructure:"POSTGRES_PASSWORD"`
 	PostgresDatabase            string `mapstructure:"POSTGRES_DATABASE"`
+	EnableSwagger               bool   `mapstructure:"ENABLE_SWAGGER"`
 }
 
 var EnvConfigs *envConfigs
@@ -93,6 +94,12 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.BindEnv("POSTGRES_USER")
 	viper.BindEnv("POSTGRES_PASSWORD")
 	viper.BindEnv("POSTGRES_DATABASE")
+
+	// Swagger UI exposure. Defaults to true so dev/local always get docs;
+	// set ENABLE_SWAGGER=false in an env file (typically prod) to make
+	// the /swagger route stop serving and return 404.
+	viper.SetDefault("ENABLE_SWAGGER", true)
+	viper.BindEnv("ENABLE_SWAGGER")
 
 	golangEnv := viper.GetString("GOLANG_ENVIRONMENT")
 

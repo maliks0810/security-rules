@@ -32,7 +32,13 @@ func envHandler(ctx *fiber.Ctx) error {
 func UtilityRoutes(app *fiber.App) {
 	app.Get(route_prefix + "v1/api/echo", echoHandler)
 	app.Get(route_prefix + "v1/api/env", envHandler)
-	if !configs.EnvConfigs.GolangEnvironment.IsProduction() {
+	// Swagger docs are opt-in per env via the ENABLE_SWAGGER config flag
+	// (default true; see configs/envconfigs.go). The production env file
+	// should set ENABLE_SWAGGER=false to keep the docs off in prod; every
+	// other env can leave it unset and inherit the default-on behaviour.
+	// When disabled the route isn't registered at all, so it returns the
+	// standard 404 catch-all further down.
+	if configs.EnvConfigs.EnableSwagger {
 		app.Get(route_prefix+"v1/api/swagger/*", swagger.HandlerDefault)
 		app.Get("/", func(ctx *fiber.Ctx) error {
 			return ctx.Redirect(route_prefix+"v1/api/swagger/index.html", fiber.StatusFound)
