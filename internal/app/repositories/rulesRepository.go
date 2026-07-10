@@ -298,13 +298,18 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	return rules, nil
 }
 
-// resolveRuleCommand replaces ${ASSET_ID} and ${ID_BB_GLOBAL} placeholder
-// tokens in the RULE_CATALOG_SOURCE command with literals derived from the
-// caller's arguments. Empty values become NULL so the SP receives a real
-// NULL instead of an empty-string literal. Single quotes in the values are
-// doubled per SQL escaping; the inputs are URL-sourced asset and Bloomberg
-// IDs, so they should never legitimately contain quotes.
-func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
+// resolveRuleCommand replaces every ${NAME} placeholder token in the
+// RULE_CATALOG_SOURCE command with a SQL literal derived from the
+// caller's arguments. Two placeholders are always resolved from fixed
+// slots (ASSET_ID, ID_BB_GLOBAL); anything else the caller supplies via
+// the params map is substituted next. Empty values become NULL so the
+// SP receives a real NULL instead of an empty-string literal. Single
+// quotes in values are doubled per SQL escaping; inputs from HTTP query
+// params should not legitimately contain quotes.
+func resolveRuleCommand(
+	ruleCommand, assetID, idBbGlobal string,
+	params map[string]string,
+) string {
 	sqlLit := func(s string) string {
 		if s == "" {
 			return "NULL"
@@ -313,6 +318,16 @@ func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
 	}
 	out := strings.ReplaceAll(ruleCommand, "${ASSET_ID}", sqlLit(assetID))
 	out = strings.ReplaceAll(out, "${ID_BB_GLOBAL}", sqlLit(idBbGlobal))
+	// Extra caller-supplied placeholders. Loop order doesn't matter —
+	// each replace touches a distinct ${NAME} token, and we skip the
+	// two names already handled above so a caller can't accidentally
+	// clobber them via the params bag.
+	for k, v := range params {
+		if k == "ASSET_ID" || k == "ID_BB_GLOBAL" {
+			continue
+		}
+		out = strings.ReplaceAll(out, "${"+k+"}", sqlLit(v))
+	}
 	return out
 }
 
@@ -328,14 +343,14 @@ func resolveRuleCommand(ruleCommand, assetID, idBbGlobal string) string {
 // its own RULE_ID so we avoid running the source once per rule.
 // catalogName is used as a fallback display label when a row has no
 // RULE_NAME column.
-func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, idBbGlobal ...string) ([]models.Exception, error) {
+func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	bbg := ""
 	if len(idBbGlobal) > 0 {
 		bbg = idBbGlobal[0]
 	}
-	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg)
+	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg, params)
 
 	var rows *sql.Rows
 	var err error

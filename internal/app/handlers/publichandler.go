@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"securityrules/security-rules/internal/app/events"
@@ -491,7 +492,7 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules (archive-then-insert)
-// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog).
+// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). Additional query params prefixed with "param_" flow into every RULE_CATALOG_SOURCE as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.
 // @Tags         rules
 // @Produce      json
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
@@ -503,7 +504,20 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	ruleName := ctx.Query("rule_name")
 	ruleType := ctx.Query("rule_type")
 
-	if err := services.ExecuteRules(ruleName, ruleType); err != nil {
+	// Any ?param_NAME=VALUE query args become ${NAME} placeholder
+	// substitutions inside the RULE_CATALOG_SOURCE. The prefix is
+	// stripped and the key is passed uppercase so the placeholder in
+	// the source stays canonical regardless of URL casing.
+	params := map[string]string{}
+	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+		k := string(key)
+		if !strings.HasPrefix(k, "param_") {
+			return
+		}
+		params[strings.ToUpper(strings.TrimPrefix(k, "param_"))] = string(value)
+	})
+
+	if err := services.ExecuteRules(ruleName, ruleType, params); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
 	}
 
