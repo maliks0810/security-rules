@@ -497,7 +497,7 @@ func GetRules(ctx *fiber.Ctx) error {
 // @Produce      json
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
 // @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
-// @Param        is_refresh    query     bool    false  "Substituted into ${IS_REFRESH} as TRUE / FALSE (default true)"
+// @Param        is_refresh    query     bool    false  "Substituted into ${IS_REFRESH} as TRUE / FALSE"  default(true)
 // @Success      200           {object}  map[string]string  "rules executed"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
 // @Router       /v1/api/executeRules [get]
