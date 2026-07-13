@@ -509,13 +509,13 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	// stripped and the key is passed uppercase so the placeholder in
 	// the source stays canonical regardless of URL casing.
 	params := map[string]string{}
-	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+	for key, value := range ctx.Request().URI().QueryArgs().All() {
 		k := string(key)
 		if !strings.HasPrefix(k, "param_") {
-			return
+			continue
 		}
 		params[strings.ToUpper(strings.TrimPrefix(k, "param_"))] = string(value)
-	})
+	}
 
 	if err := services.ExecuteRules(ruleName, ruleType, params); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
