@@ -300,14 +300,20 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 
 // resolveRuleCommand replaces every ${NAME} placeholder token in the
 // RULE_CATALOG_SOURCE command with a SQL literal derived from the
-// caller's arguments. Two placeholders are always resolved from fixed
-// slots (ASSET_ID, ID_BB_GLOBAL); anything else the caller supplies via
-// the params map is substituted next. Empty values become NULL so the
-// SP receives a real NULL instead of an empty-string literal. Single
-// quotes in values are doubled per SQL escaping; inputs from HTTP query
-// params should not legitimately contain quotes.
+// caller's arguments. Three placeholders are always resolved from
+// fixed slots:
+//   - ${ASSET_ID}     → single-quoted string literal (NULL when empty)
+//   - ${ID_BB_GLOBAL} → single-quoted string literal (NULL when empty)
+//   - ${IS_REFRESH}   → unquoted TRUE / FALSE so a BOOLEAN param on
+//     the target SP accepts it without an ::BOOLEAN cast.
+// Anything else the caller supplies via the params map is substituted
+// after. Empty values become NULL so the SP receives a real NULL
+// instead of an empty-string literal. Single quotes in string values
+// are doubled per SQL escaping; inputs from HTTP query params should
+// not legitimately contain quotes.
 func resolveRuleCommand(
 	ruleCommand, assetID, idBbGlobal string,
+	isRefresh bool,
 	params map[string]string,
 ) string {
 	sqlLit := func(s string) string {
@@ -316,14 +322,19 @@ func resolveRuleCommand(
 		}
 		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	}
+	refreshLit := "FALSE"
+	if isRefresh {
+		refreshLit = "TRUE"
+	}
 	out := strings.ReplaceAll(ruleCommand, "${ASSET_ID}", sqlLit(assetID))
 	out = strings.ReplaceAll(out, "${ID_BB_GLOBAL}", sqlLit(idBbGlobal))
+	out = strings.ReplaceAll(out, "${IS_REFRESH}", refreshLit)
 	// Extra caller-supplied placeholders. Loop order doesn't matter —
-	// each replace touches a distinct ${NAME} token, and we skip the
-	// two names already handled above so a caller can't accidentally
+	// each replace touches a distinct ${NAME} token. Skip the three
+	// names already handled above so a caller can't accidentally
 	// clobber them via the params bag.
 	for k, v := range params {
-		if k == "ASSET_ID" || k == "ID_BB_GLOBAL" {
+		if k == "ASSET_ID" || k == "ID_BB_GLOBAL" || k == "IS_REFRESH" {
 			continue
 		}
 		out = strings.ReplaceAll(out, "${"+k+"}", sqlLit(v))
@@ -343,14 +354,14 @@ func resolveRuleCommand(
 // its own RULE_ID so we avoid running the source once per rule.
 // catalogName is used as a fallback display label when a row has no
 // RULE_NAME column.
-func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
+func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, isRefresh bool, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	bbg := ""
 	if len(idBbGlobal) > 0 {
 		bbg = idBbGlobal[0]
 	}
-	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg, params)
+	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg, isRefresh, params)
 
 	var rows *sql.Rows
 	var err error
