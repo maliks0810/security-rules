@@ -33,7 +33,7 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 // existing rows, no SSE event. The grain of the result set is whatever
 // each RULE_CATALOG_SOURCE returns. Use ExecuteSecurityRules for the
 // asset-scoped, incremental flow that dedupes and touches/completes.
-func ExecuteRules(ruleName, ruleType string, params map[string]string) error {
+func ExecuteRules(ruleName, ruleType string, isRefresh bool, params map[string]string) error {
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
 		return err
@@ -44,11 +44,23 @@ func ExecuteRules(ruleName, ruleType string, params map[string]string) error {
 		return err
 	}
 
+	// Per-catalog warn-and-continue: a single bad catalog (e.g. its SP
+	// signature no longer accepts an IS_REFRESH boolean, so the
+	// ${IS_REFRESH} substitution ends up as an extra positional arg the
+	// DB rejects) shouldn't kill the whole /executeRules run. Log the
+	// failure with enough context to trace it back to the catalog and
+	// move on so the remaining catalogs still land their rows.
 	var produced []models.Exception
+	failed := 0
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, "", params)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, "", isRefresh, params)
 		if err != nil {
-			return err
+			failed++
+			log.Logger.Warn(fmt.Sprintf(
+				"rulesService: ExecuteRules - catalog %q (id=%d) failed, skipping: %v",
+				c.RuleCatalogName, c.RuleCatalogID, err,
+			))
+			continue
 		}
 		produced = append(produced, exceptions...)
 	}
@@ -73,8 +85,8 @@ func ExecuteRules(ruleName, ruleType string, params map[string]string) error {
 	}
 
 	log.Logger.Info(fmt.Sprintf(
-		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d",
-		ruleName, ruleType, archived, len(produced), inherited,
+		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, failed_catalogs %d",
+		ruleName, ruleType, archived, len(produced), inherited, failed,
 	))
 
 	events.Publish(events.Event{
@@ -112,7 +124,7 @@ func ExecuteSecurityRules(ruleName, ruleType, assetID string, idBbGlobal ...stri
 	producedKeys := make(map[ruleAsset]bool)
 	var produced []models.Exception
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, nil, idBbGlobal...)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, false, nil, idBbGlobal...)
 		if err != nil {
 			return err
 		}

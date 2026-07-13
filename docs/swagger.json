@@ -30,14 +30,14 @@
         },
         "/v1/api/executeRules": {
             "get": {
-                "description": "Wipes today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) via DELETE_EXCEPTIONS, then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
+                "description": "Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog). is_refresh (default true) is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as an unquoted TRUE / FALSE literal, ready for a BOOLEAN proc param. Additional query params prefixed with \"param_\" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "rules"
                 ],
-                "summary": "Execute rules (delete-then-insert)",
+                "summary": "Execute rules (archive-then-insert)",
                 "parameters": [
                     {
                         "type": "string",
@@ -49,6 +49,13 @@
                         "type": "string",
                         "description": "CATALOG | GROUP | RULE",
                         "name": "rule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Substituted into ${IS_REFRESH} as TRUE / FALSE",
+                        "name": "is_refresh",
                         "in": "query"
                     }
                 ],
@@ -184,8 +191,8 @@
                     },
                     {
                         "type": "string",
-                        "description": "EXCEPTION_STATUS.CODE filter",
-                        "name": "exception_status",
+                        "description": "EXCEPTION_STATE.CODE filter",
+                        "name": "exception_state",
                         "in": "query"
                     },
                     {
@@ -201,7 +208,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Asset"
+                                "$ref": "#/definitions/models.Asset"
                             }
                         }
                     },
@@ -249,16 +256,80 @@
                 }
             }
         },
+        "/v1/api/getExceptionHistDates": {
+            "get": {
+                "description": "Returns ISO date strings for the last 60 days that have any\nEXCEPTION_HIST activity, most recent first. Powers the\n\"DQM Date\" dropdown options.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Distinct EXCEPTION_DATEs available in EXCEPTION_HIST",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception history dates",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getExceptionState": {
+            "get": {
+                "description": "Returns EXCEPTION_STATE.CODE values ordered by SORT_ORDER.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exception-state"
+                ],
+                "summary": "List exception state codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception state",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getExceptionStatus": {
             "get": {
-                "description": "Returns EXCEPTION_STATUS.CODE values ordered by SORT_ORDER.",
+                "description": "Returns EXCEPTION_STATUS.NAME values ordered by SORT_ORDER.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "exception-status"
                 ],
-                "summary": "List exception status codes",
+                "summary": "List exception status names",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -368,8 +439,8 @@
                     },
                     {
                         "type": "string",
-                        "description": "EXCEPTION_STATUS.NAME filter",
-                        "name": "exception_status",
+                        "description": "EXCEPTION_STATE.NAME filter",
+                        "name": "exception_state",
                         "in": "query"
                     },
                     {
@@ -391,12 +462,122 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Exception"
+                                "$ref": "#/definitions/models.Exception"
                             }
                         }
                     },
                     "500": {
                         "description": "failed to query exceptions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getExceptionsHist": {
+            "get": {
+                "description": "Same shape as /getExceptions but reads from EXCEPTION_HIST\nand only returns rows belonging to that day's LATEST BATCH_ID\nwithin the caller's rule/catalog/group scope. Powers the \"DQM\nDate\" back-in-time selector on the sidebar.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "List history-table exceptions for a specific EXCEPTION_DATE",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ISO YYYY-MM-DD",
+                        "name": "exception_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Asset ID filter",
+                        "name": "asset_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_TYPE.NAME filter",
+                        "name": "exception_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_SEVERITY_TYPE.NAME filter",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_PRIORITY_TYPE.NAME filter",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME filter",
+                        "name": "rule_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_STATE.NAME filter",
+                        "name": "exception_state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER filter",
+                        "name": "assign_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SQL ILIKE pattern against RULE.RULE_NAME",
+                        "name": "rule_name_pattern",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Exception"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "exception_date is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception history",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -491,21 +672,21 @@
         },
         "/v1/api/getRuleGroups": {
             "get": {
-                "description": "Returns RULE_GROUP.NAME values ordered by RULE_GROUP_ID.",
+                "description": "Returns RULE_GROUP rows (name + flag_status_visible) ordered by RULE_GROUP_ID.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "rule-groups"
                 ],
-                "summary": "List rule group names",
+                "summary": "List rule groups",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "string"
+                                "$ref": "#/definitions/models.RuleGroup"
                             }
                         }
                     },
@@ -546,7 +727,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleName"
+                                "$ref": "#/definitions/models.RuleName"
                             }
                         }
                     },
@@ -601,7 +782,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Rule"
+                                "$ref": "#/definitions/models.Rule"
                             }
                         }
                     },
@@ -724,10 +905,265 @@
                     }
                 }
             }
+        },
+        "/v1/api/updateExceptionAssignTo": {
+            "post": {
+                "description": "Resolves assign_to against DM_USER and updates the single\nEXCEPTION row keyed by exception_id. Empty assign_to clears\nthe assignment.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Update EXCEPTION.ASSIGN_TO_ID for a single row",
+                "parameters": [
+                    {
+                        "description": "exception_id + assign_to",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateExceptionAssignToBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update exception assign_to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/updateExceptionComments": {
+            "post": {
+                "description": "Sets the free-text COMMENTS on the row identified by exception_id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Update EXCEPTION.COMMENTS for a single row",
+                "parameters": [
+                    {
+                        "description": "exception_id + comments",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateExceptionCommentsBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update exception comments",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/updateExceptionStatus": {
+            "get": {
+                "description": "Resolves the status name against EXCEPTION_STATUS and updates\nthe STATUS_ID for the row identified by exception_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Update EXCEPTION.STATUS_ID for a single row",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "EXCEPTION_ID",
+                        "name": "exception_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "EXCEPTION_STATUS.NAME",
+                        "name": "status",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update exception status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/updateExceptionSuppressDate": {
+            "post": {
+                "description": "Sets the SUPPRESS_DATE (YYYY-MM-DD) on the row identified by\nexception_id. Empty suppress_date clears the cell.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Update EXCEPTION.SUPPRESS_DATE for a single row",
+                "parameters": [
+                    {
+                        "description": "exception_id + suppress_date",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateExceptionSuppressDateBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update exception suppress_date",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
-        "securityrules_security-rules_internal_app_models.Asset": {
+        "handlers.updateExceptionAssignToBody": {
+            "type": "object",
+            "properties": {
+                "assign_to": {
+                    "type": "string"
+                },
+                "exception_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.updateExceptionCommentsBody": {
+            "type": "object",
+            "properties": {
+                "comments": {
+                    "type": "string"
+                },
+                "exception_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.updateExceptionSuppressDateBody": {
+            "type": "object",
+            "properties": {
+                "exception_id": {
+                    "type": "integer"
+                },
+                "suppress_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Asset": {
             "type": "object",
             "properties": {
                 "all_complete": {
@@ -771,7 +1207,7 @@
                 }
             }
         },
-        "securityrules_security-rules_internal_app_models.Exception": {
+        "models.Exception": {
             "type": "object",
             "properties": {
                 "asset_id": {
@@ -783,8 +1219,8 @@
                 "assign_to_id": {
                     "type": "integer"
                 },
-                "comment_id": {
-                    "type": "integer"
+                "comments": {
+                    "type": "string"
                 },
                 "created_by": {
                     "type": "string"
@@ -797,6 +1233,9 @@
                 },
                 "exception_id": {
                     "type": "integer"
+                },
+                "exception_state": {
+                    "type": "string"
                 },
                 "exception_status": {
                     "type": "string"
@@ -837,6 +1276,9 @@
                 "severity": {
                     "type": "string"
                 },
+                "state_id": {
+                    "type": "integer"
+                },
                 "status_id": {
                     "type": "integer"
                 },
@@ -845,7 +1287,7 @@
                 }
             }
         },
-        "securityrules_security-rules_internal_app_models.Rule": {
+        "models.Rule": {
             "type": "object",
             "properties": {
                 "environment": {
@@ -862,7 +1304,27 @@
                 }
             }
         },
-        "securityrules_security-rules_internal_app_models.RuleName": {
+        "models.RuleGroup": {
+            "type": "object",
+            "properties": {
+                "flag_assign_to_visible": {
+                    "type": "boolean"
+                },
+                "flag_comments_visible": {
+                    "type": "boolean"
+                },
+                "flag_status_visible": {
+                    "type": "boolean"
+                },
+                "flag_suppress_date": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RuleName": {
             "type": "object",
             "properties": {
                 "rule_description": {
