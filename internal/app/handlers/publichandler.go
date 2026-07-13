@@ -492,23 +492,23 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules (archive-then-insert)
-// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default true) is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as an unquoted TRUE / FALSE literal, ready for a BOOLEAN proc param. Additional query params prefixed with "param_" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.
+// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default "Y") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. Additional query params prefixed with "param_" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.
 // @Tags         rules
 // @Produce      json
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
 // @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
-// @Param        is_refresh    query     bool    false  "Substituted into ${IS_REFRESH} as TRUE / FALSE"  default(true)
+// @Param        is_refresh    query     string  false  "Substituted into ${IS_REFRESH} as 'Y' or 'N'"  Enums(Y, N)  default(Y)
 // @Success      200           {object}  map[string]string  "rules executed"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
 // @Router       /v1/api/executeRules [get]
 func ExecuteRules(ctx *fiber.Ctx) error {
 	ruleName := ctx.Query("rule_name")
 	ruleType := ctx.Query("rule_type")
-	// ctx.QueryBool accepts "true" / "1" / "on" (case-insensitive) as
-	// true; anything else — including missing — falls back to the
-	// supplied default, so omitting the arg evaluates to true and
-	// ?is_refresh=false explicitly opts out.
-	isRefresh := ctx.QueryBool("is_refresh", true)
+	// is_refresh is a VARCHAR flag: 'Y' or 'N'. Missing / empty defaults
+	// to 'Y'. Anything unrecognized also snaps to 'Y' in
+	// resolveRuleCommand so the substituted literal is always a
+	// well-formed SQL string.
+	isRefresh := ctx.Query("is_refresh", "Y")
 
 	// Any ?param_NAME=VALUE query args become ${NAME} placeholder
 	// substitutions inside the RULE_CATALOG_SOURCE. The prefix is
