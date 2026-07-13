@@ -304,8 +304,9 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 // fixed slots:
 //   - ${ASSET_ID}     → single-quoted string literal (NULL when empty)
 //   - ${ID_BB_GLOBAL} → single-quoted string literal (NULL when empty)
-//   - ${IS_REFRESH}   → unquoted TRUE / FALSE so a BOOLEAN param on
-//     the target SP accepts it without an ::BOOLEAN cast.
+//   - ${IS_REFRESH}   → single-quoted 'Y' / 'N' for a VARCHAR param on
+//     the target SP. Empty/unknown inputs fall back to 'Y' so the
+//     substitution never lands NULL when the SP expects a scalar.
 // Anything else the caller supplies via the params map is substituted
 // after. Empty values become NULL so the SP receives a real NULL
 // instead of an empty-string literal. Single quotes in string values
@@ -313,7 +314,7 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 // not legitimately contain quotes.
 func resolveRuleCommand(
 	ruleCommand, assetID, idBbGlobal string,
-	isRefresh bool,
+	isRefresh string,
 	params map[string]string,
 ) string {
 	sqlLit := func(s string) string {
@@ -322,9 +323,17 @@ func resolveRuleCommand(
 		}
 		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	}
-	refreshLit := "FALSE"
-	if isRefresh {
-		refreshLit = "TRUE"
+	// Normalize is_refresh to 'Y' / 'N'. Anything else (empty, garbage)
+	// snaps to the 'Y' default so the placeholder never expands to a
+	// bare NULL against a VARCHAR-typed SP param.
+	refreshLit := "'Y'"
+	switch strings.ToUpper(strings.TrimSpace(isRefresh)) {
+	case "N":
+		refreshLit = "'N'"
+	case "Y", "":
+		refreshLit = "'Y'"
+	default:
+		refreshLit = "'Y'"
 	}
 	out := strings.ReplaceAll(ruleCommand, "${ASSET_ID}", sqlLit(assetID))
 	out = strings.ReplaceAll(out, "${ID_BB_GLOBAL}", sqlLit(idBbGlobal))
@@ -354,7 +363,7 @@ func resolveRuleCommand(
 // its own RULE_ID so we avoid running the source once per rule.
 // catalogName is used as a fallback display label when a row has no
 // RULE_NAME column.
-func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, isRefresh bool, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
+func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, isRefresh string, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	bbg := ""

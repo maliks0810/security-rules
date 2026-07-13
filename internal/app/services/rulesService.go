@@ -33,7 +33,7 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 // existing rows, no SSE event. The grain of the result set is whatever
 // each RULE_CATALOG_SOURCE returns. Use ExecuteSecurityRules for the
 // asset-scoped, incremental flow that dedupes and touches/completes.
-func ExecuteRules(ruleName, ruleType string, isRefresh bool, params map[string]string) error {
+func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string]string) error {
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func ExecuteSecurityRules(ruleName, ruleType, assetID string, idBbGlobal ...stri
 	producedKeys := make(map[ruleAsset]bool)
 	var produced []models.Exception
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, false, nil, idBbGlobal...)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, "N", nil, idBbGlobal...)
 		if err != nil {
 			return err
 		}
