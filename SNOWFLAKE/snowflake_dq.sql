@@ -1009,11 +1009,14 @@ $$;
 -- column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
 --
 -- Filtering:
---   P_RULE_TYPE = 'CATALOG' or 'RULE' (RULE behaves the same as CATALOG
---     for now) â†’ P_RULE_NAME matches RULE_CATALOG.NAME.
---   P_RULE_TYPE = 'GROUP'  â†’ P_RULE_NAME matches RULE_GROUP.NAME; returns
---     every catalog whose RULE_GROUP_ID resolves to that group.
---   P_RULE_NAME NULL / empty / 'All' â†’ no filter, return every catalog.
+--   P_RULE_TYPE = 'CATALOG' → P_RULE_NAME matches RULE_CATALOG.NAME.
+--   P_RULE_TYPE = 'GROUP'   → P_RULE_NAME matches RULE_GROUP.NAME; returns
+--                              every catalog whose RULE_GROUP_ID resolves
+--                              to that group.
+--   P_RULE_TYPE = 'RULE'    → P_RULE_NAME matches RULE.RULE_NAME; returns
+--                              the catalog(s) that own that rule
+--                              (EXISTS-join keeps the catalog row unique).
+--   P_RULE_NAME NULL / empty / 'All' → no filter, return every catalog.
 CREATE OR REPLACE PROCEDURE SP_GET_RULES(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
@@ -1041,10 +1044,16 @@ BEGIN
         WHERE :P_RULE_NAME IS NULL
            OR :P_RULE_NAME = ''
            OR :P_RULE_NAME = 'All'
-           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                  AND rc."NAME" = :P_RULE_NAME)
            OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                  AND rg."NAME"  = :P_RULE_NAME)
+           OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                 AND EXISTS (
+                     SELECT 1 FROM "RULE" r
+                      WHERE r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+                        AND r."RULE_NAME"       = :P_RULE_NAME
+                 ))
     );
     RETURN TABLE(res);
 END;

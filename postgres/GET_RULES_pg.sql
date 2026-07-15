@@ -4,11 +4,15 @@ DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text);
 DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text, text);
 DROP FUNCTION IF EXISTS public."SP_GET_RULES"(text, text);
 
--- Returns one row per RULE_CATALOG (see SNOWFLAKE/GET_RULES.sql for the
--- full contract). Filter behavior:
---   p_rule_type = 'CATALOG' or 'RULE' â†’ p_rule_name matches RULE_CATALOG.NAME.
---   p_rule_type = 'GROUP'             â†’ p_rule_name matches RULE_GROUP.NAME.
---   p_rule_name NULL / empty / 'All'  â†’ no filter; return every catalog.
+-- Returns one row per RULE_CATALOG (see SNOWFLAKE/SP_GET_RULES.sql for
+-- the full contract). Filter behavior:
+--   p_rule_type = 'CATALOG'          → p_rule_name matches RULE_CATALOG.NAME.
+--   p_rule_type = 'GROUP'            → p_rule_name matches RULE_GROUP.NAME.
+--   p_rule_type = 'RULE'             → p_rule_name matches RULE.RULE_NAME;
+--                                       returns the catalog(s) that own that
+--                                       rule (EXISTS-join to RULE keeps the
+--                                       catalog row unique).
+--   p_rule_name NULL / empty / 'All' → no filter; return every catalog.
 CREATE OR REPLACE FUNCTION public."SP_GET_RULES"(
     p_rule_name text DEFAULT NULL,
     p_rule_type text DEFAULT NULL
@@ -31,8 +35,14 @@ AS $$
     WHERE p_rule_name IS NULL
        OR p_rule_name = ''
        OR p_rule_name = 'All'
-       OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) IN ('CATALOG','RULE')
+       OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) = 'CATALOG'
              AND rc."NAME" = p_rule_name)
        OR (UPPER(p_rule_type) = 'GROUP'
-             AND rg."NAME"  = p_rule_name);
+             AND rg."NAME"  = p_rule_name)
+       OR (UPPER(p_rule_type) = 'RULE'
+             AND EXISTS (
+                 SELECT 1 FROM public."RULE" r
+                  WHERE r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+                    AND r."RULE_NAME"       = p_rule_name
+             ));
 $$;

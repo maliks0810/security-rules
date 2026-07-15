@@ -19,11 +19,15 @@ BEGIN
     -- a RULE_ID column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
     --
     -- Filtering:
-    --   P_RULE_TYPE = 'CATALOG' or 'RULE' (for now they behave the same)
+    --   P_RULE_TYPE = 'CATALOG'
     --     â†’ P_RULE_NAME matched against RULE_CATALOG.NAME.
     --   P_RULE_TYPE = 'GROUP'
     --     â†’ P_RULE_NAME matched against RULE_GROUP.NAME; returns every
     --       catalog whose RULE_GROUP_ID resolves to that group.
+    --   P_RULE_TYPE = 'RULE'
+    --     â†’ P_RULE_NAME matched against RULE.RULE_NAME; returns the
+    --       catalog(s) that own that rule (EXISTS-join to RULE so the
+    --       catalog row still appears at most once).
     --   P_RULE_TYPE NULL / unset OR P_RULE_NAME NULL / empty / 'All'
     --     â†’ no filter, return every catalog.
     res := (
@@ -37,10 +41,16 @@ BEGIN
         WHERE :P_RULE_NAME IS NULL
            OR :P_RULE_NAME = ''
            OR :P_RULE_NAME = 'All'
-           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+           OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                  AND rc."NAME" = :P_RULE_NAME)
            OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                  AND rg."NAME"  = :P_RULE_NAME)
+           OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                 AND EXISTS (
+                     SELECT 1 FROM "RULE" r
+                      WHERE r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+                        AND r."RULE_NAME"       = :P_RULE_NAME
+                 ))
     );
     RETURN TABLE(res);
 END;
