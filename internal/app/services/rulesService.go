@@ -53,7 +53,7 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	var produced []models.Exception
 	failed := 0
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, "", isRefresh, params)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, params)
 		if err != nil {
 			failed++
 			log.Logger.Warn(fmt.Sprintf(
@@ -124,7 +124,7 @@ func ExecuteSecurityRules(ruleName, ruleType, assetID string, idBbGlobal ...stri
 	producedKeys := make(map[ruleAsset]bool)
 	var produced []models.Exception
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, "N", nil, idBbGlobal...)
+		exceptions, err := repositories.ExecuteSecurityRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, assetID, "N", nil, idBbGlobal...)
 		if err != nil {
 			return err
 		}

@@ -351,35 +351,27 @@ func resolveRuleCommand(
 	return out
 }
 
-// ExecuteRule runs a RULE_CATALOG_SOURCE command verbatim once and builds
-// new-model Exception rows from the result set. Expected columns:
-//   - RULE_ID  â€” preferred. When present and valid, used directly.
-//   - RULE_NAME â€” required when RULE_ID is absent; ExecuteRule looks the
-//     ID up from the RULE table via GetRuleIDsByName (lazy, once per
-//     call). Sources that supply RULE_ID never trigger the lookup.
-//   - ASSET_ID / ALADDIN_ID and ISSUE_DESCRIPTION â€” used to populate
-//     the exception row.
-// One catalog source feeds many rules â€” each result row is tagged with
-// its own RULE_ID so we avoid running the source once per rule.
-// catalogName is used as a fallback display label when a row has no
-// RULE_NAME column.
-func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID string, isRefresh string, params map[string]string, idBbGlobal ...string) ([]models.Exception, error) {
+// runRuleCommandAndBuild is the shared body of ExecuteRule and
+// ExecuteSecurityRule. It runs the already-resolved SQL command against
+// the current DB, then walks the result set into models.Exception rows.
+// The two entry points differ only in whether they seed each row's
+// AssetID / IdBbGlobal from caller-supplied defaults (security flow) or
+// leave them blank until the SOURCE row projects them (generic flow).
+// A source row's ASSET_ID / ALADDIN_ID column always wins over the
+// default when present.
+func runRuleCommandAndBuild(
+	resolvedCommand string,
+	catalogID int,
+	catalogName string,
+	assetIDDefault, bbgDefault string,
+) ([]models.Exception, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-
-	bbg := ""
-	if len(idBbGlobal) > 0 {
-		bbg = idBbGlobal[0]
-	}
-	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg, isRefresh, params)
 
 	var rows *sql.Rows
 	var err error
-
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("rulesRepository: ExecuteRule - using SNOWFLAKE database environment")
 		rows, err = snowflake.Query(resolvedCommand)
 	} else {
-		log.Logger.Info("rulesRepository: ExecuteRule - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
@@ -429,16 +421,16 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 				rowRuleID = parsed
 			}
 		}
-		// Fallback: source didn't project a RULE_ID but does carry a
-		// RULE_NAME â€” resolve via RULE.RULE_NAME -> RULE.RULE_ID. The
-		// lookup map is built lazily and reused for every subsequent row
-		// in this catalog's result set.
+		// Fallback: source didn't project RULE_ID but does carry
+		// RULE_NAME — resolve via RULE.RULE_NAME → RULE.RULE_ID. Lookup
+		// map is built lazily and reused for every subsequent row in
+		// this catalog's result set.
 		if rowRuleID == 0 && ruleNameIdx >= 0 && raw[ruleNameIdx].Valid && raw[ruleNameIdx].String != "" {
 			if ruleIdByName == nil {
 				if m, lerr := GetRuleIDsByName(); lerr == nil {
 					ruleIdByName = m
 				} else {
-					log.Logger.Error(fmt.Sprintf("rulesRepository: ExecuteRule - RULE_ID fallback lookup failed: %v", lerr))
+					log.Logger.Error(fmt.Sprintf("rulesRepository: runRuleCommandAndBuild - RULE_ID fallback lookup failed: %v", lerr))
 					ruleIdByName = map[string]int{}
 				}
 			}
@@ -455,15 +447,11 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 			rowRuleName = raw[ruleNameIdx].String
 		}
 
-		idBb := ""
-		if len(idBbGlobal) > 0 {
-			idBb = idBbGlobal[0]
-		}
 		ex := models.Exception{
 			RuleID:        rowRuleID,
 			RuleName:      rowRuleName,
-			AssetID:       assetID,
-			IdBbGlobal:    idBb,
+			AssetID:       assetIDDefault,
+			IdBbGlobal:    bbgDefault,
 			ExceptionDate: now,
 			ExceptionTime: now,
 			StateID:       1, // Pending
@@ -479,16 +467,17 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		if issueIdx >= 0 {
 			ex.IssueDescription = sqlutil.NullStr(raw[issueIdx])
 		}
-		// Suppress catalogID-unused warning when no usage path picks it up
-		// elsewhere â€” keep it on the signature for caller-side context.
+		// Suppress catalogID-unused warning when no usage path picks it
+		// up elsewhere — keep it on the signature for caller-side
+		// context.
 		_ = catalogID
 
 		// Serialize the full row as a JSON object keyed by column name.
-		// Built by hand (not via json.Marshal on a map) because Go's encoder
-		// alphabetizes map keys, and Postgres jsonb would reorder them
-		// length-then-alphabetical anyway â€” we want SQL column order.
-		// Pair with EXCEPTION.RESULT_DATA stored as json (not jsonb) so the
-		// text round-trips intact.
+		// Built by hand (not via json.Marshal on a map) because Go's
+		// encoder alphabetizes map keys, and Postgres jsonb would
+		// reorder them length-then-alphabetical anyway — we want SQL
+		// column order. Pair with EXCEPTION.RESULT_DATA stored as json
+		// (not jsonb) so the text round-trips intact.
 		var buf bytes.Buffer
 		buf.WriteByte('{')
 		for i, c := range cols {
@@ -521,4 +510,66 @@ func ExecuteRule(ruleCommand string, catalogID int, catalogName string, assetID 
 		exceptions = []models.Exception{}
 	}
 	return exceptions, nil
+}
+
+// ExecuteRule runs a generic RULE_CATALOG_SOURCE command. Every SP
+// parameter must be spelled out as a ${NAME} placeholder inside the
+// SOURCE and supplied via the params bag (or via ${IS_REFRESH} for the
+// refresh flag). Not asset-scoped — for the per-asset flow that fills
+// ${ASSET_ID} / ${ID_BB_GLOBAL} from a URL context, call
+// ExecuteSecurityRule instead.
+//
+// The SOURCE's result set is expected to project:
+//   - RULE_ID (preferred) or RULE_NAME (falls back to a RULE-table
+//     lookup for the ID);
+//   - optional ASSET_ID / ALADDIN_ID and ID_BB_GLOBAL / FIGI —
+//     populated onto each Exception row when present;
+//   - optional ISSUE_DESCRIPTION.
+// One catalog source feeds many rules — each result row is tagged with
+// its own RULE_ID so we don't run the source once per rule.
+func ExecuteRule(
+	ruleCommand string,
+	catalogID int,
+	catalogName string,
+	isRefresh string,
+	params map[string]string,
+) ([]models.Exception, error) {
+	// ExecuteRule has no URL-scoped asset — leave ${ASSET_ID} /
+	// ${ID_BB_GLOBAL} to resolve to NULL. Anything caller-supplied
+	// (including asset ids) must live in the params bag.
+	resolvedCommand := resolveRuleCommand(ruleCommand, "", "", isRefresh, params)
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: ExecuteRule - using SNOWFLAKE database environment")
+	} else {
+		log.Logger.Info("rulesRepository: ExecuteRule - using POSTGRES database environment")
+	}
+	return runRuleCommandAndBuild(resolvedCommand, catalogID, catalogName, "", "")
+}
+
+// ExecuteSecurityRule runs a RULE_CATALOG_SOURCE command in the
+// asset-scoped flow: ${ASSET_ID} and ${ID_BB_GLOBAL} placeholders
+// resolve from the caller's assetID / idBbGlobal args, and each
+// produced Exception row's AssetID / IdBbGlobal seeds from the same
+// values (overridden by the row's ASSET_ID / ID_BB_GLOBAL projection
+// when present). Everything else works identically to ExecuteRule.
+func ExecuteSecurityRule(
+	ruleCommand string,
+	catalogID int,
+	catalogName string,
+	assetID string,
+	isRefresh string,
+	params map[string]string,
+	idBbGlobal ...string,
+) ([]models.Exception, error) {
+	bbg := ""
+	if len(idBbGlobal) > 0 {
+		bbg = idBbGlobal[0]
+	}
+	resolvedCommand := resolveRuleCommand(ruleCommand, assetID, bbg, isRefresh, params)
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: ExecuteSecurityRule - using SNOWFLAKE database environment")
+	} else {
+		log.Logger.Info("rulesRepository: ExecuteSecurityRule - using POSTGRES database environment")
+	}
+	return runRuleCommandAndBuild(resolvedCommand, catalogID, catalogName, assetID, bbg)
 }
