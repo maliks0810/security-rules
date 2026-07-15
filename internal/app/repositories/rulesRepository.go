@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,10 @@ import (
 	"securityrules/security-rules/internal/utils/snowflake"
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
+
+// Matches a leftover ${IDENT} placeholder — valid SQL identifier chars
+// only, so it never eats a legitimate `${…}` inside a quoted string.
+var placeholderRe = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
 
 func GetRuleGroups() ([]models.RuleGroup, error) {
 	var rows *sql.Rows
@@ -347,6 +352,19 @@ func resolveRuleCommand(
 			continue
 		}
 		out = strings.ReplaceAll(out, "${"+k+"}", sqlLit(v))
+	}
+	// Sweep any surviving ${IDENT} tokens to NULL so a catalog source
+	// whose SP parameter names (e.g. ${P_ALADDIN_ID}, ${RULE_NAME})
+	// don't line up with the three built-ins or a caller-supplied
+	// param_* still executes — the SP just receives NULL for those
+	// slots. Log what got auto-nulled so unresolved placeholders are
+	// visible in the operator log rather than silent.
+	if leftovers := placeholderRe.FindAllString(out, -1); len(leftovers) > 0 {
+		log.Logger.Warn(fmt.Sprintf(
+			"rulesRepository: resolveRuleCommand - auto-substituting NULL for unresolved placeholders %v",
+			leftovers,
+		))
+		out = placeholderRe.ReplaceAllString(out, "NULL")
 	}
 	return out
 }

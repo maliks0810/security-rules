@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"securityrules/security-rules/internal/app/events"
@@ -44,6 +45,20 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 		return err
 	}
 
+	// When rule_type = RULE, the caller's rule_name identifies a
+	// specific rule inside the catalog. Surface it to the RULE_CATALOG
+	// sources as ${RULE_NAME}. Clone the params map so we don't mutate
+	// what the handler built; sources that don't reference ${RULE_NAME}
+	// just no-op on ReplaceAll, so this is safe to always thread.
+	catalogParams := params
+	if strings.EqualFold(ruleType, "RULE") && ruleName != "" {
+		catalogParams = make(map[string]string, len(params)+1)
+		for k, v := range params {
+			catalogParams[k] = v
+		}
+		catalogParams["RULE_NAME"] = ruleName
+	}
+
 	// Per-catalog warn-and-continue: a single bad catalog (e.g. its SP
 	// signature no longer accepts an IS_REFRESH boolean, so the
 	// ${IS_REFRESH} substitution ends up as an extra positional arg the
@@ -53,7 +68,7 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	var produced []models.Exception
 	failed := 0
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, params)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, catalogParams)
 		if err != nil {
 			failed++
 			log.Logger.Warn(fmt.Sprintf(
