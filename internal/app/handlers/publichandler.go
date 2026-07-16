@@ -524,7 +524,10 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	}
 
 	if err := services.ExecuteRules(ruleName, ruleType, isRefresh, params); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to execute rules"})
+		// Surface the backend error verbatim so callers see e.g. a
+		// Snowflake compile error or a per-catalog SP failure instead
+		// of the old generic "failed to execute rules" swallow.
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
