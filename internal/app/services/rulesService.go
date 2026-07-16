@@ -27,20 +27,17 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 
-// ExecuteRules runs every catalog in (ruleName, ruleType) scope after first
-// wiping the day's EXCEPTION rows for that same scope via DELETE_EXCEPTIONS.
-// Every row produced by every catalog source is INSERTED verbatim — no
-// (RuleID, AssetID) dedupe, no touch/complete branches, no diff against
-// existing rows, no SSE event. The grain of the result set is whatever
-// each RULE_CATALOG_SOURCE returns. Use ExecuteSecurityRules for the
-// asset-scoped, incremental flow that dedupes and touches/completes.
+// ExecuteRules runs every catalog in (ruleName, ruleType) scope, then —
+// only after every catalog has succeeded — moves the day's existing
+// EXCEPTION rows for that same scope into EXCEPTION_HIST (via
+// SP_ARCHIVE_EXCEPTIONS) and inserts the newly-produced rows verbatim.
+// Archiving is deferred so that if any catalog fails, EXCEPTION keeps
+// the previous run's rows intact and callers can retry without a data
+// gap. No (RuleID, AssetID) dedupe, no touch/complete branches, no diff
+// against existing rows. Use ExecuteSecurityRules for the asset-scoped
+// incremental flow.
 func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string]string) error {
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
-	if err != nil {
-		return err
-	}
-
-	archived, err := repositories.ArchiveExceptions(ruleName, ruleType)
 	if err != nil {
 		return err
 	}
@@ -63,9 +60,8 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	// (bad IS_REFRESH signature, RECON proc that panicked, a Snowflake
 	// syntax error in a hand-edited RULE_CATALOG_SOURCE, etc.) surfaces
 	// straight back to the /executeRules handler so the operator gets a
-	// 500 with the real backend message. Prior rows already archived
-	// this run stay in EXCEPTION_HIST — this endpoint doesn't wrap the
-	// batch in a transaction so partial progress is possible on failure.
+	// 500 with the real backend message. Archive hasn't run yet, so
+	// EXCEPTION still holds the previous run's rows — no data gap.
 	var produced []models.Exception
 	for _, c := range catalogs {
 		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, catalogParams)
@@ -77,6 +73,16 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 			return fmt.Errorf("catalog %q (id=%d): %w", c.RuleCatalogName, c.RuleCatalogID, err)
 		}
 		produced = append(produced, exceptions...)
+	}
+
+	// All catalogs succeeded — now archive the day's existing EXCEPTION
+	// rows for this scope into EXCEPTION_HIST (stamped with a per-date
+	// BATCH_ID) and insert the freshly-produced batch. Archive-then-
+	// insert ordering keeps EXCEPTION from holding two generations of
+	// the same (RuleID, AssetID) key mid-transition.
+	archived, err := repositories.ArchiveExceptions(ruleName, ruleType)
+	if err != nil {
+		return err
 	}
 
 	if len(produced) > 0 {
