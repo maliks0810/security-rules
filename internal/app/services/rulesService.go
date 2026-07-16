@@ -59,23 +59,22 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 		catalogParams["RULE_NAME"] = ruleName
 	}
 
-	// Per-catalog warn-and-continue: a single bad catalog (e.g. its SP
-	// signature no longer accepts an IS_REFRESH boolean, so the
-	// ${IS_REFRESH} substitution ends up as an extra positional arg the
-	// DB rejects) shouldn't kill the whole /executeRules run. Log the
-	// failure with enough context to trace it back to the catalog and
-	// move on so the remaining catalogs still land their rows.
+	// Per-catalog fail-fast: any DB error from the underlying SP call
+	// (bad IS_REFRESH signature, RECON proc that panicked, a Snowflake
+	// syntax error in a hand-edited RULE_CATALOG_SOURCE, etc.) surfaces
+	// straight back to the /executeRules handler so the operator gets a
+	// 500 with the real backend message. Prior rows already archived
+	// this run stay in EXCEPTION_HIST — this endpoint doesn't wrap the
+	// batch in a transaction so partial progress is possible on failure.
 	var produced []models.Exception
-	failed := 0
 	for _, c := range catalogs {
 		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, catalogParams)
 		if err != nil {
-			failed++
-			log.Logger.Warn(fmt.Sprintf(
-				"rulesService: ExecuteRules - catalog %q (id=%d) failed, skipping: %v",
+			log.Logger.Error(fmt.Sprintf(
+				"rulesService: ExecuteRules - catalog %q (id=%d) failed: %v",
 				c.RuleCatalogName, c.RuleCatalogID, err,
 			))
-			continue
+			return fmt.Errorf("catalog %q (id=%d): %w", c.RuleCatalogName, c.RuleCatalogID, err)
 		}
 		produced = append(produced, exceptions...)
 	}
@@ -100,8 +99,8 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	}
 
 	log.Logger.Info(fmt.Sprintf(
-		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, failed_catalogs %d",
-		ruleName, ruleType, archived, len(produced), inherited, failed,
+		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d",
+		ruleName, ruleType, archived, len(produced), inherited,
 	))
 
 	events.Publish(events.Event{
