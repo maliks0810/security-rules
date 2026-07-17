@@ -156,7 +156,7 @@ paths:
       tags:
       - events
   /v1/api/executeRules:
-    get:
+    post:
       description: Moves today's EXCEPTION rows for the catalogs implied by (rule_name,
         rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped
         with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments
