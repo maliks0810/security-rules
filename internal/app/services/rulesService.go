@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"securityrules/security-rules/internal/app/events"
@@ -10,6 +11,14 @@ import (
 	"securityrules/security-rules/internal/app/repositories"
 	"securityrules/security-rules/internal/utils/log"
 )
+
+// One mutex per (rule_name, rule_type) scope so two concurrent
+// /executeRules invocations for the same scope serialize instead of
+// racing on archive-then-insert. sync.Map lets us lazily create per-key
+// mutexes without a global lock. Belt-and-suspenders with the POST
+// route change — the POST kills ingress-level retries; this mutex
+// covers the double-click / caller-initiated concurrent case.
+var executeRulesMu sync.Map
 
 func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	return repositories.GetRules(ruleName, ruleType)
@@ -37,6 +46,14 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 // against existing rows. Use ExecuteSecurityRules for the asset-scoped
 // incremental flow.
 func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string]string) error {
+	// Serialize per-scope. Key on the exact ruleName / ruleType the
+	// caller passed so distinct scopes still run in parallel.
+	scopeKey := strings.ToUpper(strings.TrimSpace(ruleType)) + "|" + ruleName
+	muAny, _ := executeRulesMu.LoadOrStore(scopeKey, &sync.Mutex{})
+	mu := muAny.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
 		return err
@@ -72,6 +89,14 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 			))
 			return fmt.Errorf("catalog %q (id=%d): %w", c.RuleCatalogName, c.RuleCatalogID, err)
 		}
+		// Per-catalog produced count — surfaces which source's row count
+		// looks wrong when a scope-wide total diverges from expectations
+		// (e.g. an SP that reads EXCEPTION as input and double-counts
+		// because archive is now deferred until the loop finishes).
+		log.Logger.Info(fmt.Sprintf(
+			"rulesService: ExecuteRules - catalog %q (id=%d) produced %d rows",
+			c.RuleCatalogName, c.RuleCatalogID, len(exceptions),
+		))
 		produced = append(produced, exceptions...)
 	}
 

@@ -500,7 +500,7 @@ func GetRules(ctx *fiber.Ctx) error {
 // @Param        is_refresh    query     string  false  "Substituted into ${IS_REFRESH} as 'Y' or 'N'"  Enums(Y, N)  default(Y)
 // @Success      200           {object}  map[string]string  "rules executed"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
-// @Router       /v1/api/executeRules [get]
+// @Router       /v1/api/executeRules [post]
 func ExecuteRules(ctx *fiber.Ctx) error {
 	ruleName := ctx.Query("rule_name")
 	ruleType := ctx.Query("rule_type")
