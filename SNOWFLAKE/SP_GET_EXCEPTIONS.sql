@@ -59,7 +59,7 @@ BEGIN
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
-               e."ASSIGN_TO_ID"            AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -78,7 +78,11 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID"                          = e."ASSIGN_TO_ID"
+        -- Per-row EXCEPTION.ASSIGN_TO_ID takes precedence over the rule-
+        -- level RULE.ASSIGN_TO_ID default. If a user has explicitly
+        -- reassigned an exception in the grid, that override wins;
+        -- otherwise the rule's default assignee resolves.
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)

@@ -58,8 +58,12 @@ BEGIN
               ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
             LEFT JOIN "EXCEPTION_STATE" es
               ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
+            -- Per-row EXCEPTION.ASSIGN_TO_ID overrides the rule-level
+            -- RULE.ASSIGN_TO_ID default. The most-recent EXCEPTION for
+            -- the asset (via MAX_BY on EXCEPTION_TIME below) picks
+            -- whichever assignee resolves from this COALESCE.
             LEFT JOIN "DM_USER" du
-              ON du."ID" = e."ASSIGN_TO_ID"
+              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
               AND (:P_SEVERITY         IS NULL OR est."NAME" = :P_SEVERITY)
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)

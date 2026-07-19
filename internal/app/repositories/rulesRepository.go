@@ -22,6 +22,16 @@ import (
 // only, so it never eats a legitimate `${…}` inside a quoted string.
 var placeholderRe = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
 
+// Columns from a RULE_CATALOG_SOURCE result set that must NOT reach the
+// RESULT_DATA JSON blob. RULE_ID is an internal FK the exceptions grid
+// shouldn't render as a "data" column — it's already carried on the
+// Exception row. Keys are compared case-insensitively against each
+// source column name. Extend this set as more internal columns need to
+// be hidden from the grid.
+var resultDataExcludedColumns = map[string]struct{}{
+	"RULE_ID": {},
+}
+
 func GetRuleGroups() ([]models.RuleGroup, error) {
 	var rows *sql.Rows
 	var err error
@@ -496,10 +506,20 @@ func runRuleCommandAndBuild(
 		// reorder them length-then-alphabetical anyway — we want SQL
 		// column order. Pair with EXCEPTION.RESULT_DATA stored as json
 		// (not jsonb) so the text round-trips intact.
+		//
+		// resultDataExcludedColumns (currently just RULE_ID) are dropped
+		// from the JSON so the exceptions grid doesn't render internal
+		// FK columns as data columns. Comma tracking uses `wroteAny`
+		// rather than the loop index so a skip on the first iteration
+		// doesn't emit a stray leading comma later.
 		var buf bytes.Buffer
 		buf.WriteByte('{')
+		wroteAny := false
 		for i, c := range cols {
-			if i > 0 {
+			if _, skip := resultDataExcludedColumns[strings.ToUpper(c)]; skip {
+				continue
+			}
+			if wroteAny {
 				buf.WriteByte(',')
 			}
 			keyJSON, err := json.Marshal(c)
@@ -518,6 +538,7 @@ func runRuleCommandAndBuild(
 			} else {
 				buf.WriteString("null")
 			}
+			wroteAny = true
 		}
 		buf.WriteByte('}')
 		ex.ResultData = buf.String()

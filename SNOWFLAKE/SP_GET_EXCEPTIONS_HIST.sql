@@ -76,7 +76,7 @@ BEGIN
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
-               e."ASSIGN_TO_ID"            AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -95,7 +95,7 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID"                         = e."ASSIGN_TO_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND e."BATCH_ID" = (SELECT mb FROM max_batch)
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)

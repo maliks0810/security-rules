@@ -62,7 +62,7 @@ AS $$
            e."ISSUE_DESCRIPTION"::text,
            e."RESULT_DATA"::text,
            e."SUPPRESS_DATE",
-           e."ASSIGN_TO_ID",
+           COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
            du."USER"                      AS "ASSIGN_TO",
            e."RESULT_TYPE_ID",
            ept."NAME"::text               AS "PRIORITY",
@@ -81,7 +81,10 @@ AS $$
     LEFT JOIN public."RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
     LEFT JOIN public."EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"          = e."STATE_ID"
     LEFT JOIN public."EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"       = e."STATUS_ID"
-    LEFT JOIN public."DM_USER"                 du  ON du."ID"                          = e."ASSIGN_TO_ID"
+    -- Per-row EXCEPTION.ASSIGN_TO_ID takes precedence over the rule-
+    -- level RULE.ASSIGN_TO_ID default. A user-initiated reassignment
+    -- via the grid wins; otherwise the rule's default assignee resolves.
+    LEFT JOIN public."DM_USER"                 du  ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     WHERE (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
       AND (p_exception_type    IS NULL OR et."NAME"     = p_exception_type)
       AND (p_severity          IS NULL OR est."NAME"    = p_severity)

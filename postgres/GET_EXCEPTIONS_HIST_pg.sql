@@ -77,7 +77,7 @@ AS $$
            e."ISSUE_DESCRIPTION"::text,
            e."RESULT_DATA"::text,
            e."SUPPRESS_DATE",
-           e."ASSIGN_TO_ID",
+           COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
            du."USER"                      AS "ASSIGN_TO",
            e."RESULT_TYPE_ID",
            ept."NAME"::text               AS "PRIORITY",
@@ -96,7 +96,7 @@ AS $$
     LEFT JOIN public."RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
     LEFT JOIN public."EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
     LEFT JOIN public."EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
-    LEFT JOIN public."DM_USER"                 du    ON du."ID"                         = e."ASSIGN_TO_ID"
+    LEFT JOIN public."DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     WHERE e."EXCEPTION_DATE" = p_exception_date
       AND e."BATCH_ID" = (SELECT mb FROM max_batch)
       AND (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)

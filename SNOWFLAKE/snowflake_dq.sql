@@ -199,6 +199,12 @@ CREATE OR REPLACE TABLE RULE (
     EXCEPTION_SEVERITY_TYPE_ID NUMBER NULL,
     EXCEPTION_PRIORITY_TYPE_ID NUMBER NULL,
     EXCEPTION_SOURCE           NUMBER NULL,
+    -- Default assignee for every rule. Seeded / backfilled to 2 (the
+    -- DM_USER row for the primary assignee). SP_GET_EXCEPTIONS and
+    -- SP_GET_ASSETS source the Assign To grid column from here, not
+    -- from EXCEPTION.ASSIGN_TO_ID, so per-rule ownership follows the
+    -- rule instead of the per-row assignment.
+    ASSIGN_TO_ID               INT NULL DEFAULT 2,
     CREATED_BY                 VARCHAR(100) NULL,
     CREATED_DATE               TIMESTAMP_NTZ(9) NULL
 );
@@ -1211,7 +1217,7 @@ BEGIN
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
-               e."ASSIGN_TO_ID"            AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -1230,7 +1236,10 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID"                          = e."ASSIGN_TO_ID"
+        -- Per-row EXCEPTION.ASSIGN_TO_ID overrides the rule-level
+        -- RULE.ASSIGN_TO_ID default so grid reassignments win over the
+        -- rule's default assignee.
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
@@ -1346,7 +1355,7 @@ BEGIN
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
-               e."ASSIGN_TO_ID"            AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -1365,7 +1374,7 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID"                         = e."ASSIGN_TO_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND e."BATCH_ID" = (SELECT mb FROM max_batch)
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
@@ -1445,7 +1454,7 @@ BEGIN
             LEFT JOIN "EXCEPTION_STATE" es
               ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
             LEFT JOIN "DM_USER" du
-              ON du."ID" = e."ASSIGN_TO_ID"
+              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
               AND (:P_SEVERITY         IS NULL OR est."NAME" = :P_SEVERITY)
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)

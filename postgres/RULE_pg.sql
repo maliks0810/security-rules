@@ -11,6 +11,7 @@ CREATE TABLE public."RULE" (
     "EXCEPTION_SEVERITY_TYPE_ID" numeric,
     "EXCEPTION_PRIORITY_TYPE_ID" numeric,
     "EXCEPTION_SOURCE"        numeric,
+    "ASSIGN_TO_ID"            integer DEFAULT 2,
     "CREATED_BY"              varchar(100),
     "CREATED_DATE"            timestamp
 );
@@ -18,11 +19,12 @@ CREATE TABLE public."RULE" (
 INSERT INTO public."RULE" (
     "RULE_CATALOG_ID", "RULE_NAME", "RULE_DESCRIPTION", "IS_ACTIVE",
     "EXCEPTION_TYPE_ID", "EXCEPTION_PROCESS_TYPE_ID", "EXCEPTION_SEVERITY_TYPE_ID",
-    "EXCEPTION_PRIORITY_TYPE_ID", "EXCEPTION_SOURCE", "CREATED_BY", "CREATED_DATE"
+    "EXCEPTION_PRIORITY_TYPE_ID", "EXCEPTION_SOURCE", "ASSIGN_TO_ID",
+    "CREATED_BY", "CREATED_DATE"
 ) VALUES
     (1, 'RULE_DM_BBG_MATURITY_DATE',
         'Compares Maturity Date between Bloomberg and Aladdin',
-        1, 1, 1, 1, 2, 1, CURRENT_USER, CURRENT_TIMESTAMP),
+        1, 1, 1, 1, 2, 1, 2, CURRENT_USER, CURRENT_TIMESTAMP),
     (1, 'RULE_DM_BBG_REGISTRATION',
         'Compares Registration between Bloomberg and Aladdin',
-        1, 1, 1, 1, 2, 1, CURRENT_USER, CURRENT_TIMESTAMP);
+        1, 1, 1, 1, 2, 1, 2, CURRENT_USER, CURRENT_TIMESTAMP);
