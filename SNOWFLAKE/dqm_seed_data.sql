@@ -23,12 +23,10 @@
 -- USAGE:
 --   Run this whole file via Snowsight worksheet or:
 --     snowsql -f SNOWFLAKE/dqm_seed_data.sql
---   The database/schema context is inherited from the session — set it
---   yourself if you're not running dqm_init.sql first in the same run.
+--   The database/schema context is inherited from the caller's session —
+--   USE DATABASE / USE SCHEMA yourself before running (or configure
+--   default_database / default_schema on the SF role/user).
 -- =============================================================================
-
-USE DATABASE TCW_CORE_DEV;
-USE SCHEMA DATA_QUALITY;
 
 
 -- =============================================================================
