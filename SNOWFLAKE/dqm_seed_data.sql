@@ -105,7 +105,12 @@ SELECT
     'Bloomberg Compare Differences',
     'Bloomberg Compare Differences',
     (SELECT RULE_GROUP_ID FROM RULE_GROUP WHERE NAME = 'Security Master'),
-    'CALL SP_RECON_BBG_COMPARE(${ASSET_ID}, ${ID_BB_GLOBAL})',
+    -- ${ALADDIN_ID} isn't a built-in placeholder (only ${ASSET_ID},
+    -- ${ID_BB_GLOBAL}, ${IS_REFRESH} are). The leftover-sweep in
+    -- resolveRuleCommand lands it as NULL unless a caller passes
+    -- ?param_ALADDIN_ID=…; ${RULE_NAME} auto-populates only when
+    -- rule_type=RULE.
+    'CALL SP_RECON_BBG_TDC(${ALADDIN_ID}, ${ID_BB_GLOBAL}, ${RULE_NAME}, ${IS_REFRESH})',
     'SQL',
     'DE_SNOWFLAKE',
     CURRENT_TIMESTAMP(),
