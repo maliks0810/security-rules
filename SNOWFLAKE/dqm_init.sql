@@ -263,8 +263,6 @@ SELECT e."EXCEPTION_ID",
 -- SP, so the view is no longer referenced anywhere. Section 3 (Views) is
 -- intentionally empty.
 
-DROP VIEW IF EXISTS RECON_BBG_COMPARE_VW;
-
 -- RECON_BBG_COMPARE -----------------------------------------------------------
 -- Invoked by ExecuteRules via RULE_CATALOG.RULE_CATALOG_SOURCE. When the
 -- caller supplies (P_ALADDIN_ID, P_ID_BB_GLOBAL) we reflect that pair per
