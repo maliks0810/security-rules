@@ -492,7 +492,7 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules (archive-then-insert)
-// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default "Y") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. Additional query params prefixed with "param_" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.
+// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default "Y") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. Additional query params prefixed with "param_" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL. Blocks until the run completes — a Security Master GROUP run against Snowflake can take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout` set high enough to cover it (300s+ is safe).
 // @Tags         rules
 // @Produce      json
 // @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
@@ -523,10 +523,17 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 		params[strings.ToUpper(strings.TrimPrefix(k, "param_"))] = string(value)
 	}
 
+	// Blocking / synchronous: waits for the full archive-then-insert
+	// pipeline (which can run for several minutes on a large scope)
+	// and returns only when it's done. Go / Fiber have no request
+	// timeout that would cut this off; nginx (or whatever proxy is in
+	// front) does — its `proxy_read_timeout` must be raised to cover
+	// the longest expected run or the client will see a 504 even
+	// though the DB work completes.
 	if err := services.ExecuteRules(ruleName, ruleType, isRefresh, params); err != nil {
 		// Surface the backend error verbatim so callers see e.g. a
 		// Snowflake compile error or a per-catalog SP failure instead
-		// of the old generic "failed to execute rules" swallow.
+		// of a generic "failed to execute rules" swallow.
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
