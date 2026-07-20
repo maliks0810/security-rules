@@ -1,4 +1,4 @@
-﻿-- INSERT_EXCEPTION writes one row to the slim EXCEPTION table.
+-- INSERT_EXCEPTION writes one row to the slim EXCEPTION table.
 -- Slimmer than INSERT_SECURITY_EXCEPTION because the target table has
 -- fewer columns. EXCEPTION_ID is identity-assigned, so it's not a param.
 -- COMMENT_ID and SUPPRESS_DATE are omitted (no source in the current

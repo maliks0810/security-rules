@@ -1,4 +1,4 @@
-﻿DROP FUNCTION IF EXISTS public."LIST_RULES"(character varying);
+DROP FUNCTION IF EXISTS public."LIST_RULES"(character varying);
 DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying);
 DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text);
 DROP FUNCTION IF EXISTS public."SP_GET_RULES"(character varying, text, text);

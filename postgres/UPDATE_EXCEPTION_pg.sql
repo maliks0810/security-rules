@@ -1,4 +1,4 @@
-﻿-- UPDATE_EXCEPTION updates the EXCEPTION row identified by (ASSET_ID, RULE_ID).
+-- UPDATE_EXCEPTION updates the EXCEPTION row identified by (ASSET_ID, RULE_ID).
 -- Mirrors INSERT_EXCEPTION's param list (slim EXCEPTION schema).
 -- STATE_ID is force-reset to 1 (Pending) on every update because the
 -- assumption is the rule fired again and we want the exception re-opened.

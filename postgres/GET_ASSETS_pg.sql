@@ -1,4 +1,4 @@
-﻿-- GET_ASSETS sources from the slim EXCEPTION table. Priority / severity /
+-- GET_ASSETS sources from the slim EXCEPTION table. Priority / severity /
 -- type / rule-catalog all come from RULE (the rule's own attributes),
 -- joined to the corresponding EXCEPTION_*_TYPE lookups for their NAMEs.
 -- FIGI is the most-recent EXCEPTION.ID_BB_GLOBAL per asset, and ASSIGN_TO

@@ -1,4 +1,4 @@
-﻿-- Drop the retired outright-delete SP so a redeploy against a legacy
+-- Drop the retired outright-delete SP so a redeploy against a legacy
 -- SF instance ends up with only SP_ARCHIVE_EXCEPTIONS. IF EXISTS makes
 -- this a no-op on a fresh install.
 DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);

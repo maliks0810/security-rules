@@ -1,4 +1,4 @@
-﻿-- GET_EXCEPTIONS reads the slim EXCEPTION table joined with RULE and
+-- GET_EXCEPTIONS reads the slim EXCEPTION table joined with RULE and
 -- the various lookup tables. Returns 23 columns matching the Exception Go
 -- model 1:1 (no dummy NULL columns to fit a legacy struct). RULE has no
 -- RULE_TYPE_ID / RULE_GROUP_ID yet, so p_rule_catalog / p_rule_group filters

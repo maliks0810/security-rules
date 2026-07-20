@@ -1,4 +1,4 @@
-﻿DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATE"(character varying, numeric);
+DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATE"(character varying, numeric);
 DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATE"(character varying, numeric, boolean);
 
 -- Stamps MODIFIED_DATE / MODIFIED_BY on every EXCEPTION row matching

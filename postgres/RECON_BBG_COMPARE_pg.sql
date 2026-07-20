@@ -1,4 +1,4 @@
-﻿-- RECON_BBG_COMPARE: SP shape of the deprecated RECON_BBG_COMPARE_VW.
+-- RECON_BBG_COMPARE: SP shape of the deprecated RECON_BBG_COMPARE_VW.
 -- When a caller passes (p_aladdin_id, p_id_bb_global), it reflects that
 -- pair back per BBG-compare rule. When both are NULL/empty (the "run for
 -- all assets" path), it emits a fixed demo set of three assets so the

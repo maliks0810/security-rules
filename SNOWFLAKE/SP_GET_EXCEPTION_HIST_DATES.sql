@@ -1,4 +1,4 @@
-﻿-- Distinct EXCEPTION_DATEs from EXCEPTION_HIST within the last 60 days
+-- Distinct EXCEPTION_DATEs from EXCEPTION_HIST within the last 60 days
 -- (UTC), most recent first. Powers the "DQM Date" dropdown in the LHS
 -- sidebar â€” one entry per day regardless of how many BATCH_IDs that day
 -- accumulated.

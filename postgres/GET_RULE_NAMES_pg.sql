@@ -1,4 +1,4 @@
-﻿DROP FUNCTION IF EXISTS public."SP_GET_RULE_NAMES"(text);
+DROP FUNCTION IF EXISTS public."SP_GET_RULE_NAMES"(text);
 
 -- Returns individual RULE_NAMEs (and their RULE_DESCRIPTION) belonging
 -- to a given catalog. Used by the tcw-dqm tree view to display the

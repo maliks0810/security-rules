@@ -1,4 +1,4 @@
-﻿DROP FUNCTION IF EXISTS public."SP_UPDATE_ASSIGN_TO"(character varying, text);
+DROP FUNCTION IF EXISTS public."SP_UPDATE_ASSIGN_TO"(character varying, text);
 
 -- Updates ASSIGN_TO_ID on every EXCEPTION row for the given asset, resolving
 -- the user name against DM_USER. Passing an empty/NULL p_assign_to clears

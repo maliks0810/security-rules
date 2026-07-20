@@ -1,4 +1,4 @@
-﻿-- Sets EXCEPTION.ASSIGN_TO_ID for a single row keyed by EXCEPTION_ID,
+-- Sets EXCEPTION.ASSIGN_TO_ID for a single row keyed by EXCEPTION_ID,
 -- resolving P_ASSIGN_TO against DM_USER.USER. Empty/NULL clears the
 -- assignment. Distinct from SP_UPDATE_ASSIGN_TO (which touches every
 -- row for an ASSET_ID via the Assets grid). Returns 1 on success.
