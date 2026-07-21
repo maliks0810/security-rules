@@ -611,13 +611,25 @@ func UpdateExceptionState(assetID string, ruleID int, complete bool) (int, error
 	return n, nil
 }
 
-// InsertExceptions writes each row to the slim EXCEPTION table via the
-// 12-param INSERT_EXCEPTION SP. ExceptionDate fills EXCEPTION_DATE; when
-// blank, ExceptionTime is used and the DB casts it to DATE. ExceptionTime
-// flows into EXCEPTION_TIME (full timestamp). ResultData is the JSON
-// column-array of results pulled from RULE_CATALOG_SOURCE â€” both SF and
-// PG store it as a string (SF VARCHAR, PG json via $8::json cast).
+// InsertExceptions bulk-writes rows into the slim EXCEPTION table with
+// one multi-row INSERT per batch (batchSize below), replacing the old
+// per-row SP_INSERT_EXCEPTION loop that cost one Snowflake round-trip
+// per exception (300 rows × ~200-400ms each = a minute+ of wall clock).
+// A single 300-row INSERT sends one compile+execute to the DB.
+//
+// The SP's COALESCE(NULLIF(x,0),1) default-to-1 behavior on STATE_ID
+// and STATUS_ID is applied in Go up front so the SQL can stay a plain
+// VALUES tuple that both Snowflake and Postgres accept without inline
+// function-call gymnastics in the VALUES list. ExceptionDate fills
+// EXCEPTION_DATE; when blank, ExceptionTime is used and the DB casts
+// to DATE. RESULT_DATA is a JSON string (PG casts $N::json below).
+//
+// SP_INSERT_EXCEPTION stays in the repo for direct SQL callers; the
+// Go path no longer routes through it.
 func InsertExceptions(exceptions []models.Exception) error {
+	if len(exceptions) == 0 {
+		return nil
+	}
 	nilIfEmpty := func(s string) any {
 		if s == "" {
 			return nil
@@ -636,26 +648,63 @@ func InsertExceptions(exceptions []models.Exception) error {
 		}
 		return nilIfEmpty(e.ExceptionTime)
 	}
+	defaultOne := func(n int) any {
+		if n == 0 {
+			return 1
+		}
+		return n
+	}
+	// Bind values for one row in the shared column order. Ordering must
+	// stay in sync with the column list and placeholder builders below.
+	rowValues := func(e models.Exception) []any {
+		return []any{
+			e.RuleID,
+			e.AssetID,
+			dateOrTime(e),
+			nilIfEmpty(e.IdBbGlobal),
+			defaultOne(e.StateID),
+			nilIfEmpty(e.ExceptionTime),
+			nilIfEmpty(e.IssueDescription),
+			nilIfEmpty(e.ResultData),
+			nilIfZero(e.AssignToID),
+			e.ResultTypeID,
+			nilIfEmpty(e.CreatedDate),
+			e.CreatedBy,
+			defaultOne(e.StatusID),
+		}
+	}
+	const columnList = `"RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL", ` +
+		`"STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA", ` +
+		`"ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY", "STATUS_ID"`
+	const colsPerRow = 13
+	// batchSize caps the parameter count per statement well below Postgres's
+	// 65535-parameter limit (500 * 13 = 6500) while still cutting round-trips
+	// dramatically vs. per-row.
+	const batchSize = 500
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		log.Logger.Info("exceptionsRepository: InsertExceptions - using SNOWFLAKE database environment")
-		for _, e := range exceptions {
-			rows, err := snowflake.Query(
-				"CALL SP_INSERT_EXCEPTION(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-				e.RuleID,
-				e.AssetID,
-				dateOrTime(e),
-				nilIfEmpty(e.IdBbGlobal),
-				e.StateID,
-				nilIfEmpty(e.ExceptionTime),
-				nilIfEmpty(e.IssueDescription),
-				nilIfEmpty(e.ResultData),
-				nilIfZero(e.AssignToID),
-				e.ResultTypeID,
-				nilIfEmpty(e.CreatedDate),
-				e.CreatedBy,
-				nilIfZero(e.StatusID),
-			)
+		log.Logger.Info(fmt.Sprintf(
+			"exceptionsRepository: InsertExceptions - SNOWFLAKE bulk insert of %d rows",
+			len(exceptions),
+		))
+		// Snowflake uses `?` placeholders. Each row is a `(?,?,...)` tuple.
+		rowPlaceholder := "(" + strings.Repeat("?,", colsPerRow-1) + "?)"
+		for start := 0; start < len(exceptions); start += batchSize {
+			end := start + batchSize
+			if end > len(exceptions) {
+				end = len(exceptions)
+			}
+			n := end - start
+			placeholders := strings.Repeat(rowPlaceholder+",", n-1) + rowPlaceholder
+			params := make([]any, 0, n*colsPerRow)
+			for i := start; i < end; i++ {
+				params = append(params, rowValues(exceptions[i])...)
+			}
+			stmt := `INSERT INTO "EXCEPTION" (` + columnList + `) VALUES ` + placeholders
+			// snowflake.Query keeps the auth-token retry semantics that
+			// snowflake.DB.Exec doesn't get; the INSERT still runs — we just
+			// close the (empty) result set immediately.
+			rows, err := snowflake.Query(stmt, params...)
 			if err != nil {
 				return err
 			}
@@ -664,29 +713,38 @@ func InsertExceptions(exceptions []models.Exception) error {
 		return nil
 	}
 
-	log.Logger.Info("exceptionsRepository: InsertExceptions - using POSTGRES database environment")
+	log.Logger.Info(fmt.Sprintf(
+		"exceptionsRepository: InsertExceptions - POSTGRES bulk insert of %d rows",
+		len(exceptions),
+	))
 	if postgres.DB == nil {
 		return sql.ErrConnDone
 	}
-
-	for _, e := range exceptions {
-		_, err := postgres.DB.Exec(
-			`SELECT public."SP_INSERT_EXCEPTION"($1,$2,$3,$4,$5,$6,$7,$8::json,$9,$10,$11,$12,$13)`,
-			e.RuleID,
-			e.AssetID,
-			dateOrTime(e),
-			nilIfEmpty(e.IdBbGlobal),
-			e.StateID,
-			nilIfEmpty(e.ExceptionTime),
-			nilIfEmpty(e.IssueDescription),
-			nilIfEmpty(e.ResultData),
-			nilIfZero(e.AssignToID),
-			e.ResultTypeID,
-			nilIfEmpty(e.CreatedDate),
-			e.CreatedBy,
-			nilIfZero(e.StatusID),
-		)
-		if err != nil {
+	// Postgres uses numbered `$1..$N` placeholders. The 8th slot per row is
+	// RESULT_DATA and needs a `::json` cast (PG's json type isn't inferred
+	// from a text bind).
+	for start := 0; start < len(exceptions); start += batchSize {
+		end := start + batchSize
+		if end > len(exceptions) {
+			end = len(exceptions)
+		}
+		n := end - start
+		rowPlaceholders := make([]string, 0, n)
+		params := make([]any, 0, n*colsPerRow)
+		for i := 0; i < n; i++ {
+			base := i * colsPerRow
+			ph := make([]string, colsPerRow)
+			for j := 0; j < colsPerRow; j++ {
+				ph[j] = fmt.Sprintf("$%d", base+j+1)
+			}
+			// RESULT_DATA is slot 8 (index 7).
+			ph[7] = ph[7] + "::json"
+			rowPlaceholders = append(rowPlaceholders, "("+strings.Join(ph, ",")+")")
+			params = append(params, rowValues(exceptions[start+i])...)
+		}
+		stmt := `INSERT INTO public."EXCEPTION" (` + columnList + `) VALUES ` +
+			strings.Join(rowPlaceholders, ",")
+		if _, err := postgres.DB.Exec(stmt, params...); err != nil {
 			return err
 		}
 	}
