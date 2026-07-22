@@ -19,19 +19,13 @@ livenessProbe:
 
 ## Ingress ########################################################################################
 ingress:
+  readTimeout: 900
   paths:
     - path: /de/securities/rules
       pathType: Prefix
       serviceName: security-rules
       servicePort: 80
-  # nginx-ingress proxy timeouts. /executeRules blocks until the
-  # archive-then-insert pipeline finishes — a Security Master GROUP run
-  # against Snowflake can take several minutes. Default proxy_read_timeout
-  # is 60s and was tripping a 504 mid-run. 600s (10 min) leaves ample
-  # headroom.
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
 ###################################################################################################
 
 ## Secrets ########################################################################################
