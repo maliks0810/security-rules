@@ -43,37 +43,46 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 
-// ExecuteRules runs every catalog in (ruleName, ruleType) scope, then —
-// only after every catalog has succeeded — moves the day's existing
-// EXCEPTION rows for that same scope into EXCEPTION_HIST (via
+// ExecuteRules runs every catalog in (req.RuleName, req.RuleType) scope,
+// then — only after every catalog has succeeded — moves the day's
+// existing EXCEPTION rows for that same scope into EXCEPTION_HIST (via
 // SP_ARCHIVE_EXCEPTIONS) and inserts the newly-produced rows verbatim.
 // Archiving is deferred so that if any catalog fails, EXCEPTION keeps
 // the previous run's rows intact and callers can retry without a data
 // gap. No (RuleID, AssetID) dedupe, no touch/complete branches, no diff
 // against existing rows. Use ExecuteSecurityRules for the asset-scoped
 // incremental flow.
-func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string]string) error {
-	// Serialize per-scope. Key on the exact ruleName / ruleType the
+//
+// The signature takes ExecuteRulesRequest so the handler can hand it
+// straight from the POST body without unpacking; is_refresh missing /
+// empty defaults to "Y" up front. Returns the number of exceptions
+// inserted this run so the handler can populate
+// ExecuteRulesResponse.ExceptionCount.
+func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
+	if strings.TrimSpace(req.IsRefresh) == "" {
+		req.IsRefresh = "Y"
+	}
+	// Serialize per-scope. Key on the exact RuleName / RuleType the
 	// caller passed so distinct scopes still run in parallel.
-	scopeKey := strings.ToUpper(strings.TrimSpace(ruleType)) + "|" + ruleName
+	scopeKey := strings.ToUpper(strings.TrimSpace(req.RuleType)) + "|" + req.RuleName
 	muAny, _ := executeRulesMu.LoadOrStore(scopeKey, &sync.Mutex{})
 	mu := muAny.(*sync.Mutex)
 	mu.Lock()
 	defer mu.Unlock()
 
-	catalogs, err := repositories.GetRules(ruleName, ruleType)
+	catalogs, err := repositories.GetRules(req.RuleName, req.RuleType)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	// A specific scope (rule_name set and not "All") that resolves to
+	// A specific scope (RuleName set and not "All") that resolves to
 	// zero catalogs is a client error, not a silent success — the
 	// caller almost certainly mistyped the group/catalog/rule name.
 	// Wrap ErrRuleScopeNotFound so the handler can turn it into 404
 	// while still logging the exact scope that missed.
-	specificScope := ruleName != "" && !strings.EqualFold(ruleName, "All")
+	specificScope := req.RuleName != "" && !strings.EqualFold(req.RuleName, "All")
 	if specificScope && len(catalogs) == 0 {
-		return fmt.Errorf("%w: rule_type=%q rule_name=%q", ErrRuleScopeNotFound, ruleType, ruleName)
+		return 0, fmt.Errorf("%w: rule_type=%q rule_name=%q", ErrRuleScopeNotFound, req.RuleType, req.RuleName)
 	}
 
 	// When rule_type = RULE, the caller's rule_name identifies a
@@ -81,13 +90,13 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	// sources as ${RULE_NAME}. Clone the params map so we don't mutate
 	// what the handler built; sources that don't reference ${RULE_NAME}
 	// just no-op on ReplaceAll, so this is safe to always thread.
-	catalogParams := params
-	if strings.EqualFold(ruleType, "RULE") && ruleName != "" {
-		catalogParams = make(map[string]string, len(params)+1)
-		for k, v := range params {
+	catalogParams := req.Params
+	if strings.EqualFold(req.RuleType, "RULE") && req.RuleName != "" {
+		catalogParams = make(map[string]string, len(req.Params)+1)
+		for k, v := range req.Params {
 			catalogParams[k] = v
 		}
-		catalogParams["RULE_NAME"] = ruleName
+		catalogParams["RULE_NAME"] = req.RuleName
 	}
 
 	// Per-catalog fail-fast: any DB error from the underlying SP call
@@ -98,13 +107,13 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	// EXCEPTION still holds the previous run's rows — no data gap.
 	var produced []models.Exception
 	for _, c := range catalogs {
-		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, isRefresh, catalogParams)
+		exceptions, err := repositories.ExecuteRule(c.RuleCommand, c.RuleCatalogID, c.RuleCatalogName, req.IsRefresh, catalogParams)
 		if err != nil {
 			log.Logger.Error(fmt.Sprintf(
 				"rulesService: ExecuteRules - catalog %q (id=%d) failed: %v",
 				c.RuleCatalogName, c.RuleCatalogID, err,
 			))
-			return fmt.Errorf("catalog %q (id=%d): %w", c.RuleCatalogName, c.RuleCatalogID, err)
+			return 0, fmt.Errorf("catalog %q (id=%d): %w", c.RuleCatalogName, c.RuleCatalogID, err)
 		}
 		// Per-catalog produced count — surfaces which source's row count
 		// looks wrong when a scope-wide total diverges from expectations
@@ -122,14 +131,14 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	// BATCH_ID) and insert the freshly-produced batch. Archive-then-
 	// insert ordering keeps EXCEPTION from holding two generations of
 	// the same (RuleID, AssetID) key mid-transition.
-	archived, err := repositories.ArchiveExceptions(ruleName, ruleType)
+	archived, err := repositories.ArchiveExceptions(req.RuleName, req.RuleType)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if len(produced) > 0 {
 		if err := InsertExceptions(produced); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
@@ -138,7 +147,7 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	// to "New". Best-effort: log-and-continue on error, since a failed
 	// inheritance shouldn't blow up the whole run.
 	inherited := 0
-	if n, ierr := repositories.InheritExceptionStatuses(ruleName, ruleType); ierr != nil {
+	if n, ierr := repositories.InheritExceptionStatuses(req.RuleName, req.RuleType); ierr != nil {
 		log.Logger.Warn(fmt.Sprintf(
 			"rulesService: ExecuteRules - InheritExceptionStatuses failed, continuing: %v", ierr,
 		))
@@ -148,19 +157,19 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 
 	log.Logger.Info(fmt.Sprintf(
 		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d",
-		ruleName, ruleType, archived, len(produced), inherited,
+		req.RuleName, req.RuleType, archived, len(produced), inherited,
 	))
 
 	events.Publish(events.Event{
 		Type: "rules.executed",
 		Payload: map[string]any{
-			"rule_name": ruleName,
-			"rule_type": ruleType,
+			"rule_name": req.RuleName,
+			"rule_type": req.RuleType,
 			"count":     len(produced),
 			"time":      time.Now().UTC().Format(time.RFC3339),
 		},
 	})
-	return nil
+	return len(produced), nil
 }
 
 // ExecuteSecurityRules is a copy of ExecuteRules. It currently mirrors the

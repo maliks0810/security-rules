@@ -30,7 +30,10 @@
         },
         "/v1/api/executeRules": {
             "post": {
-                "description": "Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog). is_refresh (default \"Y\") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. Additional query params prefixed with \"param_\" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL. Blocks until the run completes — a Security Master GROUP run against Snowflake can take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout` set high enough to cover it (300s+ is safe).",
+                "description": "Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog). is_refresh (default \"Y\") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. `params` in the request body is an optional map of ${NAME} placeholder substitutions — e.g. {\"RATINGS_MISSING\":\"Aa\"} substitutes ${RATINGS_MISSING} → 'Aa'; empty values become SQL NULL. Blocks until the run completes — a Security Master GROUP run against Snowflake can take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout` set high enough to cover it (300s+ is safe). Response is always an ExecuteRulesResponse: exception_count is the number of rows inserted this run, exception_message carries the backend error text on non-2xx, and exception_status mirrors the HTTP status.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -40,55 +43,38 @@
                 "summary": "Execute rules (archive-then-insert)",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Filter value (catalog name or group name depending on rule_type)",
-                        "name": "rule_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "CATALOG | GROUP | RULE",
-                        "name": "rule_type",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "Y",
-                            "N"
-                        ],
-                        "type": "string",
-                        "default": "Y",
-                        "description": "Substituted into ${IS_REFRESH} as 'Y' or 'N'",
-                        "name": "is_refresh",
-                        "in": "query"
+                        "description": "rule_name / rule_type / is_refresh scope + optional params bag",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ExecuteRulesRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "rules executed",
+                        "description": "rules executed; exception_count = rows inserted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/models.ExecuteRulesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/models.ExecuteRulesResponse"
                         }
                     },
                     "404": {
                         "description": "requested rule / catalog / group not found",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/models.ExecuteRulesResponse"
                         }
                     },
                     "500": {
                         "description": "failed to execute rules",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/models.ExecuteRulesResponse"
                         }
                     }
                 }
@@ -1329,6 +1315,62 @@
                 },
                 "suppress_date": {
                     "type": "string"
+                }
+            }
+        },
+        "models.ExecuteRulesRequest": {
+            "type": "object",
+            "properties": {
+                "is_refresh": {
+                    "description": "'Y' or 'N' — substituted into any ${IS_REFRESH} placeholder in\nthe RULE_CATALOG_SOURCE. Defaults to 'Y' when empty.",
+                    "type": "string",
+                    "enum": [
+                        "Y",
+                        "N"
+                    ],
+                    "example": "Y"
+                },
+                "params": {
+                    "description": "Extra ${NAME} placeholder substitutions keyed by placeholder name\n(upper-cased, no ${…}). Optional. Empty values become SQL NULL.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rule_name": {
+                    "description": "Filter value. When RuleType is CATALOG or RULE it matches\nRULE_CATALOG.NAME (or RULE.RULE_NAME under RULE); under GROUP it\nmatches RULE_GROUP.NAME. Empty or \"All\" runs every catalog.",
+                    "type": "string",
+                    "example": "Security Master"
+                },
+                "rule_type": {
+                    "description": "One of CATALOG | GROUP | RULE. Empty is equivalent to CATALOG.",
+                    "type": "string",
+                    "enum": [
+                        "CATALOG",
+                        "GROUP",
+                        "RULE"
+                    ],
+                    "example": "GROUP"
+                }
+            }
+        },
+        "models.ExecuteRulesResponse": {
+            "type": "object",
+            "properties": {
+                "exception_count": {
+                    "description": "Total number of exceptions inserted by this run (i.e. len(produced)\nafter every catalog in scope ran and the archive-then-insert\npipeline finished). Zero when the scope resolves to no catalogs\nor when a catalog failed before insert.",
+                    "type": "integer",
+                    "example": 280
+                },
+                "exception_message": {
+                    "description": "Human-readable failure detail. Always present in the JSON — an\nempty string on success, populated with the wrapped error\nmessage on 404 (bad scope) and 500 (Snowflake / SP failure).\nKept unconditionally (no omitempty) so callers can rely on\n`exception_message` existing in every response.",
+                    "type": "string",
+                    "example": ""
+                },
+                "exception_status": {
+                    "description": "Mirrors the HTTP status the endpoint returned: 200 on success,\n404 when the requested scope resolved to zero catalogs, 500 on\nany downstream failure.",
+                    "type": "integer",
+                    "example": 200
                 }
             }
         },

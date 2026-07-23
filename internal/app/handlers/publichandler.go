@@ -493,57 +493,71 @@ func GetRules(ctx *fiber.Ctx) error {
 
 // ExecuteRules godoc
 // @Summary      Execute rules (archive-then-insert)
-// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default "Y") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. Additional query params prefixed with "param_" flow in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL. Blocks until the run completes — a Security Master GROUP run against Snowflake can take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout` set high enough to cover it (300s+ is safe).
+// @Description  Moves today's EXCEPTION rows for the catalogs implied by (rule_name, rule_type) into EXCEPTION_HIST via SP_ARCHIVE_EXCEPTIONS (each row stamped with a per-EXCEPTION_DATE BATCH_ID that starts at 1 for a new day and increments for subsequent same-day runs), then runs every matching catalog and inserts whatever rows the catalog sources return. Per-asset scoping (asset_id / id_bb_global) is intentionally not accepted — use /executeSecurityRules for that. rule_name + rule_type semantics match /getRules ("CATALOG" / "RULE" match RULE_CATALOG.NAME, "GROUP" matches RULE_GROUP.NAME, omit / empty / "All" runs every catalog). is_refresh (default "Y") is substituted into any ${IS_REFRESH} placeholder in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for a VARCHAR proc param. `params` in the request body is an optional map of ${NAME} placeholder substitutions — e.g. {"RATINGS_MISSING":"Aa"} substitutes ${RATINGS_MISSING} → 'Aa'; empty values become SQL NULL. Blocks until the run completes — a Security Master GROUP run against Snowflake can take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout` set high enough to cover it (300s+ is safe). Response is always an ExecuteRulesResponse: exception_count is the number of rows inserted this run, exception_message carries the backend error text on non-2xx, and exception_status mirrors the HTTP status.
 // @Tags         rules
+// @Accept       json
 // @Produce      json
-// @Param        rule_name     query     string  false  "Filter value (catalog name or group name depending on rule_type)"
-// @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
-// @Param        is_refresh    query     string  false  "Substituted into ${IS_REFRESH} as 'Y' or 'N'"  Enums(Y, N)  default(Y)
-// @Success      200           {object}  map[string]string  "rules executed"
-// @Failure      404           {object}  map[string]string  "requested rule / catalog / group not found"
-// @Failure      500           {object}  map[string]string  "failed to execute rules"
+// @Param        request  body  models.ExecuteRulesRequest  true  "rule_name / rule_type / is_refresh scope + optional params bag"
+// @Success      200      {object}  models.ExecuteRulesResponse  "rules executed; exception_count = rows inserted"
+// @Failure      400      {object}  models.ExecuteRulesResponse  "invalid request body"
+// @Failure      404      {object}  models.ExecuteRulesResponse  "requested rule / catalog / group not found"
+// @Failure      500      {object}  models.ExecuteRulesResponse  "failed to execute rules"
 // @Router       /v1/api/executeRules [post]
 func ExecuteRules(ctx *fiber.Ctx) error {
-	ruleName := ctx.Query("rule_name")
-	ruleType := ctx.Query("rule_type")
-	// is_refresh is a VARCHAR flag: 'Y' or 'N'. Missing / empty defaults
-	// to 'Y'. Anything unrecognized also snaps to 'Y' in
-	// resolveRuleCommand so the substituted literal is always a
-	// well-formed SQL string.
-	isRefresh := ctx.Query("is_refresh", "Y")
-
-	// Any ?param_NAME=VALUE query args become ${NAME} placeholder
-	// substitutions inside the RULE_CATALOG_SOURCE. The prefix is
-	// stripped and the key is passed uppercase so the placeholder in
-	// the source stays canonical regardless of URL casing.
-	params := map[string]string{}
-	for key, value := range ctx.Request().URI().QueryArgs().All() {
-		k := string(key)
-		if !strings.HasPrefix(k, "param_") {
-			continue
+	// Body-first: POST sends the ExecuteRulesRequest as JSON. GET can't
+	// carry a body, so fall back to the legacy query-string contract
+	// (rule_name / rule_type / is_refresh, plus any param_NAME=VALUE
+	// args) so already-deployed callers keep working. Also treat POST
+	// with a totally empty body as query-driven for the same reason.
+	var req models.ExecuteRulesRequest
+	body := ctx.Body()
+	if len(body) > 0 {
+		if err := ctx.BodyParser(&req); err != nil {
+			resp := models.ExecuteRulesResponse{
+				ExceptionStatus:  fiber.StatusBadRequest,
+				ExceptionMessage: "invalid request body: " + err.Error(),
+			}
+			return ctx.Status(fiber.StatusBadRequest).JSON(resp)
 		}
-		params[strings.ToUpper(strings.TrimPrefix(k, "param_"))] = string(value)
+	} else {
+		req.RuleName = ctx.Query("rule_name")
+		req.RuleType = ctx.Query("rule_type")
+		req.IsRefresh = ctx.Query("is_refresh")
+		req.Params = map[string]string{}
+		for key, value := range ctx.Request().URI().QueryArgs().All() {
+			k := string(key)
+			if !strings.HasPrefix(k, "param_") {
+				continue
+			}
+			req.Params[strings.ToUpper(strings.TrimPrefix(k, "param_"))] = string(value)
+		}
 	}
-
 	// Blocking / synchronous: waits for the full archive-then-insert
 	// pipeline (which can run for several minutes on a large scope)
 	// and returns only when it's done. Go / Fiber have no request
 	// timeout that would cut this off; nginx (or whatever proxy is in
 	// front) does — its `proxy_read_timeout` must be raised to cover
 	// the longest expected run or the client will see a 504 even
-	// though the DB work completes.
-	if err := services.ExecuteRules(ruleName, ruleType, isRefresh, params); err != nil {
-		// A specific scope (rule_name != "" / "All") that resolves to
-		// zero catalogs is a 404. Any other failure — Snowflake
-		// compile error, per-catalog SP mismatch, archive/insert bugs
-		// — surfaces as a 500 with the underlying message.
+	// though the DB work completes. The service defaults IsRefresh to
+	// "Y" when the body omits it, so callers only supplying rule_name
+	// / rule_type still work.
+	count, err := services.ExecuteRules(req)
+	// Always shape the reply as ExecuteRulesResponse: HTTP status and
+	// resp.ExceptionStatus always match so callers can inspect either.
+	resp := models.ExecuteRulesResponse{ExceptionCount: count}
+	if err != nil {
+		resp.ExceptionMessage = err.Error()
+		// Specific scope that resolved to zero catalogs is a 404
+		// (likely a typo in rule_name). Everything else is 500.
 		if errors.Is(err, services.ErrRuleScopeNotFound) {
-			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+			resp.ExceptionStatus = fiber.StatusNotFound
+			return ctx.Status(fiber.StatusNotFound).JSON(resp)
 		}
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		resp.ExceptionStatus = fiber.StatusInternalServerError
+		return ctx.Status(fiber.StatusInternalServerError).JSON(resp)
 	}
-
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+	resp.ExceptionStatus = fiber.StatusOK
+	return ctx.Status(fiber.StatusOK).JSON(resp)
 }
 
 // ExecuteSecurityRules godoc
