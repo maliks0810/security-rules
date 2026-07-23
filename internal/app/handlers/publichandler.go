@@ -3,6 +3,7 @@ package handlers
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -499,6 +500,7 @@ func GetRules(ctx *fiber.Ctx) error {
 // @Param        rule_type     query     string  false  "CATALOG | GROUP | RULE"
 // @Param        is_refresh    query     string  false  "Substituted into ${IS_REFRESH} as 'Y' or 'N'"  Enums(Y, N)  default(Y)
 // @Success      200           {object}  map[string]string  "rules executed"
+// @Failure      404           {object}  map[string]string  "requested rule / catalog / group not found"
 // @Failure      500           {object}  map[string]string  "failed to execute rules"
 // @Router       /v1/api/executeRules [post]
 func ExecuteRules(ctx *fiber.Ctx) error {
@@ -531,9 +533,13 @@ func ExecuteRules(ctx *fiber.Ctx) error {
 	// the longest expected run or the client will see a 504 even
 	// though the DB work completes.
 	if err := services.ExecuteRules(ruleName, ruleType, isRefresh, params); err != nil {
-		// Surface the backend error verbatim so callers see e.g. a
-		// Snowflake compile error or a per-catalog SP failure instead
-		// of a generic "failed to execute rules" swallow.
+		// A specific scope (rule_name != "" / "All") that resolves to
+		// zero catalogs is a 404. Any other failure — Snowflake
+		// compile error, per-catalog SP mismatch, archive/insert bugs
+		// — surfaces as a 500 with the underlying message.
+		if errors.Is(err, services.ErrRuleScopeNotFound) {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

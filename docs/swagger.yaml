@@ -169,7 +169,10 @@ paths:
         in the RULE_CATALOG_SOURCE as a single-quoted 'Y' / 'N' literal, ready for
         a VARCHAR proc param. Additional query params prefixed with "param_" flow
         in as ${NAME} placeholder substitutions — e.g. ?param_RATINGS_MISSING=Aa substitutes
-        ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL.
+        ${RATINGS_MISSING} → 'Aa'. Empty values (?param_X=) become SQL NULL. Blocks
+        until the run completes — a Security Master GROUP run against Snowflake can
+        take several minutes; the front-of-service proxy (nginx) must have `proxy_read_timeout`
+        set high enough to cover it (300s+ is safe).
       parameters:
       - description: Filter value (catalog name or group name depending on rule_type)
         in: query
@@ -192,6 +195,12 @@ paths:
       responses:
         "200":
           description: rules executed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: requested rule / catalog / group not found
           schema:
             additionalProperties:
               type: string

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,6 +20,12 @@ import (
 // route change — the POST kills ingress-level retries; this mutex
 // covers the double-click / caller-initiated concurrent case.
 var executeRulesMu sync.Map
+
+// ErrRuleScopeNotFound signals that the caller supplied a specific
+// scope (rule_name != "" / "All") but no RULE_CATALOG matched. The
+// handler unwraps this via errors.Is and turns it into an HTTP 404
+// instead of a generic 500 or a silent 200-with-zero-inserts.
+var ErrRuleScopeNotFound = errors.New("no catalog matched the requested scope")
 
 func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	return repositories.GetRules(ruleName, ruleType)
@@ -57,6 +64,16 @@ func ExecuteRules(ruleName, ruleType string, isRefresh string, params map[string
 	catalogs, err := repositories.GetRules(ruleName, ruleType)
 	if err != nil {
 		return err
+	}
+
+	// A specific scope (rule_name set and not "All") that resolves to
+	// zero catalogs is a client error, not a silent success — the
+	// caller almost certainly mistyped the group/catalog/rule name.
+	// Wrap ErrRuleScopeNotFound so the handler can turn it into 404
+	// while still logging the exact scope that missed.
+	specificScope := ruleName != "" && !strings.EqualFold(ruleName, "All")
+	if specificScope && len(catalogs) == 0 {
+		return fmt.Errorf("%w: rule_type=%q rule_name=%q", ErrRuleScopeNotFound, ruleType, ruleName)
 	}
 
 	// When rule_type = RULE, the caller's rule_name identifies a
