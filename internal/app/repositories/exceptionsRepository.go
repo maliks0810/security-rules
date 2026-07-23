@@ -831,3 +831,29 @@ func UpdateExceptions(exceptions []models.Exception) error {
 	}
 	return nil
 }
+
+// TruncateExceptionsAndHist is a TEMPORARY QA helper used by the /junk
+// endpoint to wipe both EXCEPTION and EXCEPTION_HIST between test
+// runs. Snowflake only; Postgres is intentionally not implemented and
+// returns an error so it can't be accidentally used in dev to nuke
+// local data. Remove alongside handlers.Junk / route /junk once the
+// QA reset workflow no longer needs it.
+func TruncateExceptionsAndHist() error {
+	if !strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		return fmt.Errorf("TruncateExceptionsAndHist: not implemented for %q — Snowflake only",
+			configs.EnvConfigs.Database)
+	}
+	log.Logger.Warn("exceptionsRepository: TruncateExceptionsAndHist - wiping EXCEPTION and EXCEPTION_HIST on SNOWFLAKE")
+	// Two separate statements — Snowflake driver may not allow a single
+	// multi-statement request without extra config. TRUNCATE returns no
+	// row set; snowflake.Query is used to keep the auth-token retry
+	// semantics and the empty result is closed immediately.
+	for _, table := range []string{"EXCEPTION", "EXCEPTION_HIST"} {
+		rows, err := snowflake.Query(fmt.Sprintf(`TRUNCATE TABLE "%s"`, table))
+		if err != nil {
+			return fmt.Errorf("TruncateExceptionsAndHist: truncating %q failed: %w", table, err)
+		}
+		rows.Close()
+	}
+	return nil
+}

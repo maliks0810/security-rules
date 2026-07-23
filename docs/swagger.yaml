@@ -743,6 +743,31 @@ paths:
       summary: Service welcome message
       tags:
       - info
+  /v1/api/junk:
+    post:
+      description: QA reset helper. Runs TRUNCATE TABLE against EXCEPTION and EXCEPTION_HIST
+        on Snowflake so a test run can start from an empty state. Postgres is intentionally
+        not implemented — returns 500 with "not implemented" if the deployed database
+        is Postgres so this can't accidentally wipe local dev data. Will be removed
+        once the QA reset workflow no longer needs it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: tables truncated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: truncate failed or not implemented for this database
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 'TEMPORARY: truncate EXCEPTION and EXCEPTION_HIST (Snowflake only)'
+      tags:
+      - maintenance
   /v1/api/updateAssignTo:
     get:
       description: Resolves assign_to against DM_USER and updates every

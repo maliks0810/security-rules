@@ -40,4 +40,9 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/executeSecurityRules", handlers.ExecuteSecurityRules)
 	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
 	route.Get("/events", handlers.StreamEvents)
+
+	// TEMPORARY: /junk truncates EXCEPTION and EXCEPTION_HIST on
+	// Snowflake so we can wipe test data between runs. Remove once
+	// the QA workflow no longer needs it.
+	route.Post("/junk", handlers.Junk)
 }

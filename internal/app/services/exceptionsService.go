@@ -29,6 +29,14 @@ func UpdateExceptionSuppressDate(exceptionID int64, suppressDate string) (int, e
 	return repositories.UpdateExceptionSuppressDate(exceptionID, suppressDate)
 }
 
+// TruncateExceptionsAndHist is a TEMPORARY QA helper — thin passthrough
+// to the repository. Snowflake only; Postgres is intentionally not
+// implemented and returns an error. Remove alongside handlers.Junk /
+// route /junk once the QA reset workflow no longer needs it.
+func TruncateExceptionsAndHist() error {
+	return repositories.TruncateExceptionsAndHist()
+}
+
 func GetSeverityTypes() ([]string, error) {
 	return repositories.GetSeverityTypes()
 }

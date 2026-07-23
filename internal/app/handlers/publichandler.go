@@ -679,3 +679,18 @@ func InsertExceptions(ctx *fiber.Ctx) error {
 
 	return ctx.SendStatus(fiber.StatusCreated)
 }
+
+// Junk godoc
+// @Summary      TEMPORARY: truncate EXCEPTION and EXCEPTION_HIST (Snowflake only)
+// @Description  QA reset helper. Runs TRUNCATE TABLE against EXCEPTION and EXCEPTION_HIST on Snowflake so a test run can start from an empty state. Postgres is intentionally not implemented — returns 500 with "not implemented" if the deployed database is Postgres so this can't accidentally wipe local dev data. Will be removed once the QA reset workflow no longer needs it.
+// @Tags         maintenance
+// @Produce      json
+// @Success      200  {object}  map[string]string  "tables truncated"
+// @Failure      500  {object}  map[string]string  "truncate failed or not implemented for this database"
+// @Router       /v1/api/junk [post]
+func Junk(ctx *fiber.Ctx) error {
+	if err := services.TruncateExceptionsAndHist(); err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
+}
