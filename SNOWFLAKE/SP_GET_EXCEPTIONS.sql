@@ -8,7 +8,12 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
     P_EXCEPTION_STATE  VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
-    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
+    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
+    -- EXCEPTION_DATE cut-off. Defaults to today (UTC) when NULL so the
+    -- grid never surfaces stale-date rows that haven't been swept to
+    -- EXCEPTION_HIST yet (e.g. the pre-cron window on a fresh day).
+    -- Pass an explicit YYYY-MM-DD to view a specific day's live rows.
+    P_EXCEPTION_DATE    DATE    DEFAULT NULL
 )
 RETURNS TABLE (
     "EXCEPTION_ID"      NUMBER,
@@ -83,7 +88,9 @@ BEGIN
         -- reassigned an exception in the grid, that override wins;
         -- otherwise the rule's default assignee resolves.
         LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
-        WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
+        WHERE e."EXCEPTION_DATE" = COALESCE(:P_EXCEPTION_DATE,
+                                            TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
+          AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
           AND (:P_PRIORITY          IS NULL OR ept."NAME"   = :P_PRIORITY)

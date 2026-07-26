@@ -37,6 +37,15 @@ func TruncateExceptionsAndHist() error {
 	return repositories.TruncateExceptionsAndHist()
 }
 
+// ExecuteSnowflakeSQL is a TEMPORARY QA helper — thin passthrough to
+// the repository, backing the /executeSN endpoint. Runs arbitrary SQL
+// on Snowflake and returns rows if any. Postgres path returns an
+// error. Remove alongside handlers.ExecuteSN / route /executeSN once
+// no longer needed.
+func ExecuteSnowflakeSQL(sqlText string) ([]map[string]any, error) {
+	return repositories.ExecuteSnowflakeSQL(sqlText)
+}
+
 func GetSeverityTypes() ([]string, error) {
 	return repositories.GetSeverityTypes()
 }

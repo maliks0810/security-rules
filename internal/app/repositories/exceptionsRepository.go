@@ -832,6 +832,66 @@ func UpdateExceptions(exceptions []models.Exception) error {
 	return nil
 }
 
+// ExecuteSnowflakeSQL is a TEMPORARY QA helper backing the /executeSN
+// endpoint. Runs whatever SQL the caller supplies — DDL, CALL, SELECT,
+// anything — on the live Snowflake connection and returns the result
+// set (if any) as a slice of column→value maps. Rows are read as
+// NullString so numerics / timestamps / booleans all coerce to their
+// text representation; this keeps the wire format human-readable at
+// the cost of losing native types. Capped at ExecuteSNMaxRows to
+// prevent an unbounded SELECT from streaming the whole warehouse
+// through the API. Postgres path is intentionally not implemented so
+// nobody accidentally nukes local dev by hitting the same endpoint.
+const ExecuteSNMaxRows = 1000
+
+func ExecuteSnowflakeSQL(sqlText string) ([]map[string]any, error) {
+	if !strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		return nil, fmt.Errorf("ExecuteSnowflakeSQL: not implemented for %q — Snowflake only",
+			configs.EnvConfigs.Database)
+	}
+	log.Logger.Warn(fmt.Sprintf(
+		"exceptionsRepository: ExecuteSnowflakeSQL - running ad-hoc SF SQL (%d chars)",
+		len(sqlText),
+	))
+	rows, err := snowflake.Query(sqlText)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]map[string]any, 0, 8)
+	for rows.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make(map[string]any, len(cols))
+		for i, c := range cols {
+			if vals[i].Valid {
+				row[c] = vals[i].String
+			} else {
+				row[c] = nil
+			}
+		}
+		results = append(results, row)
+		if len(results) >= ExecuteSNMaxRows {
+			log.Logger.Warn(fmt.Sprintf(
+				"exceptionsRepository: ExecuteSnowflakeSQL - result capped at %d rows",
+				ExecuteSNMaxRows,
+			))
+			break
+		}
+	}
+	return results, nil
+}
+
 // TruncateExceptionsAndHist is a TEMPORARY QA helper used by the /junk
 // endpoint to wipe both EXCEPTION and EXCEPTION_HIST between test
 // runs. Snowflake only; Postgres is intentionally not implemented and

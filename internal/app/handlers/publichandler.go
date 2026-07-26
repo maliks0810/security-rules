@@ -708,3 +708,43 @@ func Junk(ctx *fiber.Ctx) error {
 	}
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }
+
+// executeSNBody is the POST body for /executeSN. Kept inline (unexported)
+// so its schema still appears in swagger via the @Param annotation
+// below, matching the existing pattern for the other body-taking
+// endpoints in this file. TEMPORARY — remove alongside the handler.
+type executeSNBody struct {
+	// Raw SQL to run against Snowflake. Anything the driver accepts:
+	// DDL (CREATE / DROP / ALTER), DML, CALL <procedure>, SELECT.
+	SnSQL string `json:"sn_sql" example:"CALL SP_ARCHIVE_STALE_DATES()"`
+}
+
+// ExecuteSN godoc
+// @Summary      TEMPORARY: run arbitrary SQL on Snowflake
+// @Description  QA / debugging helper. Executes the caller-supplied `sn_sql` verbatim on the live Snowflake connection and returns any row set produced (as an array of column→string maps; nulls come back as JSON null). Postgres is intentionally not implemented — returns 500 with "not implemented" so this endpoint can't accidentally run SQL against local dev data. Result set is capped at 1000 rows to keep an unbounded SELECT from streaming the whole warehouse. Will be removed once no longer needed.
+// @Tags         maintenance
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handlers.executeSNBody  true  "SQL to run on Snowflake"
+// @Success      200      {object}  map[string]any          "row_count + rows (may be empty for DDL)"
+// @Failure      400      {object}  map[string]string       "invalid request body / empty sql"
+// @Failure      500      {object}  map[string]string       "execution failed or not implemented for this database"
+// @Router       /v1/api/executeSN [post]
+func ExecuteSN(ctx *fiber.Ctx) error {
+	var body executeSNBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body: " + err.Error()})
+	}
+	if strings.TrimSpace(body.SnSQL) == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "sn_sql is required"})
+	}
+	rows, err := services.ExecuteSnowflakeSQL(body.SnSQL)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":    "ok",
+		"row_count": len(rows),
+		"rows":      rows,
+	})
+}

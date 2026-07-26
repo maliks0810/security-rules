@@ -12,10 +12,18 @@ DROP FUNCTION IF EXISTS public."SP_INHERIT_EXCEPTION_STATUSES"(text, text);
 -- Also bumps MODIFIED_DATE / MODIFIED_BY on any row we actually change,
 -- and skips no-op rewrites via IS DISTINCT FROM.
 --
--- Scope semantics match SP_ARCHIVE_EXCEPTIONS / SP_GET_RULES:
---   p_rule_type = 'CATALOG' or 'RULE' → p_rule_name = RULE_CATALOG.NAME
---   p_rule_type = 'GROUP'             → p_rule_name = RULE_GROUP.NAME
---   p_rule_name NULL / empty / 'All'  → every catalog.
+-- Scope semantics match SP_GET_RULES (post-CATALOG/RULE split):
+--   p_rule_type = 'CATALOG'          → p_rule_name = RULE_CATALOG.NAME
+--   p_rule_type = 'GROUP'            → p_rule_name = RULE_GROUP.NAME
+--   p_rule_type = 'RULE'             → p_rule_name = RULE.RULE_NAME
+--   p_rule_name NULL / empty / 'All' → every catalog.
+--
+-- Cross-day carry-forward: because last_hist is unfiltered (no date
+-- floor / ceiling), the first run of a new day picks up whatever the
+-- most recent HIST row is per (RULE_ID, ASSET_ID) — that's yesterday's
+-- final state once the SP_ARCHIVE_STALE_DATES cron has swept
+-- yesterday's EXCEPTION rows into HIST. So Accept on day N → Accept
+-- on day N+1's fresh insert.
 --
 -- Returns the number of rows whose STATUS_ID actually changed.
 
@@ -44,10 +52,12 @@ AS $$
          WHERE p_rule_name IS NULL
             OR p_rule_name = ''
             OR p_rule_name = 'All'
-            OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) IN ('CATALOG','RULE')
+            OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) = 'CATALOG'
                   AND rc."NAME" = p_rule_name)
             OR (UPPER(p_rule_type) = 'GROUP'
                   AND rg."NAME"  = p_rule_name)
+            OR (UPPER(p_rule_type) = 'RULE'
+                  AND r."RULE_NAME" = p_rule_name)
     ),
     updated AS (
         UPDATE public."EXCEPTION" e

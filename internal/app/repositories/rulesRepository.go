@@ -398,7 +398,12 @@ func runRuleCommandAndBuild(
 	var rows *sql.Rows
 	var err error
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
-		rows, err = snowflake.Query(resolvedCommand)
+		// snowflake.QueryRuleCatalog logs the SQL at INFO regardless of
+		// LOG_LEVEL so RULE_CATALOG_SOURCE runs are always visible in
+		// the operator log. The regular snowflake.Query used elsewhere
+		// only logs under LOG_LEVEL=INFO — routing this specific call
+		// through the dedicated entry point avoids a duplicate log.
+		rows, err = snowflake.QueryRuleCatalog(resolvedCommand)
 	} else {
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone

@@ -5,6 +5,7 @@
 -- are accept-all (pending future schema work).
 
 DROP FUNCTION IF EXISTS public."SP_GET_EXCEPTIONS"(varchar, text, text, text, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public."SP_GET_EXCEPTIONS"(varchar, text, text, text, text, text, text, text, text, text, date);
 
 CREATE OR REPLACE FUNCTION public."SP_GET_EXCEPTIONS"(
     p_asset_id          character varying DEFAULT NULL,
@@ -16,7 +17,12 @@ CREATE OR REPLACE FUNCTION public."SP_GET_EXCEPTIONS"(
     p_rule_group        text DEFAULT NULL,
     p_exception_state   text DEFAULT NULL,
     p_assign_to         text DEFAULT NULL,
-    p_rule_name_pattern text DEFAULT NULL
+    p_rule_name_pattern text DEFAULT NULL,
+    -- EXCEPTION_DATE cut-off. Defaults to today (UTC) when NULL so the
+    -- grid never surfaces stale-date rows that haven't been swept to
+    -- EXCEPTION_HIST yet. Pass a specific YYYY-MM-DD to view that
+    -- day's live rows.
+    p_exception_date    date DEFAULT NULL
 )
 RETURNS TABLE(
     "EXCEPTION_ID"      bigint,
@@ -85,7 +91,8 @@ AS $$
     -- level RULE.ASSIGN_TO_ID default. A user-initiated reassignment
     -- via the grid wins; otherwise the rule's default assignee resolves.
     LEFT JOIN public."DM_USER"                 du  ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
-    WHERE (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
+    WHERE e."EXCEPTION_DATE" = COALESCE(p_exception_date, (NOW() AT TIME ZONE 'UTC')::date)
+      AND (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
       AND (p_exception_type    IS NULL OR et."NAME"     = p_exception_type)
       AND (p_severity          IS NULL OR est."NAME"    = p_severity)
       AND (p_priority          IS NULL OR ept."NAME"    = p_priority)

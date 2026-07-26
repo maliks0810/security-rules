@@ -1,5 +1,14 @@
 basePath: /de/securities/rules
 definitions:
+  handlers.executeSNBody:
+    properties:
+      sn_sql:
+        description: |-
+          Raw SQL to run against Snowflake. Anything the driver accepts:
+          DDL (CREATE / DROP / ALTER), DML, CALL <procedure>, SELECT.
+        example: CALL SP_ARCHIVE_STALE_DATES()
+        type: string
+    type: object
   handlers.updateExceptionAssignToBody:
     properties:
       assign_to:
@@ -268,6 +277,47 @@ paths:
       summary: Execute rules (archive-then-insert)
       tags:
       - rules
+  /v1/api/executeSN:
+    post:
+      consumes:
+      - application/json
+      description: QA / debugging helper. Executes the caller-supplied `sn_sql` verbatim
+        on the live Snowflake connection and returns any row set produced (as an array
+        of column→string maps; nulls come back as JSON null). Postgres is intentionally
+        not implemented — returns 500 with "not implemented" so this endpoint can't
+        accidentally run SQL against local dev data. Result set is capped at 1000
+        rows to keep an unbounded SELECT from streaming the whole warehouse. Will
+        be removed once no longer needed.
+      parameters:
+      - description: SQL to run on Snowflake
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.executeSNBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: row_count + rows (may be empty for DDL)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid request body / empty sql
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: execution failed or not implemented for this database
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 'TEMPORARY: run arbitrary SQL on Snowflake'
+      tags:
+      - maintenance
   /v1/api/executeSecurityRules:
     get:
       description: 'Same orchestration as /executeRules but routed through services.ExecuteSecurityRules

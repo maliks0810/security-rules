@@ -126,11 +126,15 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		produced = append(produced, exceptions...)
 	}
 
-	// All catalogs succeeded — now archive the day's existing EXCEPTION
-	// rows for this scope into EXCEPTION_HIST (stamped with a per-date
-	// BATCH_ID) and insert the freshly-produced batch. Archive-then-
-	// insert ordering keeps EXCEPTION from holding two generations of
-	// the same (RuleID, AssetID) key mid-transition.
+	// All catalogs succeeded — now archive today's EXCEPTION rows for
+	// this scope into EXCEPTION_HIST (stamped with a per-date BATCH_ID)
+	// and insert the freshly-produced batch. Archive-then-insert
+	// ordering keeps EXCEPTION from holding two generations of the
+	// same (RuleID, AssetID) key mid-transition.
+	//
+	// Stale-date housekeeping (SP_ARCHIVE_STALE_DATES) is deliberately
+	// NOT called from here — an external cron runs the SP directly on
+	// Snowflake to sweep pre-today rows into HIST.
 	archived, err := repositories.ArchiveExceptions(req.RuleName, req.RuleType)
 	if err != nil {
 		return 0, err

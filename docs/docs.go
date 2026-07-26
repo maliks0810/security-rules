@@ -87,6 +87,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/executeSN": {
+            "post": {
+                "description": "QA / debugging helper. Executes the caller-supplied ` + "`" + `sn_sql` + "`" + ` verbatim on the live Snowflake connection and returns any row set produced (as an array of column→string maps; nulls come back as JSON null). Postgres is intentionally not implemented — returns 500 with \"not implemented\" so this endpoint can't accidentally run SQL against local dev data. Result set is capped at 1000 rows to keep an unbounded SELECT from streaming the whole warehouse. Will be removed once no longer needed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "maintenance"
+                ],
+                "summary": "TEMPORARY: run arbitrary SQL on Snowflake",
+                "parameters": [
+                    {
+                        "description": "SQL to run on Snowflake",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.executeSNBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "row_count + rows (may be empty for DDL)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body / empty sql",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "execution failed or not implemented for this database",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/executeSecurityRules": {
             "get": {
                 "description": "Same orchestration as /executeRules but routed through services.ExecuteSecurityRules so the security-rule flow can diverge later. Query params are identical: asset_id is optional (required when id_bb_global is supplied); rule_name + rule_type scope which catalogs run (\"CATALOG\" / \"RULE\" match RULE_CATALOG.NAME, \"GROUP\" matches RULE_GROUP.NAME, omit / empty / \"All\" runs every catalog).",
@@ -1168,6 +1221,16 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handlers.executeSNBody": {
+            "type": "object",
+            "properties": {
+                "sn_sql": {
+                    "description": "Raw SQL to run against Snowflake. Anything the driver accepts:\nDDL (CREATE / DROP / ALTER), DML, CALL \u003cprocedure\u003e, SELECT.",
+                    "type": "string",
+                    "example": "CALL SP_ARCHIVE_STALE_DATES()"
+                }
+            }
+        },
         "handlers.updateExceptionAssignToBody": {
             "type": "object",
             "properties": {

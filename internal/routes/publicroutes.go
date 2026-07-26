@@ -45,4 +45,10 @@ func PublicRoutes(app *fiber.App) {
 	// Snowflake so we can wipe test data between runs. Remove once
 	// the QA workflow no longer needs it.
 	route.Post("/junk", handlers.Junk)
+
+	// TEMPORARY: /executeSN runs any SQL the caller sends against the
+	// live Snowflake connection (DDL, CALL, SELECT, …) and returns
+	// row output. Snowflake only — Postgres path 500s so local dev
+	// can't be nuked by accident. Remove once no longer needed.
+	route.Post("/executeSN", handlers.ExecuteSN)
 }

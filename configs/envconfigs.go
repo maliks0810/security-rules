@@ -33,6 +33,15 @@ type envConfigs struct {
 	PostgresPassword            string `mapstructure:"POSTGRES_PASSWORD"`
 	PostgresDatabase            string `mapstructure:"POSTGRES_DATABASE"`
 	EnableSwagger               bool   `mapstructure:"ENABLE_SWAGGER"`
+	// LogLevel gates how noisy the Snowflake query logs are:
+	//   INFO  → every snowflake.Query call is logged with its SQL
+	//   DEBUG → only RULE_CATALOG_SOURCE calls (via
+	//           runRuleCommandAndBuild) are logged; other queries stay
+	//           silent
+	// Deliberately inverted from the usual level ranking so that DEBUG
+	// zooms in on rule-catalog runs and INFO gives the full firehose.
+	// Defaults to INFO across all envs.
+	LogLevel string `mapstructure:"LOG_LEVEL"`
 }
 
 var EnvConfigs *envConfigs
@@ -100,6 +109,12 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	// the /swagger route stop serving and return 404.
 	viper.SetDefault("ENABLE_SWAGGER", true)
 	viper.BindEnv("ENABLE_SWAGGER")
+
+	// Snowflake query log verbosity. INFO logs every snowflake.Query
+	// call; DEBUG limits logging to RULE_CATALOG_SOURCE calls only.
+	// Default INFO in every environment.
+	viper.SetDefault("LOG_LEVEL", "INFO")
+	viper.BindEnv("LOG_LEVEL")
 
 	golangEnv := viper.GetString("GOLANG_ENVIRONMENT")
 

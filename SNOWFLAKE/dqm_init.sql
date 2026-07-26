@@ -344,6 +344,52 @@ $$;
 -- every catalog. Returns the row count moved.
 DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
 
+-- ARCHIVE_STALE_DATES ---------------------------------------------------------
+-- Housekeeping: moves any EXCEPTION rows whose EXCEPTION_DATE is
+-- strictly older than today into EXCEPTION_HIST, so EXCEPTION only
+-- holds the current day's rows. BATCH_ID is per (RULE_ID,
+-- EXCEPTION_DATE): MAX(HIST.BATCH_ID for that rule+date) + 1 (defaults
+-- to 1 when the pair has never been archived). Different rules on the
+-- same date advance their batch counters independently. Called by an
+-- external cron, not from the /executeRules service path.
+CREATE OR REPLACE PROCEDURE SP_ARCHIVE_STALE_DATES()
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    exc_today DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    affected  NUMBER := 0;
+BEGIN
+    INSERT INTO "EXCEPTION_HIST" (
+        "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
+        "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
+        "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
+        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
+    )
+    SELECT
+        e."EXCEPTION_ID", e."RULE_ID", e."ASSET_ID", e."EXCEPTION_DATE",
+        COALESCE(
+            (SELECT MAX(h."BATCH_ID") FROM "EXCEPTION_HIST" h
+              WHERE h."EXCEPTION_DATE" = e."EXCEPTION_DATE"
+                AND h."RULE_ID"        = e."RULE_ID"),
+            0
+        ) + 1 AS "BATCH_ID",
+        e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
+        e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
+        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
+    FROM "EXCEPTION" e
+    WHERE e."EXCEPTION_DATE" < :exc_today;
+    affected := SQLROWCOUNT;
+
+    DELETE FROM "EXCEPTION" WHERE "EXCEPTION_DATE" < :exc_today;
+
+    RETURN affected;
+END;
+$$;
+
 CREATE OR REPLACE PROCEDURE SP_ARCHIVE_EXCEPTIONS(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
@@ -417,7 +463,12 @@ $$;
 -- EXCEPTION_HIST forward, keyed by (RULE_ID, ASSET_ID). Row picked by
 -- (EXCEPTION_DATE DESC, BATCH_ID DESC) — today's max batch wins when
 -- today has archives; else falls back to the most recent prior date's
--- max batch. Scope matches SP_ARCHIVE_EXCEPTIONS / SP_GET_RULES.
+-- max batch, so the first run of a new day inherits the last run of
+-- the previous day (once SP_ARCHIVE_STALE_DATES has swept it).
+-- Scope semantics match SP_GET_RULES (post-CATALOG/RULE split):
+--   CATALOG → RULE_CATALOG.NAME
+--   GROUP   → RULE_GROUP.NAME
+--   RULE    → RULE.RULE_NAME
 CREATE OR REPLACE PROCEDURE SP_INHERIT_EXCEPTION_STATUSES(
     P_RULE_NAME VARCHAR DEFAULT NULL,
     P_RULE_TYPE VARCHAR DEFAULT NULL
@@ -459,10 +510,12 @@ BEGIN
             WHERE :P_RULE_NAME IS NULL
                OR :P_RULE_NAME = ''
                OR :P_RULE_NAME = 'All'
-               OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+               OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                      AND rc."NAME" = :P_RULE_NAME)
                OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                      AND rg."NAME"  = :P_RULE_NAME)
+               OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                     AND r."RULE_NAME" = :P_RULE_NAME)
        );
     affected := SQLROWCOUNT;
     RETURN affected;
@@ -1016,7 +1069,11 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
     P_EXCEPTION_STATE  VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
-    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
+    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
+    -- EXCEPTION_DATE cut-off (defaults to today UTC when NULL) so the
+    -- grid never surfaces stale-date rows that haven't been swept to
+    -- EXCEPTION_HIST yet.
+    P_EXCEPTION_DATE    DATE    DEFAULT NULL
 )
 RETURNS TABLE (
     "EXCEPTION_ID"      NUMBER,
@@ -1090,7 +1147,9 @@ BEGIN
         -- RULE.ASSIGN_TO_ID default so grid reassignments win over the
         -- rule's default assignee.
         LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
-        WHERE (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
+        WHERE e."EXCEPTION_DATE" = COALESCE(:P_EXCEPTION_DATE,
+                                            TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
+          AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
           AND (:P_PRIORITY          IS NULL OR ept."NAME"   = :P_PRIORITY)

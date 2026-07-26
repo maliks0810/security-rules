@@ -47,10 +47,12 @@ BEGIN
             WHERE :P_RULE_NAME IS NULL
                OR :P_RULE_NAME = ''
                OR :P_RULE_NAME = 'All'
-               OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+               OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                      AND rc."NAME" = :P_RULE_NAME)
                OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                      AND rg."NAME"  = :P_RULE_NAME)
+               OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                     AND r."RULE_NAME" = :P_RULE_NAME)
        );
     affected := SQLROWCOUNT;
     RETURN affected;

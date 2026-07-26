@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/utils/log"
 
 	"github.com/snowflakedb/gosnowflake"
@@ -36,15 +37,55 @@ func IsAuthTokenExpired(err error) bool {
 
 // Query runs a query against DB and, if the auth token has expired, calls
 // Reopen and retries once. Callers that need Snowflake-specific reauth should
-// use this instead of DB.Query directly.
+// use this instead of DB.Query directly. Logs the SQL at INFO when
+// LOG_LEVEL=INFO; stays silent when LOG_LEVEL=DEBUG (which is reserved
+// for the RULE_CATALOG_SOURCE entry point below).
 func Query(query string, args ...any) (*sql.Rows, error) {
-	return QueryContext(context.Background(), query, args...)
+	logIfInfo(query, args)
+	return dispatch(context.Background(), query, args...)
+}
+
+// QueryRuleCatalog is the entry point for RULE_CATALOG_SOURCE calls
+// (used by rulesRepository.runRuleCommandAndBuild). It always logs
+// the SQL at INFO regardless of LOG_LEVEL — those runs are the
+// primary debug signal in both modes, so they're never suppressed.
+// Kept as a distinct function so LOG_LEVEL=DEBUG can silence every
+// other snowflake.Query call without any of them dodging the log.
+func QueryRuleCatalog(query string) (*sql.Rows, error) {
+	log.Logger.Info(fmt.Sprintf("snowflake: RULE_CATALOG_SOURCE SQL=%s", query))
+	return dispatch(context.Background(), query)
 }
 
 // QueryContext is the context-aware twin of Query: cancellation/timeouts on
 // ctx propagate to the in-flight Snowflake call so a stuck request can be
 // bounded by the caller. Reauth retry behavior is unchanged.
 func QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	logIfInfo(query, args)
+	return dispatch(ctx, query, args...)
+}
+
+// logIfInfo emits the driver-bound SQL + args at INFO level when
+// LOG_LEVEL=INFO (or is unset / EnvConfigs isn't loaded yet — safer
+// to log than silently drop early-boot queries). Under LOG_LEVEL=
+// DEBUG this is a no-op, deliberately, so only RULE_CATALOG_SOURCE
+// runs (which take the QueryRuleCatalog entry point) get logged.
+func logIfInfo(query string, args []any) {
+	if configs.EnvConfigs != nil &&
+		!strings.EqualFold(configs.EnvConfigs.LogLevel, "INFO") &&
+		strings.TrimSpace(configs.EnvConfigs.LogLevel) != "" {
+		return
+	}
+	if len(args) > 0 {
+		log.Logger.Info(fmt.Sprintf("snowflake: Query SQL=%s ARGS=%v", query, args))
+	} else {
+		log.Logger.Info(fmt.Sprintf("snowflake: Query SQL=%s", query))
+	}
+}
+
+// dispatch is the shared driver call + auth-token retry body. Every
+// public entry point above funnels through here so the reauth logic
+// stays in one place and each entry point owns its own logging.
+func dispatch(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	if DB == nil {
 		if Reopen == nil {
 			return nil, sql.ErrConnDone
