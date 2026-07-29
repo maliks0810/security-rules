@@ -578,6 +578,58 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return n, nil
 }
 
+// UpdateBulkAssign hands the (rule-names, assign-to, is-permanent)
+// triple to SP_UPDATE_BULK_ASSIGN. Regardless of isPermanent the SP
+// updates EXCEPTION.ASSIGN_TO_ID for every existing exception whose
+// RULE_NAME matches. The rule-side write depends on isPermanent:
+//   false → INSERT one RULE_ASSIGN_OVERRIDE row per rule (soft
+//           override; later runs pick it up via the rao join in
+//           SP_GET_EXCEPTIONS / _HIST / _ASSETS).
+//   true  → UPDATE RULE.ASSIGN_TO_ID directly for every matched rule
+//           (permanent change to the rule default; no override row).
+// Rule names are sent as a plain comma-separated string — the SP
+// splits on ',' — because rule names are all-caps underscored (see
+// dqm_seed_data.sql) so there is no delimiter conflict. An empty
+// ruleNames slice or an empty assignTo resolves to a zero-row no-op
+// inside the SP. Returns the number of EXCEPTION rows updated.
+func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (int, error) {
+	// Trim and drop blanks so a stray "" from the client doesn't become
+	// an empty rule-name lookup inside the SP.
+	cleaned := make([]string, 0, len(ruleNames))
+	for _, r := range ruleNames {
+		if t := strings.TrimSpace(r); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	joined := strings.Join(cleaned, ",")
+
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateBulkAssign - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_ASSIGN(?, ?, ?)", joined, assignTo, isPermanent)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateBulkAssign - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_BULK_ASSIGN"($1, $2, $3)`,
+		joined, assignTo, isPermanent,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UpdateExceptionState stamps MODIFIED_DATE / MODIFIED_BY on every EXCEPTION
 // row matching (ASSET_ID, RULE_ID). When complete is true, also flips
 // STATE_ID to 4 (Complete). When false, status is left untouched â€” the

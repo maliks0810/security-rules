@@ -997,6 +997,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/updateBulkAssign": {
+            "post": {
+                "description": "Updates EXCEPTION.ASSIGN_TO_ID for every existing exception\nwhose RULE_NAME matches. When is_permanent is false (default),\nalso writes one RULE_ASSIGN_OVERRIDE row per rule so\nsubsequent rule runs inherit the assignee via the rao join.\nWhen is_permanent is true, RULE.ASSIGN_TO_ID itself is\nupdated for every matched rule and no override row is\nwritten. Rule names + assignee name are resolved\nserver-side via DM_USER.\"USER\" / RULE.\"RULE_NAME\".",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Bulk-assign a user to every EXCEPTION under the passed rules",
+                "parameters": [
+                    {
+                        "description": "rule_names + assign_to + is_permanent",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateBulkAssignBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update bulk assign",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/updateExceptionAssignTo": {
             "post": {
                 "description": "Resolves assign_to against DM_USER and updates the single\nEXCEPTION row keyed by exception_id. Empty assign_to clears\nthe assignment.",
@@ -1228,6 +1283,23 @@ const docTemplate = `{
                     "description": "Raw SQL to run against Snowflake. Anything the driver accepts:\nDDL (CREATE / DROP / ALTER), DML, CALL \u003cprocedure\u003e, SELECT.",
                     "type": "string",
                     "example": "CALL SP_ARCHIVE_STALE_DATES()"
+                }
+            }
+        },
+        "handlers.updateBulkAssignBody": {
+            "type": "object",
+            "properties": {
+                "assign_to": {
+                    "type": "string"
+                },
+                "is_permanent": {
+                    "type": "boolean"
+                },
+                "rule_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

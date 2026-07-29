@@ -21,6 +21,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Post("/updateExceptionComments", handlers.UpdateExceptionComments)
 	route.Post("/updateExceptionSuppressDate", handlers.UpdateExceptionSuppressDate)
 	route.Post("/updateExceptionAssignTo", handlers.UpdateExceptionAssignTo)
+	route.Post("/updateBulkAssign", handlers.UpdateBulkAssign)
 	route.Get("/getSeverityTypes", handlers.GetSeverityTypes)
 	route.Get("/getPriorityTypes", handlers.GetPriorityTypes)
 	route.Get("/getRules", handlers.GetRules)

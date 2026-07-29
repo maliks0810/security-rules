@@ -319,6 +319,50 @@ type updateExceptionAssignToBody struct {
 	AssignTo    string `json:"assign_to"`
 }
 
+// UpdateBulkAssign godoc
+// @Summary      Bulk-assign a user to every EXCEPTION under the passed rules
+// @Description  Updates EXCEPTION.ASSIGN_TO_ID for every existing exception
+// @Description  whose RULE_NAME matches. When is_permanent is false (default),
+// @Description  also writes one RULE_ASSIGN_OVERRIDE row per rule so
+// @Description  subsequent rule runs inherit the assignee via the rao join.
+// @Description  When is_permanent is true, RULE.ASSIGN_TO_ID itself is
+// @Description  updated for every matched rule and no override row is
+// @Description  written. Rule names + assignee name are resolved
+// @Description  server-side via DM_USER."USER" / RULE."RULE_NAME".
+// @Tags         exceptions
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateBulkAssignBody  true  "rule_names + assign_to + is_permanent"
+// @Success      200  {object}  map[string]int   "rows updated"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update bulk assign"
+// @Router       /v1/api/updateBulkAssign [post]
+func UpdateBulkAssign(ctx *fiber.Ctx) error {
+	var body updateBulkAssignBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if len(body.RuleNames) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_names is required"})
+	}
+	if body.AssignTo == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "assign_to is required"})
+	}
+	n, err := services.UpdateBulkAssign(body.RuleNames, body.AssignTo, body.IsPermanent)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update bulk assign: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+type updateBulkAssignBody struct {
+	RuleNames   []string `json:"rule_names"`
+	AssignTo    string   `json:"assign_to"`
+	IsPermanent bool     `json:"is_permanent"`
+}
+
 // GetExceptionStatus godoc
 // @Summary      List exception status names
 // @Description  Returns EXCEPTION_STATUS.NAME values ordered by SORT_ORDER.

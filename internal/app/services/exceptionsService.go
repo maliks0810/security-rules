@@ -85,3 +85,7 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 func UpdateExceptionAssignTo(exceptionID int64, assignTo string) (int, error) {
 	return repositories.UpdateExceptionAssignTo(exceptionID, assignTo)
 }
+
+func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (int, error) {
+	return repositories.UpdateBulkAssign(ruleNames, assignTo, isPermanent)
+}

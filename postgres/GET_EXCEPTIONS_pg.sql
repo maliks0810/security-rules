@@ -68,7 +68,7 @@ AS $$
            e."ISSUE_DESCRIPTION"::text,
            e."RESULT_DATA"::text,
            e."SUPPRESS_DATE",
-           COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+           COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
            du."USER"                      AS "ASSIGN_TO",
            e."RESULT_TYPE_ID",
            ept."NAME"::text               AS "PRIORITY",
@@ -87,10 +87,18 @@ AS $$
     LEFT JOIN public."RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
     LEFT JOIN public."EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"          = e."STATE_ID"
     LEFT JOIN public."EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"       = e."STATUS_ID"
-    -- Per-row EXCEPTION.ASSIGN_TO_ID takes precedence over the rule-
-    -- level RULE.ASSIGN_TO_ID default. A user-initiated reassignment
-    -- via the grid wins; otherwise the rule's default assignee resolves.
-    LEFT JOIN public."DM_USER"                 du  ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+    -- Latest RULE_ASSIGN_OVERRIDE row per RULE_ID (written by Bulk
+    -- Assign). Precedence: per-row EXCEPTION.ASSIGN_TO_ID > bulk
+    -- override > RULE default. This lets subsequent-run exceptions
+    -- inherit the new assignee before any per-row grid edit.
+    LEFT JOIN (
+        SELECT DISTINCT ON ("RULE_ID") "RULE_ID", "ASSIGN_TO_ID"
+        FROM public."RULE_ASSIGN_OVERRIDE"
+        ORDER BY "RULE_ID",
+                 "CREATED_DATE" DESC,
+                 "RULE_ASSIGN_OVERRIDE_ID" DESC
+    ) rao ON rao."RULE_ID" = r."RULE_ID"
+    LEFT JOIN public."DM_USER"                 du  ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     WHERE e."EXCEPTION_DATE" = COALESCE(p_exception_date, (NOW() AT TIME ZONE 'UTC')::date)
       AND (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
       AND (p_exception_type    IS NULL OR et."NAME"     = p_exception_type)

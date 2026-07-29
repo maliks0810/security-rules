@@ -9,6 +9,17 @@ definitions:
         example: CALL SP_ARCHIVE_STALE_DATES()
         type: string
     type: object
+  handlers.updateBulkAssignBody:
+    properties:
+      assign_to:
+        type: string
+      is_permanent:
+        type: boolean
+      rule_names:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.updateExceptionAssignToBody:
     properties:
       assign_to:
@@ -907,6 +918,50 @@ paths:
               type: string
             type: object
       summary: Update EXCEPTION.ASSIGN_TO_ID for an asset
+      tags:
+      - exceptions
+  /v1/api/updateBulkAssign:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Updates EXCEPTION.ASSIGN_TO_ID for every existing exception
+        whose RULE_NAME matches. When is_permanent is false (default),
+        also writes one RULE_ASSIGN_OVERRIDE row per rule so
+        subsequent rule runs inherit the assignee via the rao join.
+        When is_permanent is true, RULE.ASSIGN_TO_ID itself is
+        updated for every matched rule and no override row is
+        written. Rule names + assignee name are resolved
+        server-side via DM_USER."USER" / RULE."RULE_NAME".
+      parameters:
+      - description: rule_names + assign_to + is_permanent
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.updateBulkAssignBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rows updated
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: invalid params
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to update bulk assign
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Bulk-assign a user to every EXCEPTION under the passed rules
       tags:
       - exceptions
   /v1/api/updateExceptionAssignTo:

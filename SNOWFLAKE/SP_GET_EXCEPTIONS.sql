@@ -64,7 +64,7 @@ BEGIN
                e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
                TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
-               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -83,11 +83,29 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
-        -- Per-row EXCEPTION.ASSIGN_TO_ID takes precedence over the rule-
-        -- level RULE.ASSIGN_TO_ID default. If a user has explicitly
-        -- reassigned an exception in the grid, that override wins;
-        -- otherwise the rule's default assignee resolves.
-        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        -- Latest RULE_ASSIGN_OVERRIDE row per RULE_ID (written by Bulk
+        -- Assign when the caller does NOT tick "Is Permanent"). If
+        -- Is Permanent was ticked, the change is written directly to
+        -- RULE.ASSIGN_TO_ID and no rao row exists — the COALESCE
+        -- naturally falls through to r."ASSIGN_TO_ID".
+        --
+        -- Precedence: per-row EXCEPTION.ASSIGN_TO_ID (grid edit) →
+        -- rao.ASSIGN_TO_ID (bulk soft override) → r.ASSIGN_TO_ID
+        -- (rule default / permanent bulk assignment).
+        LEFT JOIN (
+            SELECT "RULE_ID", "ASSIGN_TO_ID"
+            FROM (
+                SELECT "RULE_ID", "ASSIGN_TO_ID",
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "RULE_ID"
+                           ORDER BY "CREATED_DATE" DESC,
+                                    "RULE_ASSIGN_OVERRIDE_ID" DESC
+                       ) AS rn
+                FROM "RULE_ASSIGN_OVERRIDE"
+            )
+            WHERE rn = 1
+        ) rao ON rao."RULE_ID" = r."RULE_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = COALESCE(:P_EXCEPTION_DATE,
                                             TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
