@@ -57,6 +57,24 @@ BEGIN
             FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
             WHERE TRIM(t.VALUE::STRING) <> ''
          );
+
+        -- Purge any pre-existing soft overrides for these rules —
+        -- once the rule default is set permanently, a stale rao row
+        -- pointing at a different user would still win over
+        -- RULE.ASSIGN_TO_ID via the COALESCE precedence and silently
+        -- override the permanent assignment. Deleting them keeps
+        -- the RULE row as the sole source of truth.
+        DELETE FROM "RULE_ASSIGN_OVERRIDE"
+         WHERE "RULE_ID" IN (
+            SELECT r."RULE_ID"
+            FROM "RULE" r
+            JOIN (
+                SELECT TRIM(t.VALUE::STRING) AS rule_name
+                FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
+                WHERE TRIM(t.VALUE::STRING) <> ''
+            ) req
+              ON r."RULE_NAME" = req.rule_name
+         );
     ELSE
         INSERT INTO "RULE_ASSIGN_OVERRIDE" (
             "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",

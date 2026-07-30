@@ -363,6 +363,56 @@ type updateBulkAssignBody struct {
 	IsPermanent bool     `json:"is_permanent"`
 }
 
+// UpdateBulkStatus godoc
+// @Summary      Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules
+// @Description  Resolves rule names → RULE_IDs, resolves status name →
+// @Description  EXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID
+// @Description  (and EXCEPTION.COMMENTS when comments is non-null) for
+// @Description  every row whose RULE_ID falls in the resolved set.
+// @Description  Comments set to null in the JSON body leaves the
+// @Description  existing COMMENTS untouched; empty string clears them.
+// @Tags         exceptions
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateBulkStatusBody  true  "rule_names + status + comments"
+// @Success      200  {object}  map[string]int   "rows updated"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update bulk status"
+// @Router       /v1/api/updateBulkStatus [post]
+func UpdateBulkStatus(ctx *fiber.Ctx) error {
+	var body updateBulkStatusBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if len(body.RuleNames) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_names is required"})
+	}
+	if body.Status == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
+	}
+	n, err := services.UpdateBulkStatus(body.RuleNames, body.Status, body.Comments, body.SuppressDate)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update bulk status: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
+}
+
+// Comments is a pointer so the client can distinguish "clear" (empty
+// string) from "leave unchanged" (field absent / null) — SP_UPDATE_
+// BULK_STATUS honors that same NULL-vs-'' distinction. SuppressDate
+// is a plain string because the Bulk Status panel has no bulk-clear
+// affordance for suppress dates: '' means "leave untouched",
+// 'YYYY-MM-DD' means "set to this date". Empty string round-trips
+// through NULLIF('','') → NULL on both DB backends.
+type updateBulkStatusBody struct {
+	RuleNames    []string `json:"rule_names"`
+	Status       string   `json:"status"`
+	Comments     *string  `json:"comments"`
+	SuppressDate string   `json:"suppress_date"`
+}
+
 // GetExceptionStatus godoc
 // @Summary      List exception status names
 // @Description  Returns EXCEPTION_STATUS.NAME values ordered by SORT_ORDER.

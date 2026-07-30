@@ -89,3 +89,7 @@ func UpdateExceptionAssignTo(exceptionID int64, assignTo string) (int, error) {
 func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (int, error) {
 	return repositories.UpdateBulkAssign(ruleNames, assignTo, isPermanent)
 }
+
+func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppressDate string) (int, error) {
+	return repositories.UpdateBulkStatus(ruleNames, status, comments, suppressDate)
+}

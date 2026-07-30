@@ -1052,6 +1052,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/updateBulkStatus": {
+            "post": {
+                "description": "Resolves rule names → RULE_IDs, resolves status name →\nEXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID\n(and EXCEPTION.COMMENTS when comments is non-null) for\nevery row whose RULE_ID falls in the resolved set.\nComments set to null in the JSON body leaves the\nexisting COMMENTS untouched; empty string clears them.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules",
+                "parameters": [
+                    {
+                        "description": "rule_names + status + comments",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateBulkStatusBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows updated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update bulk status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/updateExceptionAssignTo": {
             "post": {
                 "description": "Resolves assign_to against DM_USER and updates the single\nEXCEPTION row keyed by exception_id. Empty assign_to clears\nthe assignment.",
@@ -1300,6 +1355,26 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handlers.updateBulkStatusBody": {
+            "type": "object",
+            "properties": {
+                "comments": {
+                    "type": "string"
+                },
+                "rule_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suppress_date": {
+                    "type": "string"
                 }
             }
         },

@@ -630,6 +630,68 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 	return n, nil
 }
 
+// UpdateBulkStatus hands (rule-names, status-name, comments,
+// suppress-date) to SP_UPDATE_BULK_STATUS. The SP resolves rule_names
+// → RULE_IDs, status → EXCEPTION_STATUS_ID, and updates
+// EXCEPTION.STATUS_ID (plus EXCEPTION.COMMENTS when comments is
+// non-null, plus EXCEPTION.SUPPRESS_DATE when suppressDate is
+// non-empty) for every matched row.
+//   - comments is *string: nil → leave existing COMMENTS untouched;
+//     "" clears them. SP mirrors via COALESCE(:P_COMMENTS, "COMMENTS").
+//   - suppressDate is a plain string because the Bulk Status panel has
+//     no bulk-clear affordance: "" → leave existing SUPPRESS_DATE
+//     untouched; "YYYY-MM-DD" → set. Empty string round-trips through
+//     NULLIF('','') → NULL on both DB backends, then TRY_TO_DATE /
+//     ::date, then COALESCE(NULL, existing) preserves the original.
+// Rule-name delimiter contract matches UpdateBulkAssign (plain comma
+// join, whitespace trimmed). Returns the number of EXCEPTION rows
+// updated.
+func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppressDate string) (int, error) {
+	cleaned := make([]string, 0, len(ruleNames))
+	for _, r := range ruleNames {
+		if t := strings.TrimSpace(r); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	joined := strings.Join(cleaned, ",")
+
+	// database/sql translates nil interface → SQL NULL, and a *string
+	// that dereferences to "" → the empty-string literal. Passing the
+	// pointer directly preserves that distinction end-to-end.
+	var commentsArg interface{}
+	if comments != nil {
+		commentsArg = *comments
+	} else {
+		commentsArg = nil
+	}
+
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: UpdateBulkStatus - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_STATUS(?, ?, ?, ?)", joined, status, commentsArg, suppressDate)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("exceptionsRepository: UpdateBulkStatus - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_BULK_STATUS"($1, $2, $3, $4)`,
+		joined, status, commentsArg, suppressDate,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UpdateExceptionState stamps MODIFIED_DATE / MODIFIED_BY on every EXCEPTION
 // row matching (ASSET_ID, RULE_ID). When complete is true, also flips
 // STATE_ID to 4 (Complete). When false, status is left untouched â€” the

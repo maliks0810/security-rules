@@ -20,6 +20,19 @@ definitions:
           type: string
         type: array
     type: object
+  handlers.updateBulkStatusBody:
+    properties:
+      comments:
+        type: string
+      rule_names:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+      suppress_date:
+        type: string
+    type: object
   handlers.updateExceptionAssignToBody:
     properties:
       assign_to:
@@ -962,6 +975,48 @@ paths:
               type: string
             type: object
       summary: Bulk-assign a user to every EXCEPTION under the passed rules
+      tags:
+      - exceptions
+  /v1/api/updateBulkStatus:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Resolves rule names → RULE_IDs, resolves status name →
+        EXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID
+        (and EXCEPTION.COMMENTS when comments is non-null) for
+        every row whose RULE_ID falls in the resolved set.
+        Comments set to null in the JSON body leaves the
+        existing COMMENTS untouched; empty string clears them.
+      parameters:
+      - description: rule_names + status + comments
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.updateBulkStatusBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rows updated
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: invalid params
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to update bulk status
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules
       tags:
       - exceptions
   /v1/api/updateExceptionAssignTo:

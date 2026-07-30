@@ -65,6 +65,17 @@ BEGIN
         UPDATE public."RULE" r
            SET "ASSIGN_TO_ID" = v_user_id
          WHERE r."RULE_NAME" = ANY(v_names);
+
+        -- Purge any pre-existing soft overrides for these rules —
+        -- otherwise a stale rao row would still win over the new
+        -- RULE.ASSIGN_TO_ID via the COALESCE precedence in
+        -- SP_GET_EXCEPTIONS / _HIST / _ASSETS.
+        DELETE FROM public."RULE_ASSIGN_OVERRIDE"
+         WHERE "RULE_ID" IN (
+            SELECT r."RULE_ID"
+            FROM public."RULE" r
+            WHERE r."RULE_NAME" = ANY(v_names)
+         );
     ELSE
         INSERT INTO public."RULE_ASSIGN_OVERRIDE" (
             "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",
