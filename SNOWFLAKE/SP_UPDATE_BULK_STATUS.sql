@@ -44,10 +44,18 @@ DECLARE
     -- COMMENTS).
     parsed_suppress DATE := TRY_TO_DATE(NULLIF(:P_SUPPRESS_DATE, ''));
 BEGIN
-    IF (:P_STATUS IS NULL OR :P_STATUS = '') THEN
+    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
         RETURN 0;
     END IF;
-    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
+
+    -- P_STATUS is now optional — Bulk Status can be used to update
+    -- only COMMENTS (via the "Clear Comments" checkbox or a typed
+    -- value). Reject only when the caller asked for nothing at all:
+    -- no status, no comment change, no suppress date.
+    IF ( (:P_STATUS IS NULL OR :P_STATUS = '')
+         AND :P_COMMENTS IS NULL
+         AND :parsed_suppress IS NULL
+       ) THEN
         RETURN 0;
     END IF;
 
@@ -57,29 +65,40 @@ BEGIN
     -- existing dates because some rows may have never been
     -- suppressed. Require the caller to pass P_SUPPRESS_DATE
     -- explicitly and reject otherwise. The frontend disables the
-    -- Update Status button in the same state; this is the
+    -- Update Status/Comments button in the same state; this is the
     -- server-side safety net.
     IF (UPPER(:P_STATUS) = 'SUPPRESS' AND :parsed_suppress IS NULL) THEN
         RETURN 0;
     END IF;
 
-    SELECT "EXCEPTION_STATUS_ID" INTO :status_id
-    FROM "EXCEPTION_STATUS"
-    WHERE "NAME" = :P_STATUS
-    LIMIT 1;
+    -- Only resolve the status id when a status was actually passed.
+    -- A blank P_STATUS means "leave STATUS_ID alone", so we skip the
+    -- lookup and let status_id stay NULL for the COALESCE below.
+    IF (:P_STATUS IS NOT NULL AND :P_STATUS <> '') THEN
+        SELECT "EXCEPTION_STATUS_ID" INTO :status_id
+        FROM "EXCEPTION_STATUS"
+        WHERE "NAME" = :P_STATUS
+        LIMIT 1;
 
-    IF (:status_id IS NULL) THEN
-        RETURN 0;
+        IF (:status_id IS NULL) THEN
+            RETURN 0;
+        END IF;
     END IF;
 
     UPDATE "EXCEPTION"
-       SET "STATUS_ID"     = :status_id,
+       SET "STATUS_ID"     = COALESCE(:status_id, "STATUS_ID"),
            "COMMENTS"      = COALESCE(:P_COMMENTS, "COMMENTS"),
-           -- Only 'Suppress' keeps / receives a SUPPRESS_DATE. Any
-           -- other status blanks it so the grid never shows a stale
-           -- suppression date next to a New / Accept / Override row.
-           -- (Parity with UPDATE_BULK_STATUS_pg.sql.)
+           -- SUPPRESS_DATE handling:
+           --   status change absent  → leave the date alone (a
+           --     comments-only update must not disturb Suppress rows).
+           --   status becomes 'Suppress' → use the passed date, else
+           --     keep the existing one.
+           --   any other status      → NULL out the date so the grid
+           --     never shows a stale suppression next to a
+           --     non-Suppress row.
            "SUPPRESS_DATE" = CASE
+                                 WHEN :status_id IS NULL
+                                     THEN "SUPPRESS_DATE"
                                  WHEN UPPER(:P_STATUS) = 'SUPPRESS'
                                      THEN COALESCE(:parsed_suppress, "SUPPRESS_DATE")
                                  ELSE NULL

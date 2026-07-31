@@ -25,6 +25,16 @@ AS $$
                    WHERE "NAME" = p_status_name
                    LIMIT 1
                ),
+               -- Only 'Suppress' keeps a SUPPRESS_DATE. Moving off
+               -- Suppress (to New / Accept / Override / Complete / …)
+               -- clears the date so the grid never shows a stale
+               -- suppression next to a non-Suppress row. Parity with
+               -- SP_UPDATE_BULK_STATUS.
+               "SUPPRESS_DATE" = CASE
+                                     WHEN p_status_name = 'Suppress'
+                                         THEN "SUPPRESS_DATE"
+                                     ELSE NULL
+                                 END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
          WHERE "EXCEPTION_ID" = p_exception_id
