@@ -51,7 +51,15 @@ AS $$
            "CREATED_DATE"      = p_created_date,
            "CREATED_BY"        = p_created_by,
            "ID_BB_GLOBAL"      = COALESCE(p_id_bb_global, "ID_BB_GLOBAL"),
-           "STATUS_ID"         = COALESCE(p_status_id::int, "STATUS_ID")
+           "STATUS_ID"         = COALESCE(p_status_id::int, "STATUS_ID"),
+           -- OPEN_DATE ratchets only when the row's new STATUS_ID is 1
+           -- (New). Any other transition — or a no-op status update —
+           -- preserves the last-New date.
+           "OPEN_DATE"         = CASE
+                                     WHEN COALESCE(p_status_id::int, "STATUS_ID") = 1
+                                         THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     ELSE "OPEN_DATE"
+                                 END
      WHERE "ASSET_ID" = p_asset_id
        AND "RULE_ID"  = p_rule_id::int;
 $$;

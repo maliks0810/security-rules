@@ -44,12 +44,19 @@ AS $$
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
         "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY",
-        "STATUS_ID"
+        "STATUS_ID", "OPEN_DATE"
     ) VALUES (
         "RULE_ID"::int, "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         COALESCE(NULLIF("STATE_ID"::int, 0), 1),  -- default to Pending
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
         "ASSIGN_TO_ID"::int, "RESULT_TYPE_ID"::int, "CREATED_DATE", "CREATED_BY",
-        COALESCE(NULLIF("STATUS_ID"::int, 0), 1)  -- default to New
+        COALESCE(NULLIF("STATUS_ID"::int, 0), 1),  -- default to New
+        -- OPEN_DATE: stamped with today only when the row starts as
+        -- "New" (STATUS_ID = 1). Non-New inserts leave it NULL so the
+        -- next transition-to-New sets it.
+        CASE WHEN COALESCE(NULLIF("STATUS_ID"::int, 0), 1) = 1
+             THEN (NOW() AT TIME ZONE 'UTC')::date
+             ELSE NULL
+        END
     );
 $$;

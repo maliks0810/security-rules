@@ -9,6 +9,13 @@ type Rule struct {
 	RuleCatalogName string `json:"rule_catalog_name"`
 	RuleCommand     string `json:"rule_command"`
 	Environment     string `json:"environment"`
+	// RevertToNewCriteria is the RULE_CATALOG.REVERT_TO_NEW_CRITERIA
+	// column value: the name of a stored procedure that ExecuteRules
+	// invokes after the archive/insert/inherit steps to re-evaluate the
+	// catalog's non-New rows and flip any that no longer meet the
+	// exception criteria back to STATUS_ID = 1 ('New'). Empty when the
+	// catalog opted out of the revert workflow.
+	RevertToNewCriteria string `json:"revert_to_new_criteria,omitempty"`
 }
 
 // RuleName carries a single RULE row's name and friendly description as

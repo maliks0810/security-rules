@@ -18,17 +18,19 @@ CREATE OR REPLACE FUNCTION public."SP_GET_RULES"(
     p_rule_type text DEFAULT NULL
 )
 RETURNS TABLE(
-    "RULE_CATALOG_ID"   numeric,
-    "RULE_CATALOG_NAME" character varying,
-    "RULE_COMMAND"      character varying,
-    "ENVIRONMENT"       character varying
+    "RULE_CATALOG_ID"        numeric,
+    "RULE_CATALOG_NAME"      character varying,
+    "RULE_COMMAND"           character varying,
+    "ENVIRONMENT"            character varying,
+    "REVERT_TO_NEW_CRITERIA" character varying
 )
 LANGUAGE sql
 AS $$
     SELECT rc."RULE_CATALOG_ID"::numeric                   AS "RULE_CATALOG_ID",
            rc."NAME"::character varying                    AS "RULE_CATALOG_NAME",
            rc."RULE_CATALOG_SOURCE"::character varying     AS "RULE_COMMAND",
-           rc."RULE_CATALOG_CONNECTION"::character varying AS "ENVIRONMENT"
+           rc."RULE_CATALOG_CONNECTION"::character varying AS "ENVIRONMENT",
+           rc."REVERT_TO_NEW_CRITERIA"::character varying  AS "REVERT_TO_NEW_CRITERIA"
     FROM public."RULE_CATALOG" rc
     LEFT JOIN public."RULE_GROUP" rg
       ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"

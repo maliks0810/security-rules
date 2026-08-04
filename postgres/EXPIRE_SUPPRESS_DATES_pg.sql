@@ -13,6 +13,9 @@ AS $$
         UPDATE public."EXCEPTION"
            SET "STATUS_ID"     = 1,
                "SUPPRESS_DATE" = NULL,
+               -- Every row this touches transitions back to STATUS_ID=1
+               -- (New), so OPEN_DATE ratchets to today.
+               "OPEN_DATE"     = (NOW() AT TIME ZONE 'UTC')::date,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
          WHERE "SUPPRESS_DATE" IS NOT NULL

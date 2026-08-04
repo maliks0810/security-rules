@@ -159,9 +159,39 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		inherited = n
 	}
 
+	// Per-catalog revert-to-New workflow. Each RULE_CATALOG row can
+	// declare a stored procedure in REVERT_TO_NEW_CRITERIA that
+	// re-evaluates its non-New EXCEPTION rows and flips any that no
+	// longer satisfy the exception criteria back to STATUS_ID = 1.
+	// Runs after inheritance so a row that inherited Accept/Suppress
+	// yesterday still gets a chance to revert today if its underlying
+	// values drifted. Dedup by SP name so a scope that spans multiple
+	// catalogs sharing the same revert SP only calls it once.
+	// Best-effort: log-and-continue on failure so a bad revert SP
+	// doesn't break the whole run.
+	seenRevertSPs := make(map[string]struct{}, len(catalogs))
+	reverted := 0
+	for _, c := range catalogs {
+		sp := strings.TrimSpace(c.RevertToNewCriteria)
+		if sp == "" {
+			continue
+		}
+		if _, dup := seenRevertSPs[sp]; dup {
+			continue
+		}
+		seenRevertSPs[sp] = struct{}{}
+		if n, rerr := repositories.ExecuteRevertToNewCriteria(sp); rerr != nil {
+			log.Logger.Warn(fmt.Sprintf(
+				"rulesService: ExecuteRules - ExecuteRevertToNewCriteria(%q) failed, continuing: %v", sp, rerr,
+			))
+		} else {
+			reverted += n
+		}
+	}
+
 	log.Logger.Info(fmt.Sprintf(
-		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d",
-		req.RuleName, req.RuleType, archived, len(produced), inherited,
+		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, reverted %d",
+		req.RuleName, req.RuleType, archived, len(produced), inherited, reverted,
 	))
 
 	events.Publish(events.Event{

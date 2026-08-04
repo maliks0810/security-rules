@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"securityrules/security-rules/configs"
 	"securityrules/security-rules/internal/app/models"
@@ -768,6 +769,20 @@ func InsertExceptions(exceptions []models.Exception) error {
 		}
 		return n
 	}
+	// openDate: OPEN_DATE follows the row's initial status. Rows always
+	// start as "New" (StatusID = 1 after defaultOne), so stamp today
+	// (UTC) unless the caller explicitly seeded a non-New status — that
+	// path leaves OPEN_DATE NULL and lets a later transition to New
+	// set it via SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS.
+	// Computed once per call so every row in the batch shares the same
+	// stamp (matches the CURRENT_DATE semantics inside the SPs).
+	openToday := time.Now().UTC().Format("2006-01-02")
+	openDate := func(e models.Exception) any {
+		if defaultOne(e.StatusID) == 1 {
+			return openToday
+		}
+		return nil
+	}
 	// Bind values for one row in the shared column order. Ordering must
 	// stay in sync with the column list and placeholder builders below.
 	rowValues := func(e models.Exception) []any {
@@ -785,12 +800,14 @@ func InsertExceptions(exceptions []models.Exception) error {
 			nilIfEmpty(e.CreatedDate),
 			e.CreatedBy,
 			defaultOne(e.StatusID),
+			openDate(e),
 		}
 	}
 	const columnList = `"RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL", ` +
 		`"STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA", ` +
-		`"ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY", "STATUS_ID"`
-	const colsPerRow = 13
+		`"ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY", "STATUS_ID", ` +
+		`"OPEN_DATE"`
+	const colsPerRow = 14
 	// batchSize caps the parameter count per statement well below Postgres's
 	// 65535-parameter limit (500 * 13 = 6500) while still cutting round-trips
 	// dramatically vs. per-row.

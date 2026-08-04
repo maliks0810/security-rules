@@ -102,6 +102,15 @@ BEGIN
                                      THEN COALESCE(v_suppress, e."SUPPRESS_DATE")
                                  ELSE NULL
                              END,
+           -- OPEN_DATE ratchets only when this bulk update flips the
+           -- row TO 'New'. Comments-only updates (v_status_id NULL) and
+           -- transitions to any other status preserve the last-New date.
+           "OPEN_DATE"     = CASE
+                                 WHEN v_status_id IS NOT NULL
+                                      AND upper(p_status) = 'NEW'
+                                     THEN v_now_ts::date
+                                 ELSE e."OPEN_DATE"
+                             END,
            "MODIFIED_DATE" = v_now_ts,
            "MODIFIED_BY"   = 'system'
      WHERE e."RULE_ID" IN (

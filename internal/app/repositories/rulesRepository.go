@@ -156,6 +156,67 @@ func InheritExceptionStatuses(ruleName, ruleType string) (int, error) {
 	return n, nil
 }
 
+// isSafeRevertProcName validates that spName is an identifier we can
+// safely interpolate into the CALL / SELECT statement below without
+// escaping. RULE_CATALOG.REVERT_TO_NEW_CRITERIA is a server-side
+// column and the value comes from the DB, but this is still a
+// belt-and-suspenders guard against a mis-seeded row containing SQL.
+// Accepts only A-Z, 0-9, and underscore; length capped to the column's
+// width so an accidental novella-sized value doesn't get executed.
+func isSafeRevertProcName(spName string) bool {
+	if spName == "" || len(spName) > 200 {
+		return false
+	}
+	for i := 0; i < len(spName); i++ {
+		c := spName[i]
+		if !((c >= 'A' && c <= 'Z') ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// ExecuteRevertToNewCriteria invokes a catalog-declared no-arg stored
+// procedure identified by RULE_CATALOG.REVERT_TO_NEW_CRITERIA. Each
+// such SP is responsible for re-evaluating its catalog's non-New rows
+// and reverting any that no longer meet the exception criteria (see
+// SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES for the reference
+// implementation). Returns the row count the SP returned (typically
+// the number of rows reverted). Rejects unsafe SP names — see
+// isSafeRevertProcName — to keep this from becoming an injection sink.
+func ExecuteRevertToNewCriteria(spName string) (int, error) {
+	if !isSafeRevertProcName(spName) {
+		return 0, fmt.Errorf("invalid revert_to_new_criteria SP name: %q", spName)
+	}
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info(fmt.Sprintf("rulesRepository: ExecuteRevertToNewCriteria - SNOWFLAKE CALL %s()", spName))
+		rows, err := snowflake.Query("CALL " + spName + "()")
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info(fmt.Sprintf("rulesRepository: ExecuteRevertToNewCriteria - POSTGRES SELECT public.\"%s\"()", spName))
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."` + spName + `"()`,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // GetRuleIDsByName returns a snapshot of RULE_NAME -> RULE_ID for every
 // row in the RULE table. Used by ExecuteRule as a fallback when a
 // catalog's RULE_CATALOG_SOURCE result row only carries RULE_NAME and
@@ -289,21 +350,23 @@ func GetRules(ruleName, ruleType string) ([]models.Rule, error) {
 	var rules []models.Rule
 	for rows.Next() {
 		var (
-			ruleCatalogID   sql.NullInt64
-			ruleCatalogName sql.NullString
-			ruleCommand     sql.NullString
-			environment     sql.NullString
+			ruleCatalogID       sql.NullInt64
+			ruleCatalogName     sql.NullString
+			ruleCommand         sql.NullString
+			environment         sql.NullString
+			revertToNewCriteria sql.NullString
 		)
 
-		if err := rows.Scan(&ruleCatalogID, &ruleCatalogName, &ruleCommand, &environment); err != nil {
+		if err := rows.Scan(&ruleCatalogID, &ruleCatalogName, &ruleCommand, &environment, &revertToNewCriteria); err != nil {
 			return nil, err
 		}
 
 		rules = append(rules, models.Rule{
-			RuleCatalogID:   sqlutil.NullInt(ruleCatalogID),
-			RuleCatalogName: sqlutil.NullStr(ruleCatalogName),
-			RuleCommand:     sqlutil.NullStr(ruleCommand),
-			Environment:     sqlutil.NullStr(environment),
+			RuleCatalogID:       sqlutil.NullInt(ruleCatalogID),
+			RuleCatalogName:     sqlutil.NullStr(ruleCatalogName),
+			RuleCommand:         sqlutil.NullStr(ruleCommand),
+			Environment:         sqlutil.NullStr(environment),
+			RevertToNewCriteria: sqlutil.NullStr(revertToNewCriteria),
 		})
 	}
 

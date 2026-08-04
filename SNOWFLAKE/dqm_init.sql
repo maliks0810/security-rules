@@ -125,6 +125,13 @@ CREATE OR REPLACE TABLE RULE_CATALOG (
     RULE_CATALOG_SOURCE     VARCHAR(4096),
     RULE_CATALOG_TYPE       VARCHAR(100),
     RULE_CATALOG_CONNECTION VARCHAR(1000),
+    -- Optional stored-procedure name invoked to re-evaluate a catalog's
+    -- non-New rows and revert any that no longer meet the exception
+    -- criteria back to STATUS_ID = 1 ('New'). NULL means the catalog
+    -- has no revert workflow. Populated for 'Bloomberg Compare
+    -- Differences' with SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES
+    -- (see dqm_seed_data.sql).
+    REVERT_TO_NEW_CRITERIA  VARCHAR(200),
     CREATED_DATE            TIMESTAMP_NTZ(9),
     CREATED_BY              VARCHAR(100)
 );
@@ -165,6 +172,21 @@ CREATE OR REPLACE TABLE EXCEPTION (
     ISSUE_DESCRIPTION VARCHAR(512),
     RESULT_DATA       VARCHAR,
     SUPPRESS_DATE     DATE,
+    -- Snapshot of the most recent CURRENT_DATE (UTC) on which the row
+    -- carried STATUS_ID = 1 ("New"). Written by every INSERT (rows
+    -- start New) and by every path that flips STATUS_ID back to 1
+    -- (SP_UPDATE_EXCEPTION_STATUS, SP_UPDATE_BULK_STATUS,
+    -- SP_EXPIRE_SUPPRESS_DATES, SP_INHERIT_EXCEPTION_STATUSES,
+    -- SP_UPDATE_EXCEPTION). Any transition to a non-New status
+    -- deliberately leaves OPEN_DATE untouched so the grid can show
+    -- when the exception was last surfaced.
+    OPEN_DATE         DATE,
+    -- Companion to OPEN_DATE. Population semantics are declared in a
+    -- follow-up (expected: stamped when STATUS_ID moves away from
+    -- 'New' → Accept / Override / Suppress / Complete / …; cleared on
+    -- transition back to 'New'). Column added first so the schema is
+    -- in place before the write-path wiring lands.
+    CLOSE_DATE        DATE,
     ASSIGN_TO_ID      INT,
     RESULT_TYPE_ID    INT,
     CREATED_DATE      TIMESTAMP_NTZ(9),
@@ -188,6 +210,15 @@ CREATE OR REPLACE TABLE EXCEPTION_HIST (
     ISSUE_DESCRIPTION VARCHAR(512),
     RESULT_DATA       VARCHAR,
     SUPPRESS_DATE     DATE,
+    -- Copied straight through from EXCEPTION.OPEN_DATE by
+    -- SP_ARCHIVE_EXCEPTIONS. History rows never get a fresh OPEN_DATE
+    -- of their own — they carry the value the live row had at
+    -- archive time.
+    OPEN_DATE         DATE,
+    -- Copied straight through from EXCEPTION.CLOSE_DATE by
+    -- SP_ARCHIVE_EXCEPTIONS. Same carry-forward semantics as OPEN_DATE:
+    -- history rows never get a fresh CLOSE_DATE of their own.
+    CLOSE_DATE        DATE,
     ASSIGN_TO_ID      INT,
     RESULT_TYPE_ID    INT,
     CREATED_DATE      TIMESTAMP_NTZ(9),
@@ -382,7 +413,7 @@ BEGIN
         "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
         "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
     )
     SELECT
@@ -395,7 +426,7 @@ BEGIN
         ) + 1 AS "BATCH_ID",
         e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
         e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
-        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."SUPPRESS_DATE", e."OPEN_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
         e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
     FROM "EXCEPTION" e
     WHERE e."EXCEPTION_DATE" < :exc_today;
@@ -429,14 +460,14 @@ BEGIN
         "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
         "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
     )
     SELECT
         e."EXCEPTION_ID", e."RULE_ID", e."ASSET_ID", e."EXCEPTION_DATE", :next_batch,
         e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
         e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
-        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."SUPPRESS_DATE", e."OPEN_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
         e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
     FROM "EXCEPTION" e
     WHERE e."EXCEPTION_DATE" = :exc_date
@@ -475,6 +506,52 @@ BEGIN
 END;
 $$;
 
+-- UPDATE_CLOSE_DATE -----------------------------------------------------------
+-- Stamps CLOSE_DATE = today on any EXCEPTION_HIST row that represents
+-- a (RULE_ID, ASSET_ID) exception that no longer surfaces in the live
+-- EXCEPTION table. Intended to run after ExecuteRules has finished
+-- archive → insert → inherit → revert. "Previous batch" per
+-- (RULE_ID, ASSET_ID) resolves via max (EXCEPTION_DATE, BATCH_ID) —
+-- today's later batches win when today has archives; falls through to
+-- yesterday's final batch on the first run of a fresh day. Idempotent
+-- (skips rows whose CLOSE_DATE is already set). Returns rows stamped.
+CREATE OR REPLACE PROCEDURE SP_UPDATE_CLOSE_DATE()
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    today    DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    affected NUMBER := 0;
+BEGIN
+    UPDATE "EXCEPTION_HIST" h
+       SET "CLOSE_DATE" = :today
+      FROM (
+          SELECT "EXCEPTION_ID", "RULE_ID", "ASSET_ID"
+            FROM (
+                SELECT "EXCEPTION_ID", "RULE_ID", "ASSET_ID",
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "RULE_ID", "ASSET_ID"
+                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
+                                    "BATCH_ID"       DESC NULLS LAST
+                       ) AS rn
+                  FROM "EXCEPTION_HIST"
+            )
+           WHERE rn = 1
+      ) latest
+     WHERE h."EXCEPTION_ID" = latest."EXCEPTION_ID"
+       AND h."CLOSE_DATE"   IS NULL
+       AND NOT EXISTS (
+           SELECT 1
+             FROM "EXCEPTION" e
+            WHERE e."RULE_ID"  = latest."RULE_ID"
+              AND e."ASSET_ID" = latest."ASSET_ID"
+       );
+    affected := SQLROWCOUNT;
+    RETURN affected;
+END;
+$$;
+
 -- INHERIT_EXCEPTION_STATUSES --------------------------------------------------
 -- For each EXCEPTION row in scope, carry the last-known STATUS_ID from
 -- EXCEPTION_HIST forward, keyed by (RULE_ID, ASSET_ID). Row picked by
@@ -499,12 +576,28 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = h."STATUS_ID",
+           -- OPEN_DATE moves to today only when this inherit flips the
+           -- row TO 'New' (STATUS_ID = 1). Inheriting Accept / Override
+           -- / Suppress leaves the last-New date alone.
+           "OPEN_DATE"     = CASE
+                                 WHEN h."STATUS_ID" = 1
+                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 ELSE e."OPEN_DATE"
+                             END,
+           -- COMMENTS carry over from the last EXCEPTION_HIST row for
+           -- the same (RULE_ID, ASSET_ID). Anything the operator typed
+           -- while the row sat in Accept / Suppress / Override / … is
+           -- preserved across rule re-runs. NULL / empty on the hist
+           -- side leaves the live row's comment alone via COALESCE so
+           -- a cleared comment on the hist side doesn't blank an
+           -- unrelated freshly-typed live comment.
+           "COMMENTS"      = COALESCE(h."COMMENTS", e."COMMENTS"),
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -517,7 +610,10 @@ BEGIN
       ) h
      WHERE e."RULE_ID"  = h."RULE_ID"
        AND e."ASSET_ID" = h."ASSET_ID"
-       AND (e."STATUS_ID" IS NULL OR e."STATUS_ID" <> h."STATUS_ID")
+       AND (e."STATUS_ID" IS NULL
+            OR e."STATUS_ID" <> h."STATUS_ID"
+            OR (h."COMMENTS" IS NOT NULL
+                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2
@@ -567,14 +663,21 @@ BEGIN
         "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",
         "STATE_ID", "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
         "ASSIGN_TO_ID", "RESULT_TYPE_ID", "CREATED_DATE", "CREATED_BY",
-        "STATUS_ID"
+        "STATUS_ID", "OPEN_DATE"
     )
     SELECT
         :RULE_ID, :ASSET_ID, :EXCEPTION_DATE, :ID_BB_GLOBAL,
         COALESCE(NULLIF(:STATE_ID, 0), 1),  -- default to Pending
         :EXCEPTION_TIME, :ISSUE_DESCRIPTION, :RESULT_DATA,
         :ASSIGN_TO_ID, :RESULT_TYPE_ID, :CREATED_DATE, :CREATED_BY,
-        COALESCE(NULLIF(:STATUS_ID, 0), 1);  -- default to New
+        COALESCE(NULLIF(:STATUS_ID, 0), 1),  -- default to New
+        -- OPEN_DATE: stamped with today only when the row starts as
+        -- "New" (STATUS_ID = 1). Non-New inserts leave it NULL so the
+        -- next transition-to-New sets it.
+        CASE WHEN COALESCE(NULLIF(:STATUS_ID, 0), 1) = 1
+             THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+             ELSE NULL
+        END;
     RETURN 'OK';
 END;
 $$;
@@ -611,7 +714,15 @@ BEGIN
            "CREATED_DATE"      = :P_CREATED_DATE,
            "CREATED_BY"        = :P_CREATED_BY,
            "ID_BB_GLOBAL"      = COALESCE(:P_ID_BB_GLOBAL, "ID_BB_GLOBAL"),
-           "STATUS_ID"         = COALESCE(:P_STATUS_ID, "STATUS_ID")
+           "STATUS_ID"         = COALESCE(:P_STATUS_ID, "STATUS_ID"),
+           -- OPEN_DATE ratchets only when the row's new STATUS_ID is 1
+           -- (New). Any other transition — or a no-op status update —
+           -- preserves the last-New date.
+           "OPEN_DATE"         = CASE
+                                     WHEN COALESCE(:P_STATUS_ID, "STATUS_ID") = 1
+                                         THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                     ELSE "OPEN_DATE"
+                                 END
      WHERE "ASSET_ID" = :P_ASSET_ID
        AND "RULE_ID"  = :P_RULE_ID;
     RETURN 'OK';
@@ -674,6 +785,14 @@ BEGIN
                                  WHEN :P_STATUS_NAME = 'Suppress'
                                      THEN "SUPPRESS_DATE"
                                  ELSE NULL
+                             END,
+           -- OPEN_DATE ratchets when the row transitions TO 'New';
+           -- otherwise the last-New date is preserved so the grid can
+           -- show when the exception was originally surfaced.
+           "OPEN_DATE"     = CASE
+                                 WHEN :P_STATUS_NAME = 'New'
+                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 ELSE "OPEN_DATE"
                              END,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
@@ -769,12 +888,124 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "STATUS_ID"     = 1,
            "SUPPRESS_DATE" = NULL,
+           -- Every row this touches transitions back to STATUS_ID=1
+           -- (New), so OPEN_DATE ratchets to today.
+           "OPEN_DATE"     = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "SUPPRESS_DATE" IS NOT NULL
        AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     affected := SQLROWCOUNT;
     RETURN affected;
+END;
+$$;
+
+-- REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES ---------------------------------
+-- Bloomberg-catalog-scoped revert workflow. For every EXCEPTION row in
+-- the 'Bloomberg Compare Differences' catalog that is not currently
+-- 'New', flip it back to New (with OPEN_DATE = today) when EITHER of
+-- the two RESULT_DATA JSON values has drifted since the previous run:
+--   * ALADDIN_VALUE differs from the last archived hist row's value, OR
+--   * BBG_VALUE     differs from the last archived hist row's value.
+-- "Previous run" = the EXCEPTION_HIST row with the max
+-- (EXCEPTION_DATE, BATCH_ID) per (RULE_ID, ASSET_ID). Same day's later
+-- batches win when today has archives; falls through to yesterday's
+-- final batch on the first run of a fresh day.
+--
+-- Additionally, any Suppress row whose SUPPRESS_DATE has passed
+-- (< today UTC) reverts to New regardless of value drift and its
+-- SUPPRESS_DATE is cleared. This duplicates SP_EXPIRE_SUPPRESS_DATES's
+-- global sweep but keeps the Bloomberg revert workflow self-contained
+-- for callers that invoke this SP directly (Rule Catalog's
+-- REVERT_TO_NEW_CRITERIA).
+--
+-- Returns the total number of EXCEPTION rows reverted (drift + suppress
+-- combined).
+CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES()
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
+    suppress_id       NUMBER        := NULL;
+    drift_affected    NUMBER        := 0;
+    suppress_affected NUMBER        := 0;
+BEGIN
+    SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Suppress'
+    LIMIT 1;
+
+    -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
+    UPDATE "EXCEPTION" e
+       SET "STATUS_ID"     = 1,
+           "OPEN_DATE"     = :today,
+           "SUPPRESS_DATE" = NULL,
+           "MODIFIED_DATE" = :now_ts,
+           "MODIFIED_BY"   = 'system'
+      FROM (
+          SELECT h."RULE_ID",
+                 h."ASSET_ID",
+                 TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
+                 TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
+            FROM (
+                SELECT "RULE_ID", "ASSET_ID", "RESULT_DATA",
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "RULE_ID", "ASSET_ID"
+                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
+                                    "BATCH_ID"       DESC NULLS LAST
+                       ) AS rn
+                  FROM "EXCEPTION_HIST"
+            ) h
+           WHERE h.rn = 1
+      ) prev
+     WHERE e."RULE_ID"  = prev."RULE_ID"
+       AND e."ASSET_ID" = prev."ASSET_ID"
+       AND e."STATUS_ID" <> 1
+       AND e."RULE_ID" IN (
+           SELECT r."RULE_ID"
+             FROM "RULE" r
+             JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+            WHERE rc."NAME" = 'Bloomberg Compare Differences'
+       )
+       AND (
+           NOT EQUAL_NULL(
+               TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
+               prev.hist_aladdin
+           )
+           OR NOT EQUAL_NULL(
+               TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR,
+               prev.hist_bbg
+           )
+       );
+    drift_affected := SQLROWCOUNT;
+
+    -- Pass 2: Suppress rows whose SUPPRESS_DATE has passed. Independent
+    -- of hist so rows with no prior hist still get expired.
+    -- OPEN_DATE is intentionally NOT ratcheted here — a suppression
+    -- lapsing is not the same signal as a fresh discovery, so the
+    -- original open date is preserved to keep the aging metric honest.
+    IF (:suppress_id IS NOT NULL) THEN
+        UPDATE "EXCEPTION" e
+           SET "STATUS_ID"     = 1,
+               "SUPPRESS_DATE" = NULL,
+               "MODIFIED_DATE" = :now_ts,
+               "MODIFIED_BY"   = 'system'
+         WHERE e."STATUS_ID"    = :suppress_id
+           AND e."SUPPRESS_DATE" IS NOT NULL
+           AND e."SUPPRESS_DATE" < :today
+           AND e."RULE_ID" IN (
+               SELECT r."RULE_ID"
+                 FROM "RULE" r
+                 JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+                WHERE rc."NAME" = 'Bloomberg Compare Differences'
+           );
+        suppress_affected := SQLROWCOUNT;
+    END IF;
+
+    RETURN drift_affected + suppress_affected;
 END;
 $$;
 
@@ -1071,6 +1302,16 @@ BEGIN
                                      THEN COALESCE(:parsed_suppress, "SUPPRESS_DATE")
                                  ELSE NULL
                              END,
+           -- OPEN_DATE ratchets only when this bulk update flips the
+           -- row TO 'New'. Comments-only updates (status_id NULL) and
+           -- transitions to any other status leave the last-New date
+           -- intact.
+           "OPEN_DATE"     = CASE
+                                 WHEN :status_id IS NOT NULL
+                                      AND UPPER(:P_STATUS) = 'NEW'
+                                     THEN TO_DATE(:now_ts)
+                                 ELSE "OPEN_DATE"
+                             END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
      WHERE "RULE_ID" IN (
@@ -1202,10 +1443,11 @@ CREATE OR REPLACE PROCEDURE SP_GET_RULES(
     P_RULE_TYPE VARCHAR DEFAULT NULL
 )
 RETURNS TABLE(
-    "RULE_CATALOG_ID"   NUMBER,
-    "RULE_CATALOG_NAME" VARCHAR,
-    "RULE_COMMAND"      VARCHAR,
-    "ENVIRONMENT"       VARCHAR
+    "RULE_CATALOG_ID"        NUMBER,
+    "RULE_CATALOG_NAME"      VARCHAR,
+    "RULE_COMMAND"           VARCHAR,
+    "ENVIRONMENT"            VARCHAR,
+    "REVERT_TO_NEW_CRITERIA" VARCHAR
 )
 LANGUAGE SQL
 AS
@@ -1217,7 +1459,8 @@ BEGIN
         SELECT rc."RULE_CATALOG_ID"         AS "RULE_CATALOG_ID",
                rc."NAME"                    AS "RULE_CATALOG_NAME",
                rc."RULE_CATALOG_SOURCE"     AS "RULE_COMMAND",
-               rc."RULE_CATALOG_CONNECTION" AS "ENVIRONMENT"
+               rc."RULE_CATALOG_CONNECTION" AS "ENVIRONMENT",
+               rc."REVERT_TO_NEW_CRITERIA"  AS "REVERT_TO_NEW_CRITERIA"
         FROM "RULE_CATALOG" rc
         LEFT JOIN "RULE_GROUP" rg
           ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"

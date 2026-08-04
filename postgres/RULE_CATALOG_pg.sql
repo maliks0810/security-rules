@@ -8,6 +8,13 @@ CREATE TABLE public."RULE_CATALOG" (
     "RULE_CATALOG_SOURCE"      varchar(4096),
     "RULE_CATALOG_TYPE"        varchar(100),
     "RULE_CATALOG_CONNECTION"  varchar(1000),
+    -- Optional stored-procedure name invoked to re-evaluate a catalog's
+    -- non-New rows and revert any that no longer meet the exception
+    -- criteria back to STATUS_ID = 1 ('New'). NULL means the catalog
+    -- has no revert workflow. Populated for 'Bloomberg Compare
+    -- Differences' with SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES
+    -- by the UPDATE below.
+    "REVERT_TO_NEW_CRITERIA"   varchar(200),
     "CREATED_DATE"             timestamp,
     "CREATED_BY"               varchar(100)
 );
@@ -26,3 +33,10 @@ UPDATE public."RULE_CATALOG"
    SET "RULE_CATALOG_SOURCE"     = 'SELECT * FROM public."SP_RECON_BBG_COMPARE"(${ASSET_ID}, ${ID_BB_GLOBAL})',
        "RULE_CATALOG_TYPE"       = 'SQL',
        "RULE_CATALOG_CONNECTION" = 'DE_POSTGRES';
+
+-- Wire the revert-to-New workflow for the Bloomberg catalog. Any
+-- future catalog that gains a revert SP should add its own targeted
+-- UPDATE here; NULL is the correct default for catalogs without one.
+UPDATE public."RULE_CATALOG"
+   SET "REVERT_TO_NEW_CRITERIA" = 'SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES'
+ WHERE "NAME" = 'Bloomberg Compare Differences';

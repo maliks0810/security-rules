@@ -13,6 +13,20 @@ CREATE TABLE public."EXCEPTION" (
     "ISSUE_DESCRIPTION"   varchar(512),
     "RESULT_DATA"         json,
     "SUPPRESS_DATE"       date,
+    -- Snapshot of the most recent CURRENT_DATE (UTC) on which the row
+    -- carried STATUS_ID = 1 ("New"). Written by every INSERT (rows
+    -- start New) and by every SP path that flips STATUS_ID back to 1
+    -- (SP_UPDATE_EXCEPTION_STATUS, SP_UPDATE_BULK_STATUS,
+    -- SP_EXPIRE_SUPPRESS_DATES, SP_INHERIT_EXCEPTION_STATUSES,
+    -- SP_UPDATE_EXCEPTION). Transitions to a non-New status
+    -- deliberately leave OPEN_DATE untouched.
+    "OPEN_DATE"           date,
+    -- Companion to OPEN_DATE. Population semantics are declared in a
+    -- follow-up (expected: stamped when STATUS_ID moves away from
+    -- 'New' → Accept / Override / Suppress / Complete / …; cleared on
+    -- transition back to 'New'). Column added first so the schema is
+    -- in place before the write-path wiring lands.
+    "CLOSE_DATE"          date,
     "ASSIGN_TO_ID"        integer,
     "RESULT_TYPE_ID"      integer,
     "CREATED_DATE"        timestamp,

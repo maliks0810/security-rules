@@ -36,7 +36,7 @@ LANGUAGE sql
 AS $$
     WITH last_hist AS (
         SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
-               "RULE_ID", "ASSET_ID", "STATUS_ID"
+               "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
           FROM public."EXCEPTION_HIST"
          WHERE "STATUS_ID" IS NOT NULL
          ORDER BY "RULE_ID", "ASSET_ID",
@@ -62,13 +62,30 @@ AS $$
     updated AS (
         UPDATE public."EXCEPTION" e
            SET "STATUS_ID"     = h."STATUS_ID",
+               -- OPEN_DATE moves to today only when this inherit flips
+               -- the row TO 'New' (STATUS_ID = 1). Inheriting Accept /
+               -- Override / Suppress leaves the last-New date alone.
+               "OPEN_DATE"     = CASE
+                                     WHEN h."STATUS_ID" = 1
+                                         THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     ELSE e."OPEN_DATE"
+                                 END,
+               -- COMMENTS carry over from the last EXCEPTION_HIST row
+               -- for the same (RULE_ID, ASSET_ID). Anything the
+               -- operator typed while the row sat in Accept / Suppress
+               -- / Override / … is preserved across rule re-runs.
+               -- NULL / unset on the hist side leaves the live row's
+               -- comment alone via COALESCE.
+               "COMMENTS"      = COALESCE(h."COMMENTS", e."COMMENTS"),
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
           FROM last_hist h
          WHERE e."RULE_ID"      = h."RULE_ID"
            AND e."ASSET_ID"     = h."ASSET_ID"
            AND e."EXCEPTION_ID" IN (SELECT "EXCEPTION_ID" FROM scoped)
-           AND e."STATUS_ID" IS DISTINCT FROM h."STATUS_ID"
+           AND (e."STATUS_ID" IS DISTINCT FROM h."STATUS_ID"
+                OR (h."COMMENTS" IS NOT NULL
+                    AND e."COMMENTS" IS DISTINCT FROM h."COMMENTS"))
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int FROM updated;

@@ -35,6 +35,13 @@ AS $$
                                          THEN "SUPPRESS_DATE"
                                      ELSE NULL
                                  END,
+               -- OPEN_DATE ratchets when the row transitions TO 'New';
+               -- otherwise the last-New date is preserved.
+               "OPEN_DATE"     = CASE
+                                     WHEN p_status_name = 'New'
+                                         THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     ELSE "OPEN_DATE"
+                                 END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
          WHERE "EXCEPTION_ID" = p_exception_id
