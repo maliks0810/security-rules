@@ -521,9 +521,12 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-    today    DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    affected NUMBER := 0;
+    today            DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    disappeared      NUMBER := 0;
+    accept_research  NUMBER := 0;
 BEGIN
+    -- Pass 1: (RULE_ID, ASSET_ID) present in HIST but no longer in EXCEPTION.
+    -- Stamp CLOSE_DATE on that combo's latest hist row.
     UPDATE "EXCEPTION_HIST" h
        SET "CLOSE_DATE" = :today
       FROM (
@@ -547,8 +550,27 @@ BEGIN
             WHERE e."RULE_ID"  = latest."RULE_ID"
               AND e."ASSET_ID" = latest."ASSET_ID"
        );
-    affected := SQLROWCOUNT;
-    RETURN affected;
+    disappeared := SQLROWCOUNT;
+
+    -- Pass 2: live EXCEPTION rows currently in status 'Accept' or
+    -- 'Research' whose CLOSE_DATE is NULL. Belt-and-suspenders alongside
+    -- SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS (which stamp
+    -- CLOSE_DATE on the transition itself). Catches inherited-status
+    -- rows — SP_INHERIT_EXCEPTION_STATUSES pulls STATUS_ID forward from
+    -- hist without touching CLOSE_DATE — and any row that took the
+    -- transition before CLOSE_DATE existed as a column. Idempotent
+    -- through the IS NULL guard.
+    UPDATE "EXCEPTION" e
+       SET "CLOSE_DATE" = :today
+     WHERE e."CLOSE_DATE" IS NULL
+       AND e."STATUS_ID" IN (
+           SELECT "EXCEPTION_STATUS_ID"
+             FROM "EXCEPTION_STATUS"
+            WHERE "NAME" IN ('Accept', 'Research')
+       );
+    accept_research := SQLROWCOUNT;
+
+    RETURN disappeared + accept_research;
 END;
 $$;
 
@@ -584,6 +606,14 @@ BEGIN
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  ELSE e."OPEN_DATE"
                              END,
+           -- CLOSE_DATE carries over from the last EXCEPTION_HIST row
+           -- for the same (RULE_ID, ASSET_ID) so the day the row was
+           -- originally closed survives the archive → insert → inherit
+           -- cycle. NULL on the hist side leaves the live row's date
+           -- alone (via COALESCE). Pass 2 of SP_UPDATE_CLOSE_DATE
+           -- backstops the case where hist has no CLOSE_DATE yet but
+           -- the current status is Accept / Research.
+           "CLOSE_DATE"    = COALESCE(h."CLOSE_DATE", e."CLOSE_DATE"),
            -- COMMENTS carry over from the last EXCEPTION_HIST row for
            -- the same (RULE_ID, ASSET_ID). Anything the operator typed
            -- while the row sat in Accept / Suppress / Override / … is
@@ -595,9 +625,9 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -613,7 +643,9 @@ BEGIN
        AND (e."STATUS_ID" IS NULL
             OR e."STATUS_ID" <> h."STATUS_ID"
             OR (h."COMMENTS" IS NOT NULL
-                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS")))
+                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS"))
+            OR (h."CLOSE_DATE" IS NOT NULL
+                AND NOT EQUAL_NULL(e."CLOSE_DATE", h."CLOSE_DATE")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2

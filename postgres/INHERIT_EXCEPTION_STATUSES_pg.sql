@@ -36,7 +36,7 @@ LANGUAGE sql
 AS $$
     WITH last_hist AS (
         SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
-               "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
+               "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE"
           FROM public."EXCEPTION_HIST"
          WHERE "STATUS_ID" IS NOT NULL
          ORDER BY "RULE_ID", "ASSET_ID",
@@ -70,6 +70,15 @@ AS $$
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
                                      ELSE e."OPEN_DATE"
                                  END,
+               -- CLOSE_DATE carries over from the last EXCEPTION_HIST
+               -- row for the same (RULE_ID, ASSET_ID) so the day the
+               -- row was originally closed survives the archive →
+               -- insert → inherit cycle. NULL on the hist side leaves
+               -- the live row's date alone (via COALESCE). Pass 2 of
+               -- SP_UPDATE_CLOSE_DATE backstops the case where hist
+               -- has no CLOSE_DATE yet but the current status is
+               -- Accept / Research.
+               "CLOSE_DATE"    = COALESCE(h."CLOSE_DATE", e."CLOSE_DATE"),
                -- COMMENTS carry over from the last EXCEPTION_HIST row
                -- for the same (RULE_ID, ASSET_ID). Anything the
                -- operator typed while the row sat in Accept / Suppress
@@ -85,7 +94,9 @@ AS $$
            AND e."EXCEPTION_ID" IN (SELECT "EXCEPTION_ID" FROM scoped)
            AND (e."STATUS_ID" IS DISTINCT FROM h."STATUS_ID"
                 OR (h."COMMENTS" IS NOT NULL
-                    AND e."COMMENTS" IS DISTINCT FROM h."COMMENTS"))
+                    AND e."COMMENTS" IS DISTINCT FROM h."COMMENTS")
+                OR (h."CLOSE_DATE" IS NOT NULL
+                    AND e."CLOSE_DATE" IS DISTINCT FROM h."CLOSE_DATE"))
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int FROM updated;

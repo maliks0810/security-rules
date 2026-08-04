@@ -22,9 +22,12 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-    today    DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    affected NUMBER := 0;
+    today            DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    disappeared      NUMBER := 0;
+    accept_research  NUMBER := 0;
 BEGIN
+    -- Pass 1: (RULE_ID, ASSET_ID) present in HIST but no longer in EXCEPTION.
+    -- Stamp CLOSE_DATE on that combo's latest hist row.
     UPDATE "EXCEPTION_HIST" h
        SET "CLOSE_DATE" = :today
       FROM (
@@ -48,7 +51,26 @@ BEGIN
             WHERE e."RULE_ID"  = latest."RULE_ID"
               AND e."ASSET_ID" = latest."ASSET_ID"
        );
-    affected := SQLROWCOUNT;
-    RETURN affected;
+    disappeared := SQLROWCOUNT;
+
+    -- Pass 2: live EXCEPTION rows currently in status 'Accept' or
+    -- 'Research' whose CLOSE_DATE is NULL. Belt-and-suspenders alongside
+    -- SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS (which stamp
+    -- CLOSE_DATE on the transition itself). Catches inherited-status
+    -- rows — SP_INHERIT_EXCEPTION_STATUSES pulls STATUS_ID forward from
+    -- hist without touching CLOSE_DATE — and any row that took the
+    -- transition before CLOSE_DATE existed as a column. Idempotent
+    -- through the IS NULL guard.
+    UPDATE "EXCEPTION" e
+       SET "CLOSE_DATE" = :today
+     WHERE e."CLOSE_DATE" IS NULL
+       AND e."STATUS_ID" IN (
+           SELECT "EXCEPTION_STATUS_ID"
+             FROM "EXCEPTION_STATUS"
+            WHERE "NAME" IN ('Accept', 'Research')
+       );
+    accept_research := SQLROWCOUNT;
+
+    RETURN disappeared + accept_research;
 END;
 $$;

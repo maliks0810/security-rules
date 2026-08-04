@@ -27,6 +27,14 @@ BEGIN
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  ELSE e."OPEN_DATE"
                              END,
+           -- CLOSE_DATE carries over from the last EXCEPTION_HIST row
+           -- for the same (RULE_ID, ASSET_ID) so the day the row was
+           -- originally closed survives the archive → insert → inherit
+           -- cycle. NULL on the hist side leaves the live row's date
+           -- alone (via COALESCE). Pass 2 of SP_UPDATE_CLOSE_DATE
+           -- backstops the case where hist has no CLOSE_DATE yet but
+           -- the current status is Accept / Research.
+           "CLOSE_DATE"    = COALESCE(h."CLOSE_DATE", e."CLOSE_DATE"),
            -- COMMENTS carry over from the last EXCEPTION_HIST row for
            -- the same (RULE_ID, ASSET_ID). Anything the operator typed
            -- while the row sat in Accept / Suppress / Override / … is
@@ -38,9 +46,9 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -56,7 +64,9 @@ BEGIN
        AND (e."STATUS_ID" IS NULL
             OR e."STATUS_ID" <> h."STATUS_ID"
             OR (h."COMMENTS" IS NOT NULL
-                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS")))
+                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS"))
+            OR (h."CLOSE_DATE" IS NOT NULL
+                AND NOT EQUAL_NULL(e."CLOSE_DATE", h."CLOSE_DATE")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2
