@@ -15,22 +15,6 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
-    -- Returns one row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE
-    -- (the SQL the Go ExecuteRule layer runs; the result set must include
-    -- a RULE_ID column per row). ENVIRONMENT is RULE_CATALOG_CONNECTION.
-    --
-    -- Filtering:
-    --   P_RULE_TYPE = 'CATALOG'
-    --     â†’ P_RULE_NAME matched against RULE_CATALOG.NAME.
-    --   P_RULE_TYPE = 'GROUP'
-    --     â†’ P_RULE_NAME matched against RULE_GROUP.NAME; returns every
-    --       catalog whose RULE_GROUP_ID resolves to that group.
-    --   P_RULE_TYPE = 'RULE'
-    --     â†’ P_RULE_NAME matched against RULE.RULE_NAME; returns the
-    --       catalog(s) that own that rule (EXISTS-join to RULE so the
-    --       catalog row still appears at most once).
-    --   P_RULE_TYPE NULL / unset OR P_RULE_NAME NULL / empty / 'All'
-    --     â†’ no filter, return every catalog.
     res := (
         SELECT rc."RULE_CATALOG_ID"         AS "RULE_CATALOG_ID",
                rc."NAME"                    AS "RULE_CATALOG_NAME",

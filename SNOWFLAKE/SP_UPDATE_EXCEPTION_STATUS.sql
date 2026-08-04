@@ -17,13 +17,21 @@ BEGIN
                LIMIT 1
            ),
            -- Only 'Suppress' keeps a SUPPRESS_DATE. Moving off Suppress
-           -- (to New / Accept / Override / Complete / …) clears the date
-           -- so the grid never shows a stale suppression next to a
-           -- non-Suppress row. Parity with SP_UPDATE_BULK_STATUS.
+           -- (to New / Accept / Override / Complete / …) clears the
+           -- date so the grid never shows a stale suppression next to
+           -- a non-Suppress row. Parity with SP_UPDATE_BULK_STATUS.
            "SUPPRESS_DATE" = CASE
                                  WHEN :P_STATUS_NAME = 'Suppress'
                                      THEN "SUPPRESS_DATE"
                                  ELSE NULL
+                             END,
+           -- OPEN_DATE ratchets when the row transitions TO 'New';
+           -- otherwise the last-New date is preserved so the grid can
+           -- show when the exception was originally surfaced.
+           "OPEN_DATE"     = CASE
+                                 WHEN :P_STATUS_NAME = 'New'
+                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 ELSE "OPEN_DATE"
                              END,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
@@ -34,9 +42,6 @@ BEGIN
        AND NOT (:P_STATUS_NAME = 'Suppress' AND "SUPPRESS_DATE" IS NULL);
     affected := SQLROWCOUNT;
 
-    -- Snapshot into EXCEPTION_OVERRIDE when the row was just moved to
-    -- 'Accept'. EXCEPTION_ID is omitted so the override's IDENTITY
-    -- assigns its own key; the source row stays intact in EXCEPTION.
     IF (:P_STATUS_NAME = 'Accept' AND affected > 0) THEN
         INSERT INTO "EXCEPTION_OVERRIDE" (
             "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "ID_BB_GLOBAL",

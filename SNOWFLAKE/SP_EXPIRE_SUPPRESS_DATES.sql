@@ -9,6 +9,9 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "STATUS_ID"     = 1,
            "SUPPRESS_DATE" = NULL,
+           -- Every row this touches transitions back to STATUS_ID=1
+           -- (New), so OPEN_DATE ratchets to today.
+           "OPEN_DATE"     = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "SUPPRESS_DATE" IS NOT NULL

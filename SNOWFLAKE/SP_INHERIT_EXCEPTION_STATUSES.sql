@@ -19,12 +19,28 @@ DECLARE
 BEGIN
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = h."STATUS_ID",
+           -- OPEN_DATE moves to today only when this inherit flips the
+           -- row TO 'New' (STATUS_ID = 1). Inheriting Accept / Override
+           -- / Suppress leaves the last-New date alone.
+           "OPEN_DATE"     = CASE
+                                 WHEN h."STATUS_ID" = 1
+                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 ELSE e."OPEN_DATE"
+                             END,
+           -- COMMENTS carry over from the last EXCEPTION_HIST row for
+           -- the same (RULE_ID, ASSET_ID). Anything the operator typed
+           -- while the row sat in Accept / Suppress / Override / … is
+           -- preserved across rule re-runs. NULL / empty on the hist
+           -- side leaves the live row's comment alone via COALESCE so
+           -- a cleared comment on the hist side doesn't blank an
+           -- unrelated freshly-typed live comment.
+           "COMMENTS"      = COALESCE(h."COMMENTS", e."COMMENTS"),
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -37,7 +53,10 @@ BEGIN
       ) h
      WHERE e."RULE_ID"  = h."RULE_ID"
        AND e."ASSET_ID" = h."ASSET_ID"
-       AND (e."STATUS_ID" IS NULL OR e."STATUS_ID" <> h."STATUS_ID")
+       AND (e."STATUS_ID" IS NULL
+            OR e."STATUS_ID" <> h."STATUS_ID"
+            OR (h."COMMENTS" IS NOT NULL
+                AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2

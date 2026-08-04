@@ -2,21 +2,21 @@
 -- every EXCEPTION belonging to any of the passed rule names.
 --
 -- Inputs:
---   P_RULE_NAMES    — comma-separated RULE_NAME list (same shape as
+--   P_RULE_NAMES    â€” comma-separated RULE_NAME list (same shape as
 --                     SP_UPDATE_BULK_ASSIGN).
---   P_STATUS        — EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
+--   P_STATUS        â€” EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
 --                     'Suppress', 'Override', 'Complete'). Unknown /
---                     empty → RETURN 0, no writes.
---   P_COMMENTS      — text written to EXCEPTION.COMMENTS on every
+--                     empty â†’ RETURN 0, no writes.
+--   P_COMMENTS      â€” text written to EXCEPTION.COMMENTS on every
 --                     matched row. Pass '' to clear, NULL to leave
 --                     existing comments untouched.
---   P_SUPPRESS_DATE — 'YYYY-MM-DD' string written to
+--   P_SUPPRESS_DATE â€” 'YYYY-MM-DD' string written to
 --                     EXCEPTION.SUPPRESS_DATE on every matched row.
 --                     Pass NULL or '' to leave existing suppress
 --                     dates untouched (Bulk Status panel has no
 --                     bulk-clear affordance).
 --
--- Only current-day EXCEPTION rows are touched — the Bulk Status
+-- Only current-day EXCEPTION rows are touched â€” the Bulk Status
 -- button is gated to the current date on the client (see
 -- DqMonitorPage showBulkAssign wiring), so this SP intentionally
 -- does not filter EXCEPTION_DATE server-side; the client's gate is
@@ -38,10 +38,9 @@ DECLARE
     status_id NUMBER := NULL;
     now_ts    TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     affected  NUMBER := 0;
-    -- Resolve to a DATE up front so the UPDATE stays flat. NULLIF
-    -- turns '' into NULL so an empty string from the client is
-    -- treated as "leave suppress_date untouched" (parity with
-    -- COMMENTS).
+    -- Resolve to a DATE up front so the UPDATE stays flat. NULLIF turns
+    -- '' into NULL so an empty string from the client is treated as
+    -- "leave suppress_date untouched" (parity with COMMENTS).
     parsed_suppress DATE := TRY_TO_DATE(NULLIF(:P_SUPPRESS_DATE, ''));
 BEGIN
     IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
@@ -103,6 +102,16 @@ BEGIN
                                      THEN COALESCE(:parsed_suppress, "SUPPRESS_DATE")
                                  ELSE NULL
                              END,
+           -- OPEN_DATE ratchets only when this bulk update flips the
+           -- row TO 'New'. Comments-only updates (status_id NULL) and
+           -- transitions to any other status leave the last-New date
+           -- intact.
+           "OPEN_DATE"     = CASE
+                                 WHEN :status_id IS NOT NULL
+                                      AND UPPER(:P_STATUS) = 'NEW'
+                                     THEN TO_DATE(:now_ts)
+                                 ELSE "OPEN_DATE"
+                             END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
      WHERE "RULE_ID" IN (
@@ -110,7 +119,7 @@ BEGIN
         FROM "RULE" r
         JOIN (
             SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM LATERAL SPLIT_TO_TABLE(:P_RULE_NAMES, ',') t
+            FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
             WHERE TRIM(t.VALUE::STRING) <> ''
         ) req
           ON r."RULE_NAME" = req.rule_name

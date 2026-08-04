@@ -3,7 +3,7 @@
 -- live table only ever holds the current day's rows. Every archived
 -- row gets its own BATCH_ID computed per (RULE_ID, EXCEPTION_DATE):
 --   BATCH_ID = MAX(HIST.BATCH_ID for that rule+date) + 1
--- — 1 the first time a given rule+date is archived, otherwise the
+-- â€” 1 the first time a given rule+date is archived, otherwise the
 -- next increment. Different rules on the same date advance
 -- independently: if rule A last archived to date X at batch 1 and
 -- rule B at batch 2, a subsequent sweep lands rule A at batch 2 and
@@ -30,7 +30,7 @@ BEGIN
         "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
         "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
     )
     SELECT
@@ -43,7 +43,7 @@ BEGIN
         ) + 1 AS "BATCH_ID",
         e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
         e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
-        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."SUPPRESS_DATE", e."OPEN_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
         e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
     FROM "EXCEPTION" e
     WHERE e."EXCEPTION_DATE" < :exc_today;

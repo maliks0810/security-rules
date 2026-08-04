@@ -3,7 +3,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION(
     P_ASSET_ID          VARCHAR,
     P_EXCEPTION_DATE    DATE,
     P_ID_BB_GLOBAL      VARCHAR,
-    P_STATE_ID          NUMBER,
+    P_STATE_ID         NUMBER,
     P_EXCEPTION_TIME    TIMESTAMP_NTZ,
     P_ISSUE_DESCRIPTION VARCHAR,
     P_RESULT_DATA       VARCHAR,
@@ -21,7 +21,7 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "EXCEPTION_DATE"    = :P_EXCEPTION_DATE,
            "EXCEPTION_TIME"    = :P_EXCEPTION_TIME,
-           "STATE_ID"          = 1,  -- re-flagged → Pending
+           "STATE_ID"         = 1,  -- re-flagged -> Pending
            "ISSUE_DESCRIPTION" = :P_ISSUE_DESCRIPTION,
            "RESULT_DATA"       = COALESCE(:P_RESULT_DATA, "RESULT_DATA"),
            "ASSIGN_TO_ID"      = COALESCE(:P_ASSIGN_TO_ID, "ASSIGN_TO_ID"),
@@ -29,7 +29,15 @@ BEGIN
            "CREATED_DATE"      = :P_CREATED_DATE,
            "CREATED_BY"        = :P_CREATED_BY,
            "ID_BB_GLOBAL"      = COALESCE(:P_ID_BB_GLOBAL, "ID_BB_GLOBAL"),
-           "STATUS_ID"         = COALESCE(:P_STATUS_ID, "STATUS_ID")
+           "STATUS_ID"         = COALESCE(:P_STATUS_ID, "STATUS_ID"),
+           -- OPEN_DATE ratchets only when the row's new STATUS_ID is 1
+           -- (New). Any other transition — or a no-op status update —
+           -- preserves the last-New date.
+           "OPEN_DATE"         = CASE
+                                     WHEN COALESCE(:P_STATUS_ID, "STATUS_ID") = 1
+                                         THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                     ELSE "OPEN_DATE"
+                                 END
      WHERE "ASSET_ID" = :P_ASSET_ID
        AND "RULE_ID"  = :P_RULE_ID;
     RETURN 'OK';

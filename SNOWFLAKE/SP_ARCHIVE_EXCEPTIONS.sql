@@ -6,9 +6,9 @@ DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
 -- Moves today's EXCEPTION rows in scope into EXCEPTION_HIST (stamping a
 -- per-date BATCH_ID) instead of deleting them outright. Scope semantics
 -- match SP_GET_RULES / the retired SP_DELETE_EXCEPTIONS:
---   P_RULE_TYPE = 'CATALOG' or 'RULE'  â†’ P_RULE_NAME = RULE_CATALOG.NAME
---   P_RULE_TYPE = 'GROUP'              â†’ P_RULE_NAME = RULE_GROUP.NAME
---   P_RULE_NAME NULL / empty / 'All'   â†’ every catalog (full archive of today)
+--   P_RULE_TYPE = 'CATALOG' or 'RULE'  Ã¢â€ â€™ P_RULE_NAME = RULE_CATALOG.NAME
+--   P_RULE_TYPE = 'GROUP'              Ã¢â€ â€™ P_RULE_NAME = RULE_GROUP.NAME
+--   P_RULE_NAME NULL / empty / 'All'   Ã¢â€ â€™ every catalog (full archive of today)
 --
 -- BATCH_ID is per EXCEPTION_DATE. First run of a day starts at 1;
 -- subsequent same-day runs increment. A new day resets the counter
@@ -39,14 +39,14 @@ BEGIN
         "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
         "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "SUPPRESS_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
     )
     SELECT
         e."EXCEPTION_ID", e."RULE_ID", e."ASSET_ID", e."EXCEPTION_DATE", :next_batch,
         e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
         e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
-        e."SUPPRESS_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."SUPPRESS_DATE", e."OPEN_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
         e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
     FROM "EXCEPTION" e
     WHERE e."EXCEPTION_DATE" = :exc_date
