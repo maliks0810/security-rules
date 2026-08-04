@@ -59,8 +59,7 @@ BEGIN
             LEFT JOIN "EXCEPTION_STATE" es
               ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
             -- Latest per-rule bulk-assign override (see SP_GET_EXCEPTIONS
-            -- for full precedence rationale). Permanent bulk-assigns
-            -- skip this table and write RULE.ASSIGN_TO_ID directly.
+            -- for full precedence rationale).
             LEFT JOIN (
                 SELECT "RULE_ID", "ASSIGN_TO_ID"
                 FROM (
@@ -81,7 +80,7 @@ BEGIN
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)
               AND (:P_RULE_GROUP       IS NULL OR :P_RULE_GROUP       = 'All' OR rg."NAME"      = :P_RULE_GROUP)
               AND (:P_RULE_CATALOG     IS NULL OR :P_RULE_CATALOG     = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
-              AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+              AND (:P_RULE_NAME        IS NULL OR :P_RULE_NAME        = 'All' OR r."RULE_NAME"  = :P_RULE_NAME)
               AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME"      = :P_EXCEPTION_STATE)
               AND (:P_ASSIGN_TO        IS NULL OR :P_ASSIGN_TO        = 'All' OR du."USER"      = :P_ASSIGN_TO)
         )

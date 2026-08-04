@@ -3,16 +3,15 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     P_EXCEPTION_TYPE    VARCHAR DEFAULT NULL,
     P_SEVERITY          VARCHAR DEFAULT NULL,
     P_PRIORITY          VARCHAR DEFAULT NULL,
-    P_RULE_CATALOG         VARCHAR DEFAULT NULL,
+    P_RULE_CATALOG      VARCHAR DEFAULT NULL,
     P_RULE_NAME         VARCHAR DEFAULT NULL,
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
     P_EXCEPTION_STATE  VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
     P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
-    -- EXCEPTION_DATE cut-off. Defaults to today (UTC) when NULL so the
+    -- EXCEPTION_DATE cut-off (defaults to today UTC when NULL) so the
     -- grid never surfaces stale-date rows that haven't been swept to
-    -- EXCEPTION_HIST yet (e.g. the pre-cron window on a fresh day).
-    -- Pass an explicit YYYY-MM-DD to view a specific day's live rows.
+    -- EXCEPTION_HIST yet.
     P_EXCEPTION_DATE    DATE    DEFAULT NULL
 )
 RETURNS TABLE (
@@ -51,7 +50,7 @@ BEGIN
     res := (
         SELECT e."EXCEPTION_ID"            AS "EXCEPTION_ID",
                e."RULE_ID"                 AS "RULE_ID",
-               r."RULE_NAME"              AS "RULE_NAME",
+               r."RULE_NAME"               AS "RULE_NAME",
                e."ASSET_ID"                AS "ASSET_ID",
                e."EXCEPTION_DATE"          AS "EXCEPTION_DATE",
                e."EXCEPTION_TIME"          AS "EXCEPTION_TIME",
@@ -75,8 +74,8 @@ BEGIN
                e."MODIFIED_DATE"           AS "MODIFIED_DATE",
                e."MODIFIED_BY"             AS "MODIFIED_BY"
         FROM "EXCEPTION" e
-        LEFT JOIN "RULE"                  r ON r."RULE_ID"                     = e."RULE_ID"
-        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"           = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "RULE"                   r   ON r."RULE_ID"                     = e."RULE_ID"
+        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
         LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
         LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
         LEFT JOIN "RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
@@ -84,14 +83,10 @@ BEGIN
         LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
         -- Latest RULE_ASSIGN_OVERRIDE row per RULE_ID (written by Bulk
-        -- Assign when the caller does NOT tick "Is Permanent"). If
-        -- Is Permanent was ticked, the change is written directly to
-        -- RULE.ASSIGN_TO_ID and no rao row exists — the COALESCE
-        -- naturally falls through to r."ASSIGN_TO_ID".
-        --
-        -- Precedence: per-row EXCEPTION.ASSIGN_TO_ID (grid edit) →
-        -- rao.ASSIGN_TO_ID (bulk soft override) → r.ASSIGN_TO_ID
-        -- (rule default / permanent bulk assignment).
+        -- Assign). Precedence: per-row EXCEPTION.ASSIGN_TO_ID wins over
+        -- the bulk override, which wins over the RULE default. This
+        -- ensures subsequent-run exceptions of a bulk-assigned rule
+        -- pick up the new assignee before any per-row grid edit.
         LEFT JOIN (
             SELECT "RULE_ID", "ASSIGN_TO_ID"
             FROM (

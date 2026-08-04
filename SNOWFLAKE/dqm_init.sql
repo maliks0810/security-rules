@@ -794,13 +794,30 @@ BEGIN
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  ELSE "OPEN_DATE"
                              END,
+           -- CLOSE_DATE stamps today when the row is closed via a
+           -- transition to 'Accept' or 'Research'. Any other status
+           -- transition (New / Suppress / Override / Complete)
+           -- preserves the previous CLOSE_DATE — flipping back to New
+           -- does NOT clear it, since the historical close date is
+           -- useful even for a reopened row.
+           "CLOSE_DATE"    = CASE
+                                 WHEN :P_STATUS_NAME IN ('Accept', 'Research')
+                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 ELSE "CLOSE_DATE"
+                             END,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID
        AND EXISTS (
            SELECT 1 FROM "EXCEPTION_STATUS" WHERE "NAME" = :P_STATUS_NAME
        )
-       AND NOT (:P_STATUS_NAME = 'Suppress' AND "SUPPRESS_DATE" IS NULL);
+       AND NOT (:P_STATUS_NAME = 'Suppress' AND "SUPPRESS_DATE" IS NULL)
+       -- Any transition away from 'New' (Accept / Override / Hold /
+       -- Suppress / Research / Challenge / …) must carry an operator
+       -- comment so the audit trail on a triaged row is never empty.
+       -- Reject on blank COMMENTS. Parity with SP_UPDATE_BULK_STATUS.
+       AND NOT (:P_STATUS_NAME <> 'New'
+                AND ("COMMENTS" IS NULL OR "COMMENTS" = ''));
     affected := SQLROWCOUNT;
 
     IF (:P_STATUS_NAME = 'Accept' AND affected > 0) THEN
@@ -1270,6 +1287,19 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- Mirror the per-row grid rule: any transition AWAY from 'New'
+    -- (Accept / Override / Hold / Suppress / Research / Challenge /
+    -- …) must carry an operator comment. In bulk we require the
+    -- caller to pass a non-empty P_COMMENTS so every matched row
+    -- gets a comment; without it, the audit trail on a triaged row
+    -- would be empty. Comments-only updates (P_STATUS blank) bypass
+    -- this check. Parity with SP_UPDATE_EXCEPTION_STATUS.
+    IF (:P_STATUS IS NOT NULL AND :P_STATUS <> ''
+        AND UPPER(:P_STATUS) <> 'NEW'
+        AND (:P_COMMENTS IS NULL OR :P_COMMENTS = '')) THEN
+        RETURN 0;
+    END IF;
+
     -- Only resolve the status id when a status was actually passed.
     -- A blank P_STATUS means "leave STATUS_ID alone", so we skip the
     -- lookup and let status_id stay NULL for the COALESCE below.
@@ -1311,6 +1341,16 @@ BEGIN
                                       AND UPPER(:P_STATUS) = 'NEW'
                                      THEN TO_DATE(:now_ts)
                                  ELSE "OPEN_DATE"
+                             END,
+           -- CLOSE_DATE stamps today when this bulk update flips the
+           -- row TO 'Accept' or 'Research'. Comments-only updates and
+           -- transitions to any other status preserve the previous
+           -- CLOSE_DATE (parity with SP_UPDATE_EXCEPTION_STATUS).
+           "CLOSE_DATE"    = CASE
+                                 WHEN :status_id IS NOT NULL
+                                      AND UPPER(:P_STATUS) IN ('ACCEPT', 'RESEARCH')
+                                     THEN TO_DATE(:now_ts)
+                                 ELSE "CLOSE_DATE"
                              END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'

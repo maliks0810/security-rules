@@ -17,12 +17,6 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
-    -- When the caller supplies (P_ALADDIN_ID, P_ID_BB_GLOBAL) we reflect
-    -- that pair per BBG-compare rule. When both are NULL/empty (the "run
-    -- for all assets" path) we emit a fixed demo set of three assets so
-    -- the pipeline still produces visible exceptions for testing.
-    -- RULE_ID is resolved from RULE by RULE_NAME so the Go ExecuteRule
-    -- layer can tag each emitted exception with its rule.
     res := (
         WITH src AS (
             SELECT
@@ -53,13 +47,13 @@ BEGIN
             )
             WHERE :P_ALADDIN_ID IS NULL OR :P_ALADDIN_ID = ''
         )
-        SELECT src.rule_name      AS "RULE_NAME",
-               assets.aladdin_id  AS "ALADDIN_ID",
-               assets.id_bb_global AS "ID_BB_GLOBAL",
-               src.bbg_value      AS "BBG_VALUE",
-               src.aladdin_value  AS "ALADDIN_VALUE",
+        SELECT src.rule_name         AS "RULE_NAME",
+               assets.aladdin_id     AS "ALADDIN_ID",
+               assets.id_bb_global   AS "ID_BB_GLOBAL",
+               src.bbg_value         AS "BBG_VALUE",
+               src.aladdin_value     AS "ALADDIN_VALUE",
                src.issue_description AS "ISSUE_DESCRIPTION",
-               r."RULE_ID"        AS "RULE_ID"
+               r."RULE_ID"           AS "RULE_ID"
         FROM assets
         CROSS JOIN src
         JOIN "RULE" r ON r."RULE_NAME" = src.rule_name

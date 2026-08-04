@@ -42,6 +42,15 @@ AS $$
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
                                      ELSE "OPEN_DATE"
                                  END,
+               -- CLOSE_DATE stamps today when the row is closed via a
+               -- transition to 'Accept' or 'Research'. Any other
+               -- transition (New / Suppress / Override / Complete)
+               -- preserves the previous CLOSE_DATE.
+               "CLOSE_DATE"    = CASE
+                                     WHEN p_status_name IN ('Accept', 'Research')
+                                         THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     ELSE "CLOSE_DATE"
+                                 END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
          WHERE "EXCEPTION_ID" = p_exception_id
@@ -50,6 +59,13 @@ AS $$
                 WHERE "NAME" = p_status_name
            )
            AND NOT (p_status_name = 'Suppress' AND "SUPPRESS_DATE" IS NULL)
+           -- Any transition away from 'New' (Accept / Override / Hold
+           -- / Suppress / Research / Challenge / …) must carry an
+           -- operator comment so the audit trail on a triaged row is
+           -- never empty. Reject on blank COMMENTS. Parity with
+           -- SP_UPDATE_BULK_STATUS.
+           AND NOT (p_status_name <> 'New'
+                    AND ("COMMENTS" IS NULL OR "COMMENTS" = ''))
         -- RETURNING the whole row so the accept_snapshot CTE below can
         -- read the post-update state (STATUS_ID now = Accept's id).
         -- Reading from public."EXCEPTION" directly would see the CTE's

@@ -18,8 +18,8 @@ BEGIN
     END IF;
 
     UPDATE "EXCEPTION"
-       SET "ASSIGN_TO_ID" = :user_id,
-           "MODIFIED_DATE" = CURRENT_TIMESTAMP::TIMESTAMP_NTZ,
+       SET "ASSIGN_TO_ID"  = :user_id,
+           "MODIFIED_DATE" = CURRENT_TIMESTAMP()::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "ASSET_ID" = :P_ASSET_ID;
 

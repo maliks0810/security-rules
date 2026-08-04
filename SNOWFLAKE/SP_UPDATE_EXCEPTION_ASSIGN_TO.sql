@@ -23,7 +23,7 @@ BEGIN
     END IF;
 
     UPDATE "EXCEPTION"
-       SET "ASSIGN_TO_ID" = :user_id,
+       SET "ASSIGN_TO_ID"  = :user_id,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "EXCEPTION_ID" = :P_EXCEPTION_ID;

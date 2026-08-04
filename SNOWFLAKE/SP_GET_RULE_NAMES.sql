@@ -11,11 +11,6 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
-    -- Returns individual RULE_NAMEs (and their RULE_DESCRIPTION) belonging
-    -- to a given catalog. Used by the tcw-dqm tree view to display the
-    -- friendlier description on the leaf when present (fall back to
-    -- RULE_NAME) and to populate the Exceptions header subtitle when a
-    -- specific rule is selected.
     res := (
         SELECT r."RULE_NAME"        AS "RULE_NAME",
                r."RULE_DESCRIPTION" AS "RULE_DESCRIPTION"

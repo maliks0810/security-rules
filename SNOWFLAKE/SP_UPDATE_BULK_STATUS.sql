@@ -70,6 +70,19 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- Mirror the per-row grid rule: any transition AWAY from 'New'
+    -- (Accept / Override / Hold / Suppress / Research / Challenge /
+    -- …) must carry an operator comment. In bulk we require the
+    -- caller to pass a non-empty P_COMMENTS so every matched row
+    -- gets a comment; without it, the audit trail on a triaged row
+    -- would be empty. Comments-only updates (P_STATUS blank) bypass
+    -- this check. Parity with SP_UPDATE_EXCEPTION_STATUS.
+    IF (:P_STATUS IS NOT NULL AND :P_STATUS <> ''
+        AND UPPER(:P_STATUS) <> 'NEW'
+        AND (:P_COMMENTS IS NULL OR :P_COMMENTS = '')) THEN
+        RETURN 0;
+    END IF;
+
     -- Only resolve the status id when a status was actually passed.
     -- A blank P_STATUS means "leave STATUS_ID alone", so we skip the
     -- lookup and let status_id stay NULL for the COALESCE below.
@@ -111,6 +124,16 @@ BEGIN
                                       AND UPPER(:P_STATUS) = 'NEW'
                                      THEN TO_DATE(:now_ts)
                                  ELSE "OPEN_DATE"
+                             END,
+           -- CLOSE_DATE stamps today when this bulk update flips the
+           -- row TO 'Accept' or 'Research'. Comments-only updates and
+           -- transitions to any other status preserve the previous
+           -- CLOSE_DATE (parity with SP_UPDATE_EXCEPTION_STATUS).
+           "CLOSE_DATE"    = CASE
+                                 WHEN :status_id IS NOT NULL
+                                      AND UPPER(:P_STATUS) IN ('ACCEPT', 'RESEARCH')
+                                     THEN TO_DATE(:now_ts)
+                                 ELSE "CLOSE_DATE"
                              END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
