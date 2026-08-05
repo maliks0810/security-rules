@@ -25,6 +25,7 @@ DECLARE
     today            DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     disappeared      NUMBER := 0;
     accept_research  NUMBER := 0;
+    reopened_new     NUMBER := 0;
 BEGIN
     -- Pass 1: (RULE_ID, ASSET_ID) present in HIST but no longer in EXCEPTION.
     -- Stamp CLOSE_DATE on that combo's latest hist row.
@@ -71,6 +72,18 @@ BEGIN
        );
     accept_research := SQLROWCOUNT;
 
-    RETURN disappeared + accept_research;
+    -- Pass 3: live EXCEPTION rows currently back in status 'New'
+    -- (reopened via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_
+    -- DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited-New, …) whose
+    -- CLOSE_DATE is still populated from a previous Accept / Research
+    -- run. Clear it so the grid doesn't show a New row carrying a
+    -- stale close date. Idempotent through the IS NOT NULL guard.
+    UPDATE "EXCEPTION" e
+       SET "CLOSE_DATE" = NULL
+     WHERE e."CLOSE_DATE" IS NOT NULL
+       AND e."STATUS_ID" = 1;
+    reopened_new := SQLROWCOUNT;
+
+    RETURN disappeared + accept_research + reopened_new;
 END;
 $$;

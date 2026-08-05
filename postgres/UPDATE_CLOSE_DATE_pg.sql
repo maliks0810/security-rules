@@ -24,6 +24,7 @@ DECLARE
     v_today            date    := (NOW() AT TIME ZONE 'UTC')::date;
     v_disappeared      integer := 0;
     v_accept_research  integer := 0;
+    v_reopened_new     integer := 0;
 BEGIN
     -- Pass 1: (RULE_ID, ASSET_ID) present in HIST but no longer in
     -- EXCEPTION. Stamp CLOSE_DATE on that combo's latest hist row.
@@ -72,6 +73,21 @@ BEGIN
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_accept_research FROM stamped_ar;
 
-    RETURN v_disappeared + v_accept_research;
+    -- Pass 3: live EXCEPTION rows currently back in status 'New'
+    -- (reopened via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_
+    -- DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited-New, …) whose
+    -- CLOSE_DATE is still populated from a previous Accept / Research
+    -- run. Clear it so the grid doesn't show a New row carrying a
+    -- stale close date. Idempotent through the IS NOT NULL guard.
+    WITH cleared AS (
+        UPDATE public."EXCEPTION" e
+           SET "CLOSE_DATE" = NULL
+         WHERE e."CLOSE_DATE" IS NOT NULL
+           AND e."STATUS_ID" = 1
+        RETURNING 1
+    )
+    SELECT COALESCE(COUNT(*), 0)::int INTO v_reopened_new FROM cleared;
+
+    RETURN v_disappeared + v_accept_research + v_reopened_new;
 END;
 $$;

@@ -1,8 +1,3 @@
--- Drop the retired outright-delete SP so a redeploy against a legacy
--- SF instance ends up with only SP_ARCHIVE_EXCEPTIONS. IF EXISTS makes
--- this a no-op on a fresh install.
-DROP PROCEDURE IF EXISTS SP_DELETE_EXCEPTIONS(VARCHAR, VARCHAR);
-
 -- Moves today's EXCEPTION rows in scope into EXCEPTION_HIST (stamping a
 -- per-date BATCH_ID) instead of deleting them outright. Scope semantics
 -- match SP_GET_RULES / the retired SP_DELETE_EXCEPTIONS:
