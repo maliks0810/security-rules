@@ -401,6 +401,8 @@ func scanExceptionRows(rows *sql.Rows) ([]models.Exception, error) {
 			issueDescription sql.NullString
 			resultData       sql.NullString
 			suppressDate     sql.NullTime
+			openDate         sql.NullTime
+			closeDate        sql.NullTime
 			assignToID       sql.NullInt64
 			assignToCol      sql.NullString
 			resultTypeID     sql.NullInt64
@@ -419,6 +421,7 @@ func scanExceptionRows(rows *sql.Rows) ([]models.Exception, error) {
 			&statusID, &exceptionStatus,
 			&commentsCol,
 			&issueDescription, &resultData, &suppressDate,
+			&openDate, &closeDate,
 			&assignToID, &assignToCol, &resultTypeID,
 			&priorityCol, &severityCol, &exceptionTypeCol,
 			&createdDate, &createdBy, &modifiedDate, &modifiedBy,
@@ -441,6 +444,8 @@ func scanExceptionRows(rows *sql.Rows) ([]models.Exception, error) {
 			IssueDescription: sqlutil.NullStr(issueDescription),
 			ResultData:       sqlutil.NullStr(resultData),
 			SuppressDate:     sqlutil.NullTime(suppressDate),
+			OpenDate:         sqlutil.NullTime(openDate),
+			CloseDate:        sqlutil.NullTime(closeDate),
 			AssignToID:       sqlutil.NullInt(assignToID),
 			AssignTo:         sqlutil.NullStr(assignToCol),
 			ResultTypeID:     sqlutil.NullInt(resultTypeID),

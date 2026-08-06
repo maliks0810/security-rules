@@ -20,6 +20,8 @@ type Exception struct {
 	IssueDescription string `json:"issue_description,omitempty"`
 	ResultData       string `json:"result_data,omitempty"`
 	SuppressDate     string `json:"suppress_date,omitempty"`
+	OpenDate         string `json:"open_date,omitempty"`
+	CloseDate        string `json:"close_date,omitempty"`
 	AssignToID       int    `json:"assign_to_id,omitempty"`
 	AssignTo         string `json:"assign_to,omitempty"`
 	ResultTypeID     int    `json:"result_type_id"`
