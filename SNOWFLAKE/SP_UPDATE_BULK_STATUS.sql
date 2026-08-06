@@ -133,6 +133,12 @@ BEGIN
                                  WHEN :status_id IS NOT NULL
                                       AND UPPER(:P_STATUS) IN ('ACCEPT', 'RESEARCH')
                                      THEN TO_DATE(:now_ts)
+                                 -- Transition back to 'New' reopens
+                                 -- the row; the historical close date
+                                 -- is no longer valid and gets cleared.
+                                 WHEN :status_id IS NOT NULL
+                                      AND UPPER(:P_STATUS) = 'NEW'
+                                     THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
            "MODIFIED_DATE" = :now_ts,

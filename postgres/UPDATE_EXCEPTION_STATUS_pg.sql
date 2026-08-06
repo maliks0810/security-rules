@@ -49,6 +49,11 @@ AS $$
                "CLOSE_DATE"    = CASE
                                      WHEN p_status_name IN ('Accept', 'Research')
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     -- Transition back to 'New' reopens
+                                     -- the row; the historical close
+                                     -- date is no longer valid.
+                                     WHEN p_status_name = 'New'
+                                         THEN NULL
                                      ELSE "CLOSE_DATE"
                                  END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),

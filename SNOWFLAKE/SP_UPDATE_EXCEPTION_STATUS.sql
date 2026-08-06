@@ -42,6 +42,11 @@ BEGIN
            "CLOSE_DATE"    = CASE
                                  WHEN :P_STATUS_NAME IN ('Accept', 'Research')
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 -- Transition back to 'New' reopens the
+                                 -- row; the historical close date is no
+                                 -- longer valid and gets cleared.
+                                 WHEN :P_STATUS_NAME = 'New'
+                                     THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,

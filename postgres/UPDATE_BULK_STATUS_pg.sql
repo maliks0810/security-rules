@@ -132,6 +132,12 @@ BEGIN
                                  WHEN v_status_id IS NOT NULL
                                       AND upper(p_status) IN ('ACCEPT', 'RESEARCH')
                                      THEN v_now_ts::date
+                                 -- Transition back to 'New' reopens
+                                 -- the row; the historical close date
+                                 -- is no longer valid.
+                                 WHEN v_status_id IS NOT NULL
+                                      AND upper(p_status) = 'NEW'
+                                     THEN NULL
                                  ELSE e."CLOSE_DATE"
                              END,
            "MODIFIED_DATE" = v_now_ts,
