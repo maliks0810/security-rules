@@ -570,16 +570,22 @@ BEGIN
        );
     accept_research := SQLROWCOUNT;
 
-    -- Pass 3: live EXCEPTION rows currently back in status 'New'
-    -- (reopened via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_
-    -- DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited-New, …) whose
+    -- Pass 3: live EXCEPTION rows currently in an unresolved /
+    -- pending status ('New' / 'Suppress' / 'Challenge') whose
     -- CLOSE_DATE is still populated from a previous Accept / Research
-    -- run. Clear it so the grid doesn't show a New row carrying a
-    -- stale close date. Idempotent through the IS NOT NULL guard.
+    -- run. Clear it so the grid doesn't show one of these statuses
+    -- carrying a stale close date. Idempotent via IS NOT NULL guard.
+    -- Covers reopens via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_
+    -- COMPARE_DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited status,
+    -- and any pre-CLOSE_DATE-column rows.
     UPDATE "EXCEPTION" e
        SET "CLOSE_DATE" = NULL
      WHERE e."CLOSE_DATE" IS NOT NULL
-       AND e."STATUS_ID" = 1;
+       AND e."STATUS_ID" IN (
+           SELECT "EXCEPTION_STATUS_ID"
+             FROM "EXCEPTION_STATUS"
+            WHERE "NAME" IN ('New', 'Suppress', 'Challenge')
+       );
     reopened_new := SQLROWCOUNT;
 
     RETURN disappeared + accept_research + reopened_new;
@@ -802,10 +808,24 @@ $$;
 -- UPDATE_EXCEPTION_STATUS -----------------------------------------------------
 -- Sets EXCEPTION.STATUS_ID for the row identified by P_EXCEPTION_ID,
 -- resolving P_STATUS_NAME against EXCEPTION_STATUS.NAME. Returns row count.
+--
+-- Optional P_COMMENTS / P_SUPPRESS_DATE let the caller bundle a
+-- pending comment + suppress date the operator just typed but hasn't
+-- committed via the per-cell endpoints yet — needed because
+-- CommentsCell only commits on blur and SuppressDateCell's separate
+-- commit is async, so a status change fired immediately after would
+-- otherwise race and hit the "blank" guard against a stale DB row.
+--   NULL / omitted → leave the column alone (existing DB value stays).
+--   Any non-null   → applied atomically inside this same UPDATE.
+-- Empty-string COMMENTS still passes through as "" (interpreted as
+-- clear on non-New will trigger the guard).
+--
 -- Side effect for 'Accept': the row is snapshotted into EXCEPTION_OVERRIDE.
 CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION_STATUS(
-    P_EXCEPTION_ID NUMBER,
-    P_STATUS_NAME  VARCHAR
+    P_EXCEPTION_ID  NUMBER,
+    P_STATUS_NAME   VARCHAR,
+    P_COMMENTS      VARCHAR DEFAULT NULL,
+    P_SUPPRESS_DATE DATE    DEFAULT NULL
 )
 RETURNS NUMBER
 LANGUAGE SQL
@@ -821,13 +841,19 @@ BEGIN
                WHERE "NAME" = :P_STATUS_NAME
                LIMIT 1
            ),
-           -- Only 'Suppress' keeps a SUPPRESS_DATE. Moving off Suppress
-           -- (to New / Accept / Override / Complete / …) clears the
-           -- date so the grid never shows a stale suppression next to
-           -- a non-Suppress row. Parity with SP_UPDATE_BULK_STATUS.
+           -- COMMENTS: apply the passed value when provided (non-null),
+           -- else leave the existing DB value alone. Same NULL-vs-value
+           -- convention as SP_UPDATE_BULK_STATUS.
+           "COMMENTS"      = COALESCE(:P_COMMENTS, "COMMENTS"),
+           -- SUPPRESS_DATE: only 'Suppress' keeps a value. When
+           -- P_SUPPRESS_DATE is passed and the target status is
+           -- Suppress, use it; otherwise fall back to the existing
+           -- DB value. Moving off Suppress (to New / Accept /
+           -- Override / …) clears the date so the grid never shows
+           -- a stale suppression next to a non-Suppress row.
            "SUPPRESS_DATE" = CASE
                                  WHEN :P_STATUS_NAME = 'Suppress'
-                                     THEN "SUPPRESS_DATE"
+                                     THEN COALESCE(:P_SUPPRESS_DATE, "SUPPRESS_DATE")
                                  ELSE NULL
                              END,
            -- OPEN_DATE ratchets when the row transitions TO 'New';
@@ -847,10 +873,12 @@ BEGIN
            "CLOSE_DATE"    = CASE
                                  WHEN :P_STATUS_NAME IN ('Accept', 'Research')
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
-                                 -- Transition back to 'New' reopens the
-                                 -- row; the historical close date is no
+                                 -- Transitions to 'New' / 'Suppress' /
+                                 -- 'Challenge' put the row back into
+                                 -- an unresolved / pending state, so
+                                 -- the historical close date is no
                                  -- longer valid and gets cleared.
-                                 WHEN :P_STATUS_NAME = 'New'
+                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
@@ -860,13 +888,15 @@ BEGIN
        AND EXISTS (
            SELECT 1 FROM "EXCEPTION_STATUS" WHERE "NAME" = :P_STATUS_NAME
        )
-       AND NOT (:P_STATUS_NAME = 'Suppress' AND "SUPPRESS_DATE" IS NULL)
-       -- Any transition away from 'New' (Accept / Override / Hold /
-       -- Suppress / Research / Challenge / …) must carry an operator
-       -- comment so the audit trail on a triaged row is never empty.
-       -- Reject on blank COMMENTS. Parity with SP_UPDATE_BULK_STATUS.
+       -- Guards check the *effective* value (the passed param when
+       -- present, else the existing DB value) so a bundled comment /
+       -- suppress date the operator just typed satisfies the rule
+       -- without needing the per-cell commit to land first.
+       AND NOT (:P_STATUS_NAME = 'Suppress'
+                AND COALESCE(:P_SUPPRESS_DATE, "SUPPRESS_DATE") IS NULL)
        AND NOT (:P_STATUS_NAME <> 'New'
-                AND ("COMMENTS" IS NULL OR "COMMENTS" = ''));
+                AND (COALESCE(:P_COMMENTS, "COMMENTS") IS NULL
+                     OR COALESCE(:P_COMMENTS, "COMMENTS") = ''));
     affected := SQLROWCOUNT;
 
     IF (:P_STATUS_NAME = 'Accept' AND affected > 0) THEN
@@ -1399,11 +1429,13 @@ BEGIN
                                  WHEN :status_id IS NOT NULL
                                       AND UPPER(:P_STATUS) IN ('ACCEPT', 'RESEARCH')
                                      THEN TO_DATE(:now_ts)
-                                 -- Transition back to 'New' reopens
-                                 -- the row; the historical close date
-                                 -- is no longer valid and gets cleared.
+                                 -- Transitions to 'New' / 'Suppress' /
+                                 -- 'Challenge' put the row back into
+                                 -- an unresolved / pending state, so
+                                 -- the historical close date is no
+                                 -- longer valid and gets cleared.
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) = 'NEW'
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,

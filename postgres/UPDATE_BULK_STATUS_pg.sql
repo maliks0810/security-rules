@@ -132,11 +132,13 @@ BEGIN
                                  WHEN v_status_id IS NOT NULL
                                       AND upper(p_status) IN ('ACCEPT', 'RESEARCH')
                                      THEN v_now_ts::date
-                                 -- Transition back to 'New' reopens
-                                 -- the row; the historical close date
-                                 -- is no longer valid.
+                                 -- Transitions to 'New' / 'Suppress' /
+                                 -- 'Challenge' put the row back into
+                                 -- an unresolved / pending state; the
+                                 -- historical close date is no longer
+                                 -- valid.
                                  WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) = 'NEW'
+                                      AND upper(p_status) IN ('NEW', 'SUPPRESS', 'CHALLENGE')
                                      THEN NULL
                                  ELSE e."CLOSE_DATE"
                              END,

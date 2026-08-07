@@ -1,4 +1,5 @@
 DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATUS"(bigint, text);
+DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATUS"(bigint, text, text, date);
 
 -- Sets EXCEPTION.STATUS_ID for the row identified by p_exception_id,
 -- resolving p_status_name against EXCEPTION_STATUS.NAME. Also bumps
@@ -7,12 +8,23 @@ DROP FUNCTION IF EXISTS public."SP_UPDATE_EXCEPTION_STATUS"(bigint, text);
 -- row into "Suppress" without a SUPPRESS_DATE set (defence-in-depth
 -- alongside the frontend guard).
 --
+-- Optional p_comments / p_suppress_date let the caller bundle a
+-- pending comment + suppress date the operator just typed but hasn't
+-- committed via the per-cell endpoints yet — needed because
+-- CommentsCell only commits on blur and SuppressDateCell's separate
+-- commit is async, so a status change fired immediately after would
+-- otherwise race and hit the "blank" guard against a stale DB row.
+--   NULL / omitted → leave the column alone (existing DB value stays).
+--   Any non-null   → applied atomically inside this same UPDATE.
+--
 -- Side effect for 'Accept': the source row is snapshotted into
 -- EXCEPTION_OVERRIDE in the same statement. EXCEPTION_ID is omitted so
 -- the override's IDENTITY assigns its own key.
 CREATE OR REPLACE FUNCTION public."SP_UPDATE_EXCEPTION_STATUS"(
-    p_exception_id bigint,
-    p_status_name  text
+    p_exception_id  bigint,
+    p_status_name   text,
+    p_comments      text DEFAULT NULL,
+    p_suppress_date date DEFAULT NULL
 )
 RETURNS integer
 LANGUAGE sql
@@ -25,14 +37,21 @@ AS $$
                    WHERE "NAME" = p_status_name
                    LIMIT 1
                ),
-               -- Only 'Suppress' keeps a SUPPRESS_DATE. Moving off
-               -- Suppress (to New / Accept / Override / Complete / …)
-               -- clears the date so the grid never shows a stale
-               -- suppression next to a non-Suppress row. Parity with
+               -- COMMENTS: apply the passed value when provided
+               -- (non-null), else leave the existing DB value alone.
+               -- Same NULL-vs-value convention as
                -- SP_UPDATE_BULK_STATUS.
+               "COMMENTS"      = COALESCE(p_comments, "COMMENTS"),
+               -- SUPPRESS_DATE: only 'Suppress' keeps a value. When
+               -- p_suppress_date is passed and the target status is
+               -- Suppress, use it; otherwise fall back to the
+               -- existing DB value. Moving off Suppress (to New /
+               -- Accept / Override / …) clears the date so the grid
+               -- never shows a stale suppression next to a
+               -- non-Suppress row.
                "SUPPRESS_DATE" = CASE
                                      WHEN p_status_name = 'Suppress'
-                                         THEN "SUPPRESS_DATE"
+                                         THEN COALESCE(p_suppress_date, "SUPPRESS_DATE")
                                      ELSE NULL
                                  END,
                -- OPEN_DATE ratchets when the row transitions TO 'New';
@@ -49,10 +68,12 @@ AS $$
                "CLOSE_DATE"    = CASE
                                      WHEN p_status_name IN ('Accept', 'Research')
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
-                                     -- Transition back to 'New' reopens
-                                     -- the row; the historical close
-                                     -- date is no longer valid.
-                                     WHEN p_status_name = 'New'
+                                     -- Transitions to 'New' / 'Suppress'
+                                     -- / 'Challenge' put the row back
+                                     -- into an unresolved / pending
+                                     -- state; the historical close date
+                                     -- is no longer valid.
+                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge')
                                          THEN NULL
                                      ELSE "CLOSE_DATE"
                                  END,
@@ -63,14 +84,15 @@ AS $$
                SELECT 1 FROM public."EXCEPTION_STATUS"
                 WHERE "NAME" = p_status_name
            )
-           AND NOT (p_status_name = 'Suppress' AND "SUPPRESS_DATE" IS NULL)
-           -- Any transition away from 'New' (Accept / Override / Hold
-           -- / Suppress / Research / Challenge / …) must carry an
-           -- operator comment so the audit trail on a triaged row is
-           -- never empty. Reject on blank COMMENTS. Parity with
-           -- SP_UPDATE_BULK_STATUS.
+           -- Guards check the *effective* value (passed param when
+           -- present, else existing DB value) so a bundled comment /
+           -- suppress date the operator just typed satisfies the rule
+           -- without needing the per-cell commit to land first.
+           AND NOT (p_status_name = 'Suppress'
+                    AND COALESCE(p_suppress_date, "SUPPRESS_DATE") IS NULL)
            AND NOT (p_status_name <> 'New'
-                    AND ("COMMENTS" IS NULL OR "COMMENTS" = ''))
+                    AND (COALESCE(p_comments, "COMMENTS") IS NULL
+                         OR COALESCE(p_comments, "COMMENTS") = ''))
         -- RETURNING the whole row so the accept_snapshot CTE below can
         -- read the post-update state (STATUS_ID now = Accept's id).
         -- Reading from public."EXCEPTION" directly would see the CTE's

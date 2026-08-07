@@ -76,13 +76,38 @@ func GetPriorityTypes() ([]string, error) {
 
 // UpdateExceptionStatus flips STATUS_ID on a single EXCEPTION row keyed
 // by EXCEPTION_ID, resolving the status name against EXCEPTION_STATUS.
+// Optional comments + suppressDate let the caller bundle a pending
+// COMMENTS / SUPPRESS_DATE value the operator just typed but hasn't
+// committed via the per-cell endpoints yet — the SP applies them
+// atomically inside the same UPDATE so the "blank" guards check the
+// effective (passed) value instead of the stale DB value.
+//
+// Empty string on either param → treated as "leave alone" (bound as
+// SQL NULL); the SP's COALESCE preserves the existing DB value. Only
+// pass through what the frontend actually collected.
+//
 // Returns the number of rows updated (0 if the exception_id doesn't
-// exist or the status name doesn't resolve).
-func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
+// exist, the status name doesn't resolve, or a guard fired).
+func UpdateExceptionStatus(exceptionID int64, statusName, comments, suppressDate string) (int, error) {
+	var commentsArg any
+	if comments == "" {
+		commentsArg = nil
+	} else {
+		commentsArg = comments
+	}
+	var suppressArg any
+	if suppressDate == "" {
+		suppressArg = nil
+	} else {
+		suppressArg = suppressDate
+	}
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: UpdateExceptionStatus - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL SP_UPDATE_EXCEPTION_STATUS(?, ?)", exceptionID, statusName)
+		rows, err := snowflake.Query(
+			"CALL SP_UPDATE_EXCEPTION_STATUS(?, ?, ?, ?)",
+			exceptionID, statusName, commentsArg, suppressArg,
+		)
 		if err != nil {
 			return 0, err
 		}
@@ -97,8 +122,8 @@ func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."SP_UPDATE_EXCEPTION_STATUS"($1, $2)`,
-		exceptionID, statusName,
+		`SELECT public."SP_UPDATE_EXCEPTION_STATUS"($1, $2, $3, $4)`,
+		exceptionID, statusName, commentsArg, suppressArg,
 	).Scan(&n)
 	if err != nil {
 		return 0, err

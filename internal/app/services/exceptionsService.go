@@ -17,8 +17,8 @@ func GetExceptionStatus() ([]string, error) {
 	return repositories.GetExceptionStatus()
 }
 
-func UpdateExceptionStatus(exceptionID int64, statusName string) (int, error) {
-	return repositories.UpdateExceptionStatus(exceptionID, statusName)
+func UpdateExceptionStatus(exceptionID int64, statusName, comments, suppressDate string) (int, error) {
+	return repositories.UpdateExceptionStatus(exceptionID, statusName, comments, suppressDate)
 }
 
 func UpdateExceptionComments(exceptionID int64, comments string) (int, error) {

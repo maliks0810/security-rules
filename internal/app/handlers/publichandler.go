@@ -182,11 +182,16 @@ func GetExceptionState(ctx *fiber.Ctx) error {
 // UpdateExceptionStatus godoc
 // @Summary      Update EXCEPTION.STATUS_ID for a single row
 // @Description  Resolves the status name against EXCEPTION_STATUS and updates
-// @Description  the STATUS_ID for the row identified by exception_id.
+// @Description  the STATUS_ID for the row identified by exception_id. Optional
+// @Description  comments + suppress_date get bundled into the same UPDATE so
+// @Description  the SP's "blank" guards check the effective (passed) value
+// @Description  instead of a stale DB value the operator hasn't committed yet.
 // @Tags         exceptions
 // @Produce      json
 // @Param        exception_id  query     int     true   "EXCEPTION_ID"
 // @Param        status        query     string  true   "EXCEPTION_STATUS.NAME"
+// @Param        comments      query     string  false  "Pending COMMENTS to apply alongside the status change (empty = leave alone)"
+// @Param        suppress_date query     string  false  "Pending SUPPRESS_DATE (YYYY-MM-DD) to apply alongside the status change (empty = leave alone)"
 // @Success      200           {object}  map[string]int   "rows updated"
 // @Failure      400           {object}  map[string]string "invalid params"
 // @Failure      500           {object}  map[string]string "failed to update exception status"
@@ -204,9 +209,11 @@ func UpdateExceptionStatus(ctx *fiber.Ctx) error {
 			if status == "" {
 				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
 			}
-			n, err := services.UpdateExceptionStatus(parsed, status)
+			comments := ctx.Query("comments")
+			suppressDate := ctx.Query("suppress_date")
+			n, err := services.UpdateExceptionStatus(parsed, status, comments, suppressDate)
 			if err != nil {
-				return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status"})
+				return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status: " + err.Error()})
 			}
 			return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
 		}
@@ -216,9 +223,11 @@ func UpdateExceptionStatus(ctx *fiber.Ctx) error {
 	if status == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
 	}
-	n, err := services.UpdateExceptionStatus(int64(exceptionID), status)
+	comments := ctx.Query("comments")
+	suppressDate := ctx.Query("suppress_date")
+	n, err := services.UpdateExceptionStatus(int64(exceptionID), status, comments, suppressDate)
 	if err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status"})
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update exception status: " + err.Error()})
 	}
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
 }

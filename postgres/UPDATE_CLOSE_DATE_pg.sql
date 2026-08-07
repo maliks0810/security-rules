@@ -73,17 +73,24 @@ BEGIN
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_accept_research FROM stamped_ar;
 
-    -- Pass 3: live EXCEPTION rows currently back in status 'New'
-    -- (reopened via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_
-    -- DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited-New, …) whose
-    -- CLOSE_DATE is still populated from a previous Accept / Research
-    -- run. Clear it so the grid doesn't show a New row carrying a
-    -- stale close date. Idempotent through the IS NOT NULL guard.
+    -- Pass 3: live EXCEPTION rows currently in an unresolved /
+    -- pending status ('New' / 'Suppress' / 'Challenge') whose
+    -- CLOSE_DATE is still populated from a previous Accept /
+    -- Research run. Clear it so the grid doesn't show one of these
+    -- statuses carrying a stale close date. Idempotent via IS NOT
+    -- NULL guard. Covers reopens via operator flip,
+    -- SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES,
+    -- SP_EXPIRE_SUPPRESS_DATES, inherited status, and any
+    -- pre-CLOSE_DATE-column rows.
     WITH cleared AS (
         UPDATE public."EXCEPTION" e
            SET "CLOSE_DATE" = NULL
          WHERE e."CLOSE_DATE" IS NOT NULL
-           AND e."STATUS_ID" = 1
+           AND e."STATUS_ID" IN (
+               SELECT "EXCEPTION_STATUS_ID"
+                 FROM public."EXCEPTION_STATUS"
+                WHERE "NAME" IN ('New', 'Suppress', 'Challenge')
+           )
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_reopened_new FROM cleared;

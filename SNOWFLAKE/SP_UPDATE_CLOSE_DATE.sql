@@ -72,16 +72,22 @@ BEGIN
        );
     accept_research := SQLROWCOUNT;
 
-    -- Pass 3: live EXCEPTION rows currently back in status 'New'
-    -- (reopened via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_
-    -- DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited-New, …) whose
+    -- Pass 3: live EXCEPTION rows currently in an unresolved /
+    -- pending status ('New' / 'Suppress' / 'Challenge') whose
     -- CLOSE_DATE is still populated from a previous Accept / Research
-    -- run. Clear it so the grid doesn't show a New row carrying a
-    -- stale close date. Idempotent through the IS NOT NULL guard.
+    -- run. Clear it so the grid doesn't show one of these statuses
+    -- carrying a stale close date. Idempotent via IS NOT NULL guard.
+    -- Covers reopens via operator flip, SP_REVERT_TO_NEW_BLOOMBERG_
+    -- COMPARE_DIFFERENCES, SP_EXPIRE_SUPPRESS_DATES, inherited status,
+    -- and any pre-CLOSE_DATE-column rows.
     UPDATE "EXCEPTION" e
        SET "CLOSE_DATE" = NULL
      WHERE e."CLOSE_DATE" IS NOT NULL
-       AND e."STATUS_ID" = 1;
+       AND e."STATUS_ID" IN (
+           SELECT "EXCEPTION_STATUS_ID"
+             FROM "EXCEPTION_STATUS"
+            WHERE "NAME" IN ('New', 'Suppress', 'Challenge')
+       );
     reopened_new := SQLROWCOUNT;
 
     RETURN disappeared + accept_research + reopened_new;
