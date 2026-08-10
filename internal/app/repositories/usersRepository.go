@@ -5,13 +5,121 @@ import (
 	"strings"
 
 	"securityrules/security-rules/configs"
+	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/utils/log"
 	"securityrules/security-rules/internal/utils/postgres"
 	"securityrules/security-rules/internal/utils/snowflake"
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
-func GetDMUsers() ([]string, error) {
+// GetDMRole returns DM_USER.ROLE for the supplied display name.
+// Powers the frontend gate that decides whether Bulk Assign / Bulk
+// Status buttons show and whether the per-row Assign To column is
+// editable. Unknown user → "" (empty), which the caller treats as
+// the least-privileged default. Called by the DqMonitorPage on
+// mount with the current operator's user (Okta-resolved once
+// integration lands; hard-coded pre-cutover).
+func GetDMRole(user string) (string, error) {
+	if strings.TrimSpace(user) == "" {
+		return "", nil
+	}
+	var role sql.NullString
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("usersRepository: GetDMRole - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_GET_DM_ROLE(?)", user)
+		if err != nil {
+			return "", err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if err := rows.Scan(&role); err != nil {
+				return "", err
+			}
+		}
+		return sqlutil.NullStr(role), nil
+	}
+	log.Logger.Info("usersRepository: GetDMRole - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return "", sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT * FROM public."SP_GET_DM_ROLE"($1)`,
+		user,
+	).Scan(&role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return sqlutil.NullStr(role), nil
+}
+
+// GetRuleGroupsForUser returns the subset of RULE_GROUP rows the
+// given operator (userName) is authorized to see via
+// RULE_GROUP_AUTHORIZATION.ACCESS_LIST. Column shape matches
+// rulesRepository.GetRuleGroups so callers (the LHS tree feed) can
+// consume either fn without reshape. Empty userName → empty result
+// (no privileges by default). See SP_GET_RULE_GROUPS_FOR_USER for
+// the ACCESS_LIST → DM_USER.EMAIL matching semantics.
+//
+// Named GetRuleGroupsForUser (not GetRuleGroups) because the
+// unfiltered variant already lives in rulesRepository.go under the
+// same `repositories` package — Go doesn't allow two funcs with the
+// same name in one package.
+func GetRuleGroupsForUser(userName string) ([]models.RuleGroup, error) {
+	if strings.TrimSpace(userName) == "" {
+		return []models.RuleGroup{}, nil
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("usersRepository: GetRuleGroups - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_RULE_GROUPS_FOR_USER(?)", userName)
+	} else {
+		log.Logger.Info("usersRepository: GetRuleGroups - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(
+			`SELECT * FROM public."SP_GET_RULE_GROUPS_FOR_USER"($1)`,
+			userName,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	groups := []models.RuleGroup{}
+	for rows.Next() {
+		var (
+			name            sql.NullString
+			statusVisible   sql.NullBool
+			commentsVisible sql.NullBool
+			suppressDate    sql.NullBool
+			assignToVisible sql.NullBool
+		)
+		if err := rows.Scan(&name, &statusVisible, &commentsVisible, &suppressDate, &assignToVisible); err != nil {
+			return nil, err
+		}
+		groups = append(groups, models.RuleGroup{
+			Name:                sqlutil.NullStr(name),
+			FlagStatusVisible:   statusVisible.Valid && statusVisible.Bool,
+			FlagCommentsVisible: commentsVisible.Valid && commentsVisible.Bool,
+			FlagSuppressDate:    suppressDate.Valid && suppressDate.Bool,
+			FlagAssignToVisible: assignToVisible.Valid && assignToVisible.Bool,
+		})
+	}
+	return groups, nil
+}
+
+// GetDMUsers returns every row from DM_USER as {user, role, email}
+// tuples in DM_USER.ID order. Row 0 is always the "Unassigned"
+// placeholder — role + email come back empty for that row.
+func GetDMUsers() ([]models.DMUser, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -30,13 +138,17 @@ func GetDMUsers() ([]string, error) {
 	}
 	defer rows.Close()
 
-	names := []string{}
+	users := []models.DMUser{}
 	for rows.Next() {
-		var name sql.NullString
-		if err := rows.Scan(&name); err != nil {
+		var name, role, email sql.NullString
+		if err := rows.Scan(&name, &role, &email); err != nil {
 			return nil, err
 		}
-		names = append(names, sqlutil.NullStr(name))
+		users = append(users, models.DMUser{
+			User:  sqlutil.NullStr(name),
+			Role:  sqlutil.NullStr(role),
+			Email: sqlutil.NullStr(email),
+		})
 	}
-	return names, nil
+	return users, nil
 }

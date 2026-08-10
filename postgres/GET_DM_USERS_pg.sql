@@ -1,10 +1,10 @@
 DROP FUNCTION IF EXISTS public."SP_GET_DM_USERS"();
 
 CREATE OR REPLACE FUNCTION public."SP_GET_DM_USERS"()
-RETURNS TABLE("USER" varchar)
+RETURNS TABLE("USER" varchar, "ROLE" varchar, "EMAIL" varchar)
 LANGUAGE sql
 AS $$
-    SELECT "USER"
+    SELECT "USER", "ROLE", "EMAIL"
     FROM public."DM_USER"
     ORDER BY "ID" ASC;
 $$;

@@ -283,9 +283,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/api/getDMRole": {
+            "get": {
+                "description": "Returns { \"role\": \"\u003cDM_USER.ROLE\u003e\" } for the given\nDM_USER.USER value. Unknown user → role: \"\". Powers\nthe frontend gate that hides Bulk Assign / Bulk\nStatus buttons and locks the per-row Assign To\ncolumn when the current operator isn't DM_ADMIN.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the DM role for one user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER",
+                        "name": "user",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "user is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query role",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getDMUsers": {
             "get": {
-                "description": "Returns DM_USER.USER values ordered by ID.",
+                "description": "Returns DM_USER rows as {user, role, email} tuples,\nordered by ID. Row 0 is the \"Unassigned\" placeholder\n(role + email come back empty).",
                 "produces": [
                     "application/json"
                 ],
@@ -299,7 +349,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "string"
+                                "$ref": "#/definitions/models.DMUser"
                             }
                         }
                     },
@@ -751,6 +801,56 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "failed to query rule groups",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getRuleGroupsForUser": {
+            "get": {
+                "description": "Same shape as /getRuleGroups but filtered via\nRULE_GROUP_AUTHORIZATION.ACCESS_LIST — only groups whose\naccess list contains the user's DM_USER.EMAIL are\nreturned. Powers the LHS tree view. Unknown user / no\nemail / no auth row → empty array (least-privileged).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rule-groups"
+                ],
+                "summary": "List rule groups the given operator is authorized to see",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DM_USER display name",
+                        "name": "user",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.RuleGroup"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "user is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rule groups for user",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1219,7 +1319,7 @@ const docTemplate = `{
         },
         "/v1/api/updateExceptionStatus": {
             "get": {
-                "description": "Resolves the status name against EXCEPTION_STATUS and updates\nthe STATUS_ID for the row identified by exception_id.",
+                "description": "Resolves the status name against EXCEPTION_STATUS and updates\nthe STATUS_ID for the row identified by exception_id. Optional\ncomments + suppress_date get bundled into the same UPDATE so\nthe SP's \"blank\" guards check the effective (passed) value\ninstead of a stale DB value the operator hasn't committed yet.",
                 "produces": [
                     "application/json"
                 ],
@@ -1241,6 +1341,18 @@ const docTemplate = `{
                         "name": "status",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pending COMMENTS to apply alongside the status change (empty = leave alone)",
+                        "name": "comments",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pending SUPPRESS_DATE (YYYY-MM-DD) to apply alongside the status change (empty = leave alone)",
+                        "name": "suppress_date",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1455,6 +1567,20 @@ const docTemplate = `{
                 }
             }
         },
+        "models.DMUser": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "user": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Exception": {
             "type": "object",
             "properties": {
@@ -1466,6 +1592,9 @@ const docTemplate = `{
                 },
                 "assign_to_id": {
                     "type": "integer"
+                },
+                "close_date": {
+                    "type": "string"
                 },
                 "comments": {
                     "type": "string"
@@ -1504,6 +1633,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "modified_date": {
+                    "type": "string"
+                },
+                "open_date": {
                     "type": "string"
                 },
                 "priority": {
@@ -1595,6 +1727,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "environment": {
+                    "type": "string"
+                },
+                "revert_to_new_criteria": {
+                    "description": "RevertToNewCriteria is the RULE_CATALOG.REVERT_TO_NEW_CRITERIA\ncolumn value: the name of a stored procedure that ExecuteRules\ninvokes after the archive/insert/inherit steps to re-evaluate the\ncatalog's non-New rows and flip any that no longer meet the\nexception criteria back to STATUS_ID = 1 ('New'). Empty when the\ncatalog opted out of the revert workflow.",
                     "type": "string"
                 },
                 "rule_catalog_id": {

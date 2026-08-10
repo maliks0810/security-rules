@@ -490,12 +490,40 @@ func GetSeverityTypes(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(codes)
 }
 
-// GetDMUsers godoc
-// @Summary      List DM users
-// @Description  Returns DM_USER.USER values ordered by ID.
+// GetDMRole godoc
+// @Summary      Get the DM role for one user
+// @Description  Returns { "role": "<DM_USER.ROLE>" } for the given
+// @Description  DM_USER.USER value. Unknown user → role: "". Powers
+// @Description  the frontend gate that hides Bulk Assign / Bulk
+// @Description  Status buttons and locks the per-row Assign To
+// @Description  column when the current operator isn't DM_ADMIN.
 // @Tags         users
 // @Produce      json
-// @Success      200  {array}   string
+// @Param        user  query     string  true  "DM_USER.USER"
+// @Success      200   {object}  map[string]string
+// @Failure      400   {object}  map[string]string "user is required"
+// @Failure      500   {object}  map[string]string "failed to query role"
+// @Router       /v1/api/getDMRole [get]
+func GetDMRole(ctx *fiber.Ctx) error {
+	user := ctx.Query("user")
+	if user == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	role, err := services.GetDMRole(user)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query role: " + err.Error()})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"role": role})
+}
+
+// GetDMUsers godoc
+// @Summary      List DM users
+// @Description  Returns DM_USER rows as {user, role, email} tuples,
+// @Description  ordered by ID. Row 0 is the "Unassigned" placeholder
+// @Description  (role + email come back empty).
+// @Tags         users
+// @Produce      json
+// @Success      200  {array}   models.DMUser
 // @Failure      500  {object}  map[string]string  "failed to query users"
 // @Router       /v1/api/getDMUsers [get]
 func GetDMUsers(ctx *fiber.Ctx) error {
@@ -521,6 +549,32 @@ func GetRuleGroups(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule groups"})
 	}
 
+	return ctx.Status(fiber.StatusOK).JSON(groups)
+}
+
+// GetRuleGroupsForUser godoc
+// @Summary      List rule groups the given operator is authorized to see
+// @Description  Same shape as /getRuleGroups but filtered via
+// @Description  RULE_GROUP_AUTHORIZATION.ACCESS_LIST — only groups whose
+// @Description  access list contains the user's DM_USER.EMAIL are
+// @Description  returned. Powers the LHS tree view. Unknown user / no
+// @Description  email / no auth row → empty array (least-privileged).
+// @Tags         rule-groups
+// @Produce      json
+// @Param        user  query     string  true  "DM_USER display name"
+// @Success      200  {array}   models.RuleGroup
+// @Failure      400  {object}  map[string]string  "user is required"
+// @Failure      500  {object}  map[string]string  "failed to query rule groups for user"
+// @Router       /v1/api/getRuleGroupsForUser [get]
+func GetRuleGroupsForUser(ctx *fiber.Ctx) error {
+	user := ctx.Query("user")
+	if user == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	groups, err := services.GetRuleGroupsForUser(user)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rule groups for user"})
+	}
 	return ctx.Status(fiber.StatusOK).JSON(groups)
 }
 

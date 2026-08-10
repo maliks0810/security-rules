@@ -83,6 +83,15 @@ definitions:
       type:
         type: string
     type: object
+  models.DMUser:
+    properties:
+      email:
+        type: string
+      role:
+        type: string
+      user:
+        type: string
+    type: object
   models.Exception:
     properties:
       asset_id:
@@ -91,6 +100,8 @@ definitions:
         type: string
       assign_to_id:
         type: integer
+      close_date:
+        type: string
       comments:
         type: string
       created_by:
@@ -116,6 +127,8 @@ definitions:
       modified_by:
         type: string
       modified_date:
+        type: string
+      open_date:
         type: string
       priority:
         type: string
@@ -200,6 +213,15 @@ definitions:
   models.Rule:
     properties:
       environment:
+        type: string
+      revert_to_new_criteria:
+        description: |-
+          RevertToNewCriteria is the RULE_CATALOG.REVERT_TO_NEW_CRITERIA
+          column value: the name of a stored procedure that ExecuteRules
+          invokes after the archive/insert/inherit steps to re-evaluate the
+          catalog's non-New rows and flip any that no longer meet the
+          exception criteria back to STATUS_ID = 1 ('New'). Empty when the
+          catalog opted out of the revert workflow.
         type: string
       rule_catalog_id:
         type: integer
@@ -442,9 +464,50 @@ paths:
       summary: List assets with exception summary
       tags:
       - assets
+  /v1/api/getDMRole:
+    get:
+      description: |-
+        Returns { "role": "<DM_USER.ROLE>" } for the given
+        DM_USER.USER value. Unknown user → role: "". Powers
+        the frontend gate that hides Bulk Assign / Bulk
+        Status buttons and locks the per-row Assign To
+        column when the current operator isn't DM_ADMIN.
+      parameters:
+      - description: DM_USER.USER
+        in: query
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: user is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query role
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get the DM role for one user
+      tags:
+      - users
   /v1/api/getDMUsers:
     get:
-      description: Returns DM_USER.USER values ordered by ID.
+      description: |-
+        Returns DM_USER rows as {user, role, email} tuples,
+        ordered by ID. Row 0 is the "Unassigned" placeholder
+        (role + email come back empty).
       produces:
       - application/json
       responses:
@@ -452,7 +515,7 @@ paths:
           description: OK
           schema:
             items:
-              type: string
+              $ref: '#/definitions/models.DMUser'
             type: array
         "500":
           description: failed to query users
@@ -766,6 +829,44 @@ paths:
               type: string
             type: object
       summary: List rule groups
+      tags:
+      - rule-groups
+  /v1/api/getRuleGroupsForUser:
+    get:
+      description: |-
+        Same shape as /getRuleGroups but filtered via
+        RULE_GROUP_AUTHORIZATION.ACCESS_LIST — only groups whose
+        access list contains the user's DM_USER.EMAIL are
+        returned. Powers the LHS tree view. Unknown user / no
+        email / no auth row → empty array (least-privileged).
+      parameters:
+      - description: DM_USER display name
+        in: query
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.RuleGroup'
+            type: array
+        "400":
+          description: user is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query rule groups for user
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List rule groups the given operator is authorized to see
       tags:
       - rule-groups
   /v1/api/getRuleNames:
@@ -1098,7 +1199,10 @@ paths:
     get:
       description: |-
         Resolves the status name against EXCEPTION_STATUS and updates
-        the STATUS_ID for the row identified by exception_id.
+        the STATUS_ID for the row identified by exception_id. Optional
+        comments + suppress_date get bundled into the same UPDATE so
+        the SP's "blank" guards check the effective (passed) value
+        instead of a stale DB value the operator hasn't committed yet.
       parameters:
       - description: EXCEPTION_ID
         in: query
@@ -1109,6 +1213,16 @@ paths:
         in: query
         name: status
         required: true
+        type: string
+      - description: Pending COMMENTS to apply alongside the status change (empty
+          = leave alone)
+        in: query
+        name: comments
+        type: string
+      - description: Pending SUPPRESS_DATE (YYYY-MM-DD) to apply alongside the status
+          change (empty = leave alone)
+        in: query
+        name: suppress_date
         type: string
       produces:
       - application/json

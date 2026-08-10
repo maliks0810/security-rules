@@ -99,8 +99,10 @@ CREATE OR REPLACE TABLE EXCEPTION_SEVERITY_TYPE (
 
 -- DM_USER ---------------------------------------------------------------------
 CREATE OR REPLACE TABLE DM_USER (
-    ID   NUMBER AUTOINCREMENT START 1 INCREMENT 1 PRIMARY KEY,
-    "USER" VARCHAR(100) NOT NULL
+    ID     NUMBER AUTOINCREMENT START 1 INCREMENT 1 PRIMARY KEY,
+    "USER" VARCHAR(100) NOT NULL,
+    ROLE   VARCHAR(100),
+    EMAIL  VARCHAR(255)
 );
 
 -- RULE_GROUP ------------------------------------------------------------------
@@ -114,6 +116,18 @@ CREATE OR REPLACE TABLE RULE_GROUP (
     FLAG_ASSIGN_TO_VISIBLE BOOLEAN DEFAULT FALSE,
     CREATED_DATE           TIMESTAMP_NTZ(9),
     CREATED_BY             VARCHAR(100)
+);
+
+-- RULE_GROUP_AUTHORIZATION ----------------------------------------------------
+-- One row per RULE_GROUP, holding the list of operators (or roles)
+-- authorized to see / act on that group. ACCESS_LIST is a free-form
+-- VARCHAR so callers can encode whatever list format the frontend
+-- needs (comma-separated names, JSON, etc.) without a schema change.
+CREATE OR REPLACE TABLE RULE_GROUP_AUTHORIZATION (
+    RULE_GROUP_ID  NUMBER(38,0),
+    ACCESS_LIST    VARCHAR(5000),
+    CREATED_DATE   TIMESTAMP_NTZ(9),
+    CREATED_BY     VARCHAR(100)
 );
 
 -- RULE_CATALOG ----------------------------------------------------------------
@@ -1459,7 +1473,7 @@ $$;
 
 -- GET_DM_USERS ----------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SP_GET_DM_USERS()
-RETURNS TABLE("USER" VARCHAR)
+RETURNS TABLE("USER" VARCHAR, "ROLE" VARCHAR, "EMAIL" VARCHAR)
 LANGUAGE SQL
 AS
 $$
@@ -1467,9 +1481,37 @@ DECLARE
     res RESULTSET;
 BEGIN
     res := (
-        SELECT "USER"
+        SELECT "USER", "ROLE", "EMAIL"
         FROM "DM_USER"
         ORDER BY "ID" ASC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_DM_ROLE -----------------------------------------------------------------
+-- Returns DM_USER.ROLE for the given display name. Callers (the
+-- frontend gate) pass the current operator's DM_USER."USER" value —
+-- resolved from Okta once integration lands, hard-coded pre-cutover —
+-- and use the returned role to decide whether the Bulk Assign /
+-- Bulk Status buttons are visible and whether the per-row Assign To
+-- column is editable. Unknown / unassigned users return an empty row
+-- so the caller can treat "no role" as the least-privileged default.
+CREATE OR REPLACE PROCEDURE SP_GET_DM_ROLE(
+    P_USER VARCHAR
+)
+RETURNS TABLE("ROLE" VARCHAR)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT "ROLE"
+        FROM "DM_USER"
+        WHERE "USER" = :P_USER
+        LIMIT 1
     );
     RETURN TABLE(res);
 END;
@@ -1492,6 +1534,57 @@ BEGIN
                COALESCE("FLAG_ASSIGN_TO_VISIBLE", FALSE) AS "FLAG_ASSIGN_TO_VISIBLE"
         FROM "RULE_GROUP"
         ORDER BY "RULE_GROUP_ID" ASC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_RULE_GROUPS_FOR_USER ----------------------------------------------------
+-- Same column shape as SP_GET_RULE_GROUPS but filtered to the rule
+-- groups the given operator is authorized to see via
+-- RULE_GROUP_AUTHORIZATION. The authorization row's ACCESS_LIST is
+-- a comma-separated email list; membership is verified by splitting
+-- on ',' and comparing each token (case-insensitive, whitespace-
+-- trimmed) against the user's DM_USER.EMAIL. Unknown user, no email,
+-- or no auth row → empty result (least-privileged). Powers the LHS
+-- tree view; the frontend hard-codes P_USER pre-Okta.
+CREATE OR REPLACE PROCEDURE SP_GET_RULE_GROUPS_FOR_USER(
+    P_USER VARCHAR
+)
+RETURNS TABLE(
+    "NAME"                   VARCHAR,
+    "FLAG_STATUS_VISIBLE"    BOOLEAN,
+    "FLAG_COMMENTS_VISIBLE"  BOOLEAN,
+    "FLAG_SUPPRESS_DATE"     BOOLEAN,
+    "FLAG_ASSIGN_TO_VISIBLE" BOOLEAN
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT rg."NAME",
+               COALESCE(rg."FLAG_STATUS_VISIBLE",    FALSE) AS "FLAG_STATUS_VISIBLE",
+               COALESCE(rg."FLAG_COMMENTS_VISIBLE",  FALSE) AS "FLAG_COMMENTS_VISIBLE",
+               COALESCE(rg."FLAG_SUPPRESS_DATE",     FALSE) AS "FLAG_SUPPRESS_DATE",
+               COALESCE(rg."FLAG_ASSIGN_TO_VISIBLE", FALSE) AS "FLAG_ASSIGN_TO_VISIBLE"
+        FROM "RULE_GROUP" rg
+        WHERE rg."RULE_GROUP_ID" IN (
+            SELECT DISTINCT rga."RULE_GROUP_ID"
+            FROM "RULE_GROUP_AUTHORIZATION" rga
+            JOIN "DM_USER" du
+              ON UPPER(du."USER") = UPPER(:P_USER)
+            WHERE du."EMAIL" IS NOT NULL
+              AND du."EMAIL" <> ''
+              AND EXISTS (
+                  SELECT 1
+                  FROM LATERAL SPLIT_TO_TABLE(rga."ACCESS_LIST", ',') t
+                  WHERE UPPER(TRIM(t.VALUE::STRING)) = UPPER(du."EMAIL")
+              )
+        )
+        ORDER BY rg."RULE_GROUP_ID" ASC
     );
     RETURN TABLE(res);
 END;

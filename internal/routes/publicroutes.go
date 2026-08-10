@@ -27,7 +27,9 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getPriorityTypes", handlers.GetPriorityTypes)
 	route.Get("/getRules", handlers.GetRules)
 	route.Get("/getRuleGroups", handlers.GetRuleGroups)
+	route.Get("/getRuleGroupsForUser", handlers.GetRuleGroupsForUser)
 	route.Get("/getDMUsers", handlers.GetDMUsers)
+	route.Get("/getDMRole", handlers.GetDMRole)
 	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
 	route.Get("/getRuleNames", handlers.GetRuleNames)
 	// Accept both POST and GET. POST is the preferred entry point —

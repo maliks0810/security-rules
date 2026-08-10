@@ -1,9 +1,18 @@
 package services
 
 import (
+	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/app/repositories"
 )
 
-func GetDMUsers() ([]string, error) {
+func GetDMUsers() ([]models.DMUser, error) {
 	return repositories.GetDMUsers()
+}
+
+func GetDMRole(user string) (string, error) {
+	return repositories.GetDMRole(user)
+}
+
+func GetRuleGroupsForUser(user string) ([]models.RuleGroup, error) {
+	return repositories.GetRuleGroupsForUser(user)
 }
