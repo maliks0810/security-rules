@@ -93,3 +93,7 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppressDate string) (int, error) {
 	return repositories.UpdateBulkStatus(ruleNames, status, comments, suppressDate)
 }
+
+func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo string) ([]models.GroupCount, error) {
+	return repositories.GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo)
+}

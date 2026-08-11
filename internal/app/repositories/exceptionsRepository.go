@@ -14,6 +14,50 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
+// GetExceptionCountsByGroup returns one row per RULE_GROUP with the
+// count of matching EXCEPTION rows. Collapses the count panel's old
+// N-call fanout (fetchExceptions per group) into a single call.
+// Empty-string filter args map to the SP's "no filter" branch.
+func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo string) ([]models.GroupCount, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionCountsByGroup - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(
+			"CALL SP_GET_EXCEPTION_COUNTS_BY_GROUP(?, ?, ?, ?, ?)",
+			exceptionType, severity, priority, exceptionState, assignTo,
+		)
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionCountsByGroup - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(
+			`SELECT * FROM public."SP_GET_EXCEPTION_COUNTS_BY_GROUP"($1, $2, $3, $4, $5)`,
+			exceptionType, severity, priority, exceptionState, assignTo,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.GroupCount{}
+	for rows.Next() {
+		var group sql.NullString
+		var count sql.NullInt64
+		if err := rows.Scan(&group, &count); err != nil {
+			return nil, err
+		}
+		out = append(out, models.GroupCount{
+			RuleGroup: sqlutil.NullStr(group),
+			Count:     int(count.Int64),
+		})
+	}
+	return out, nil
+}
+
 func GetSeverityTypes() ([]string, error) {
 	var rows *sql.Rows
 	var err error

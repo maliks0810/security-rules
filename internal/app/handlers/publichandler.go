@@ -626,6 +626,67 @@ func GetRuleNames(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(names)
 }
 
+// GetExceptionCountsByGroup godoc
+// @Summary      Count of EXCEPTION rows per RULE_GROUP
+// @Description  Aggregation-only counterpart to /getExceptions: returns
+// @Description  one {rule_group, count} row per group with matching
+// @Description  EXCEPTION rows after applying the same predicates the
+// @Description  count panel uses (exception_type, severity, priority,
+// @Description  exception_state, assign_to). Status filter is not
+// @Description  applied — the count panel's "All" summary is unfiltered
+// @Description  by status. Powers the count-panel single-call path
+// @Description  that replaces the earlier N-call fetchExceptions fanout.
+// @Tags         exceptions
+// @Produce      json
+// @Param        exception_type   query     string  false  "Exception type filter"
+// @Param        severity         query     string  false  "Severity filter"
+// @Param        priority         query     string  false  "Priority filter"
+// @Param        exception_state  query     string  false  "Exception state filter"
+// @Param        assign_to        query     string  false  "Assign-to filter"
+// @Success      200  {array}   models.GroupCount
+// @Failure      500  {object}  map[string]string  "failed to query exception counts by group"
+// @Router       /v1/api/getExceptionCountsByGroup [get]
+func GetExceptionCountsByGroup(ctx *fiber.Ctx) error {
+	out, err := services.GetExceptionCountsByGroup(
+		ctx.Query("exception_type"),
+		ctx.Query("severity"),
+		ctx.Query("priority"),
+		ctx.Query("exception_state"),
+		ctx.Query("assign_to"),
+	)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception counts by group"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(out)
+}
+
+// GetRulesForGroup godoc
+// @Summary      List every active RULE under a group with its catalog + description
+// @Description  Returns one row per active RULE under the given RULE_GROUP,
+// @Description  projected as (rule_name, catalog_name, rule_description).
+// @Description  Collapses the LHS tree's earlier N+1 fanout
+// @Description  (getRuleCatalogs + getRuleNames per catalog) into a single
+// @Description  call — powers the count panel's ruleName→catalog map and
+// @Description  the rule-description hover cache.
+// @Tags         rules
+// @Produce      json
+// @Param        rule_group    query     string  true  "Rule group name"
+// @Success      200           {array}   models.RuleForGroup
+// @Failure      400           {object}  map[string]string  "rule_group query parameter is required"
+// @Failure      500           {object}  map[string]string  "failed to query rules for group"
+// @Router       /v1/api/getRulesForGroup [get]
+func GetRulesForGroup(ctx *fiber.Ctx) error {
+	ruleGroup := ctx.Query("rule_group")
+	if ruleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group query parameter is required"})
+	}
+	out, err := services.GetRulesForGroup(ruleGroup)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules for group"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(out)
+}
+
 // GetRules godoc
 // @Summary      List rule catalogs
 // @Description  Returns one row per RULE_CATALOG, optionally filtered. rule_type controls how rule_name is interpreted: "CATALOG" or "RULE" -> rule_name matches RULE_CATALOG.NAME; "GROUP" -> rule_name matches RULE_GROUP.NAME. Omit / empty / "All" means no filter.

@@ -358,6 +358,70 @@
                 }
             }
         },
+        "/v1/api/getExceptionCountsByGroup": {
+            "get": {
+                "description": "Aggregation-only counterpart to /getExceptions: returns\none {rule_group, count} row per group with matching\nEXCEPTION rows after applying the same predicates the\ncount panel uses (exception_type, severity, priority,\nexception_state, assign_to). Status filter is not\napplied — the count panel's \"All\" summary is unfiltered\nby status. Powers the count-panel single-call path\nthat replaces the earlier N-call fetchExceptions fanout.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Count of EXCEPTION rows per RULE_GROUP",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Exception type filter",
+                        "name": "exception_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Severity filter",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Priority filter",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exception state filter",
+                        "name": "exception_state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Assign-to filter",
+                        "name": "assign_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.GroupCount"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception counts by group",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/getExceptionHistDates": {
             "get": {
                 "description": "Returns ISO date strings for the last 60 days that have any\nEXCEPTION_HIST activity, most recent first. Powers the\n\"DQM Date\" dropdown options.",
@@ -940,6 +1004,56 @@
                     },
                     "500": {
                         "description": "failed to query rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getRulesForGroup": {
+            "get": {
+                "description": "Returns one row per active RULE under the given RULE_GROUP,\nprojected as (rule_name, catalog_name, rule_description).\nCollapses the LHS tree's earlier N+1 fanout\n(getRuleCatalogs + getRuleNames per catalog) into a single\ncall — powers the count panel's ruleName→catalog map and\nthe rule-description hover cache.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "List every active RULE under a group with its catalog + description",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule group name",
+                        "name": "rule_group",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.RuleForGroup"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "rule_group query parameter is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query rules for group",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1716,6 +1830,17 @@
                 }
             }
         },
+        "models.GroupCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "rule_group": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Rule": {
             "type": "object",
             "properties": {
@@ -1733,6 +1858,20 @@
                     "type": "string"
                 },
                 "rule_command": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RuleForGroup": {
+            "type": "object",
+            "properties": {
+                "catalog_name": {
+                    "type": "string"
+                },
+                "rule_description": {
+                    "type": "string"
+                },
+                "rule_name": {
                     "type": "string"
                 }
             }

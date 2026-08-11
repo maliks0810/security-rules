@@ -43,6 +43,10 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 
+func GetRulesForGroup(ruleGroup string) ([]models.RuleForGroup, error) {
+	return repositories.GetRulesForGroup(ruleGroup)
+}
+
 // ExecuteRules runs every catalog in (req.RuleName, req.RuleType) scope,
 // then — only after every catalog has succeeded — moves the day's
 // existing EXCEPTION rows for that same scope into EXCEPTION_HIST (via

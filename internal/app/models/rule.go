@@ -27,6 +27,26 @@ type RuleName struct {
 	RuleDescription string `json:"rule_description"`
 }
 
+// GroupCount is one row returned by SP_GET_EXCEPTION_COUNTS_BY_GROUP
+// — the number of matching EXCEPTION rows under each RULE_GROUP.
+// Powers the count-panel "All" summary that used to fanout to
+// N SP_GET_EXCEPTIONS calls.
+type GroupCount struct {
+	RuleGroup string `json:"rule_group"`
+	Count     int    `json:"count"`
+}
+
+// RuleForGroup is one row returned by SP_GET_RULES_FOR_GROUP —
+// a single flat projection of every active RULE under a RULE_GROUP,
+// enriched with its catalog name and description. Collapses the
+// old catalog+rule-names N+1 fanout the LHS tree used to run into
+// one call.
+type RuleForGroup struct {
+	RuleName        string `json:"rule_name"`
+	CatalogName     string `json:"catalog_name"`
+	RuleDescription string `json:"rule_description"`
+}
+
 // RuleGroup is one row from RULE_GROUP surfaced through SP_GET_RULE_GROUPS.
 // Flags drive opt-in UI on the Exceptions grid:
 //   - FlagStatusVisible   → STATUS filter panel + column

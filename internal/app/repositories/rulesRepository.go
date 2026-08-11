@@ -288,6 +288,44 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return names, nil
 }
 
+// GetRulesForGroup returns one row per active RULE under the given
+// RULE_GROUP as (rule_name, catalog_name, description) tuples.
+// Collapses the LHS tree's old GetRuleCatalogs + N × GetRuleNames
+// fanout into one round-trip.
+func GetRulesForGroup(ruleGroup string) ([]models.RuleForGroup, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetRulesForGroup - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_RULES_FOR_GROUP(?)", ruleGroup)
+	} else {
+		log.Logger.Info("rulesRepository: GetRulesForGroup - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULES_FOR_GROUP"($1)`, ruleGroup)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.RuleForGroup{}
+	for rows.Next() {
+		var name, catalog, description sql.NullString
+		if err := rows.Scan(&name, &catalog, &description); err != nil {
+			return nil, err
+		}
+		out = append(out, models.RuleForGroup{
+			RuleName:        sqlutil.NullStr(name),
+			CatalogName:     sqlutil.NullStr(catalog),
+			RuleDescription: sqlutil.NullStr(description),
+		})
+	}
+	return out, nil
+}
+
 func GetRuleCatalogs(ruleGroup string) ([]string, error) {
 	var rows *sql.Rows
 	var err error

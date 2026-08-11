@@ -1650,6 +1650,44 @@ BEGIN
 END;
 $$;
 
+-- GET_RULES_FOR_GROUP ---------------------------------------------------------
+-- Returns one row per RULE under the given RULE_GROUP, projected as
+-- (rule_name, catalog_name, description). Collapses what the LHS
+-- tree used to do in N+1 round-trips (SP_GET_RULE_CATALOGS(group) →
+-- SP_GET_RULE_NAMES(catalog) per catalog) into a single call, powers
+-- the count panel's ruleName → catalog + description lookup map.
+-- Only IS_ACTIVE = 1 rules are returned (parity with SP_GET_RULE_NAMES).
+CREATE OR REPLACE PROCEDURE SP_GET_RULES_FOR_GROUP(
+    P_RULE_GROUP VARCHAR
+)
+RETURNS TABLE(
+    "RULE_NAME"        VARCHAR,
+    "CATALOG_NAME"     VARCHAR,
+    "RULE_DESCRIPTION" VARCHAR
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT r."RULE_NAME"        AS "RULE_NAME",
+               rc."NAME"            AS "CATALOG_NAME",
+               r."RULE_DESCRIPTION" AS "RULE_DESCRIPTION"
+        FROM "RULE" r
+        JOIN "RULE_CATALOG" rc
+          ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+        JOIN "RULE_GROUP"   rg
+          ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+        WHERE rg."NAME" = :P_RULE_GROUP
+          AND r."IS_ACTIVE" = 1
+        ORDER BY rc."NAME" ASC, r."RULE_NAME" ASC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
 -- GET_RULES -------------------------------------------------------------------
 -- One row per RULE_CATALOG. RULE_COMMAND is RULE_CATALOG_SOURCE (the SQL
 -- the Go ExecuteRule layer runs; the result set must include a RULE_ID
@@ -2091,6 +2129,67 @@ BEGIN
           AND (:P_EXCEPTION_STATE   IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
           AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
           AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_EXCEPTION_COUNTS_BY_GROUP -----------------------------------------------
+-- Returns one row per RULE_GROUP with the count of EXCEPTION rows
+-- currently in scope, filtered by the same predicates the count
+-- panel used to send to SP_GET_EXCEPTIONS in its N-call fanout.
+-- Aggregation-only, so this stays one query regardless of how many
+-- groups the operator is authorized for. Status filter is
+-- intentionally NOT respected (see DqMonitorPage groupCounts effect).
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_COUNTS_BY_GROUP(
+    P_EXCEPTION_TYPE  VARCHAR DEFAULT NULL,
+    P_SEVERITY        VARCHAR DEFAULT NULL,
+    P_PRIORITY        VARCHAR DEFAULT NULL,
+    P_EXCEPTION_STATE VARCHAR DEFAULT NULL,
+    P_ASSIGN_TO       VARCHAR DEFAULT NULL
+)
+RETURNS TABLE(
+    "RULE_GROUP" VARCHAR,
+    "COUNT"      NUMBER
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT rg."NAME"  AS "RULE_GROUP",
+               COUNT(*)   AS "COUNT"
+        FROM "EXCEPTION" e
+        JOIN "RULE"                        r   ON r."RULE_ID"                     = e."RULE_ID"
+        JOIN "RULE_CATALOG"                rc  ON rc."RULE_CATALOG_ID"            = r."RULE_CATALOG_ID"
+        JOIN "RULE_GROUP"                  rg  ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
+        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN (
+            SELECT "RULE_ID", "ASSIGN_TO_ID"
+            FROM (
+                SELECT "RULE_ID", "ASSIGN_TO_ID",
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "RULE_ID"
+                           ORDER BY "CREATED_DATE" DESC,
+                                    "RULE_ASSIGN_OVERRIDE_ID" DESC
+                       ) AS rn
+                FROM "RULE_ASSIGN_OVERRIDE"
+            )
+            WHERE rn = 1
+        ) rao ON rao."RULE_ID" = r."RULE_ID"
+        LEFT JOIN "DM_USER" du
+          ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        WHERE (:P_EXCEPTION_TYPE  IS NULL OR :P_EXCEPTION_TYPE = '' OR et."NAME"  = :P_EXCEPTION_TYPE)
+          AND (:P_SEVERITY        IS NULL OR :P_SEVERITY       = '' OR est."NAME" = :P_SEVERITY)
+          AND (:P_PRIORITY        IS NULL OR :P_PRIORITY       = '' OR ept."NAME" = :P_PRIORITY)
+          AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
+          AND (:P_ASSIGN_TO       IS NULL OR :P_ASSIGN_TO       = 'All' OR du."USER" = :P_ASSIGN_TO)
+        GROUP BY rg."NAME"
     );
     RETURN TABLE(res);
 END;

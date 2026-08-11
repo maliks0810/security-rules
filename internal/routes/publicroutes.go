@@ -32,6 +32,8 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getDMRole", handlers.GetDMRole)
 	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
 	route.Get("/getRuleNames", handlers.GetRuleNames)
+	route.Get("/getRulesForGroup", handlers.GetRulesForGroup)
+	route.Get("/getExceptionCountsByGroup", handlers.GetExceptionCountsByGroup)
 	// Accept both POST and GET. POST is the preferred entry point —
 	// this endpoint mutates state (archive-then-insert), and load
 	// balancers / ingresses retry idempotent GETs on backend delays,

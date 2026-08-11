@@ -210,6 +210,13 @@ definitions:
         example: 200
         type: integer
     type: object
+  models.GroupCount:
+    properties:
+      count:
+        type: integer
+      rule_group:
+        type: string
+    type: object
   models.Rule:
     properties:
       environment:
@@ -228,6 +235,15 @@ definitions:
       rule_catalog_name:
         type: string
       rule_command:
+        type: string
+    type: object
+  models.RuleForGroup:
+    properties:
+      catalog_name:
+        type: string
+      rule_description:
+        type: string
+      rule_name:
         type: string
     type: object
   models.RuleGroup:
@@ -526,6 +542,56 @@ paths:
       summary: List DM users
       tags:
       - users
+  /v1/api/getExceptionCountsByGroup:
+    get:
+      description: |-
+        Aggregation-only counterpart to /getExceptions: returns
+        one {rule_group, count} row per group with matching
+        EXCEPTION rows after applying the same predicates the
+        count panel uses (exception_type, severity, priority,
+        exception_state, assign_to). Status filter is not
+        applied — the count panel's "All" summary is unfiltered
+        by status. Powers the count-panel single-call path
+        that replaces the earlier N-call fetchExceptions fanout.
+      parameters:
+      - description: Exception type filter
+        in: query
+        name: exception_type
+        type: string
+      - description: Severity filter
+        in: query
+        name: severity
+        type: string
+      - description: Priority filter
+        in: query
+        name: priority
+        type: string
+      - description: Exception state filter
+        in: query
+        name: exception_state
+        type: string
+      - description: Assign-to filter
+        in: query
+        name: assign_to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.GroupCount'
+            type: array
+        "500":
+          description: failed to query exception counts by group
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Count of EXCEPTION rows per RULE_GROUP
+      tags:
+      - exceptions
   /v1/api/getExceptionHistDates:
     get:
       description: |-
@@ -936,6 +1002,45 @@ paths:
               type: string
             type: object
       summary: List rule catalogs
+      tags:
+      - rules
+  /v1/api/getRulesForGroup:
+    get:
+      description: |-
+        Returns one row per active RULE under the given RULE_GROUP,
+        projected as (rule_name, catalog_name, rule_description).
+        Collapses the LHS tree's earlier N+1 fanout
+        (getRuleCatalogs + getRuleNames per catalog) into a single
+        call — powers the count panel's ruleName→catalog map and
+        the rule-description hover cache.
+      parameters:
+      - description: Rule group name
+        in: query
+        name: rule_group
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.RuleForGroup'
+            type: array
+        "400":
+          description: rule_group query parameter is required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to query rules for group
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List every active RULE under a group with its catalog + description
       tags:
       - rules
   /v1/api/getSeverityTypes:
