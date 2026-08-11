@@ -1572,17 +1572,23 @@ BEGIN
                COALESCE(rg."FLAG_ASSIGN_TO_VISIBLE", FALSE) AS "FLAG_ASSIGN_TO_VISIBLE"
         FROM "RULE_GROUP" rg
         WHERE rg."RULE_GROUP_ID" IN (
-            SELECT DISTINCT rga."RULE_GROUP_ID"
+            SELECT rga."RULE_GROUP_ID"
             FROM "RULE_GROUP_AUTHORIZATION" rga
             JOIN "DM_USER" du
               ON UPPER(du."USER") = UPPER(:P_USER)
             WHERE du."EMAIL" IS NOT NULL
               AND du."EMAIL" <> ''
-              AND EXISTS (
-                  SELECT 1
-                  FROM LATERAL SPLIT_TO_TABLE(rga."ACCESS_LIST", ',') t
-                  WHERE UPPER(TRIM(t.VALUE::STRING)) = UPPER(du."EMAIL")
-              )
+              -- Delimiter-fenced substring membership: wrap the
+              -- normalized ACCESS_LIST with ',' at both ends and
+              -- match ',<email>,' so we can't get false hits (e.g.
+              -- 'joe@x.com' inside 'joesmith@x.com'). Snowflake's
+              -- planner rejects EXISTS + LATERAL SPLIT_TO_TABLE
+              -- because the table function can't be correlated
+              -- against outer columns; LIKE has no such restriction.
+              -- Spaces are stripped so 'a@x.com, b@y.com' matches
+              -- the same as 'a@x.com,b@y.com'.
+              AND ',' || REPLACE(UPPER(rga."ACCESS_LIST"), ' ', '') || ','
+                  LIKE '%,' || UPPER(du."EMAIL") || ',%'
         )
         ORDER BY rg."RULE_GROUP_ID" ASC
     );
