@@ -11,6 +11,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+
+	"securityrules/security-rules/configs"
 )
 
 func FiberMiddleware(application *fiber.App) {
@@ -69,9 +71,21 @@ func limiterConfig() limiter.Config {
 
 func loggerConfig() logger.Config {
 	return logger.Config{
-		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
+		Format:     "[${time}] ${status} - ${latency} ${method} ${path}\n",
 		TimeFormat: "15:04:05", // https://programming.guide/go/format-parse-string-time-date-example.html
-		TimeZone: "Local",
+		TimeZone:   "Local",
+		// LOG_HTTP_SUCCESS (env) toggles per-request access logs for
+		// 2xx / 3xx responses. Default false — successful responses
+		// are skipped and only 4xx / 5xx failures print, so the
+		// console keeps the zap-level app messages front-and-center.
+		// Flip LOG_HTTP_SUCCESS=true in an env file to log every
+		// request (useful when tracing a specific call end-to-end).
+		Next: func(c *fiber.Ctx) bool {
+			if configs.EnvConfigs != nil && configs.EnvConfigs.LogHttpSuccess {
+				return false
+			}
+			return c.Response().StatusCode() < 400
+		},
 	}
 }
 
