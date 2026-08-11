@@ -42,12 +42,13 @@ type envConfigs struct {
 	// zooms in on rule-catalog runs and INFO gives the full firehose.
 	// Defaults to INFO across all envs.
 	LogLevel string `mapstructure:"LOG_LEVEL"`
-	// LogHttpSuccess gates the Fiber access-log middleware for 2xx /
-	// 3xx responses. Default false — the "[time] 200 - Xms GET /..."
-	// lines are suppressed and only 4xx / 5xx failures print, so the
-	// console keeps the zap-level app messages front-and-center.
-	// Flip to true to see every request (useful when tracing a
-	// specific call end-to-end).
+	// LogHttpSuccess gates Fiber's per-request access-log middleware
+	// entirely. Default false — every "[time] status - Xms method
+	// path" line is suppressed (2xx, 3xx, 4xx, 5xx alike) so the
+	// console keeps only the zap-level app messages. Flip to true to
+	// log every request (useful when tracing a specific call
+	// end-to-end); failures remain visible via zap.Error at the
+	// handler layer.
 	LogHttpSuccess bool `mapstructure:"LOG_HTTP_SUCCESS"`
 }
 
@@ -123,11 +124,11 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.SetDefault("LOG_LEVEL", "INFO")
 	viper.BindEnv("LOG_LEVEL")
 
-	// HTTP access-log toggle for successful responses (2xx / 3xx).
-	// Default false — Fiber's per-request line ("[time] 200 - Xms
-	// GET /...") only prints for 4xx / 5xx so the console stays
-	// focused on failures + zap-level app messages. Set
-	// LOG_HTTP_SUCCESS=true in an env file to see every request.
+	// HTTP access-log toggle for Fiber's per-request line
+	// ("[time] status - Xms method path"). Default false — every
+	// access-log line is suppressed (any status) so the console
+	// keeps only the zap-level app messages. Set LOG_HTTP_SUCCESS=
+	// true in an env file to log every request end-to-end.
 	viper.SetDefault("LOG_HTTP_SUCCESS", false)
 	viper.BindEnv("LOG_HTTP_SUCCESS")
 

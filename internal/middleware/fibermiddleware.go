@@ -74,17 +74,18 @@ func loggerConfig() logger.Config {
 		Format:     "[${time}] ${status} - ${latency} ${method} ${path}\n",
 		TimeFormat: "15:04:05", // https://programming.guide/go/format-parse-string-time-date-example.html
 		TimeZone:   "Local",
-		// LOG_HTTP_SUCCESS (env) toggles per-request access logs for
-		// 2xx / 3xx responses. Default false — successful responses
-		// are skipped and only 4xx / 5xx failures print, so the
-		// console keeps the zap-level app messages front-and-center.
-		// Flip LOG_HTTP_SUCCESS=true in an env file to log every
-		// request (useful when tracing a specific call end-to-end).
+		// LOG_HTTP_SUCCESS (env) toggles Fiber's per-request access log
+		// entirely. Default false — ALL access-log lines (2xx, 3xx,
+		// 4xx, 5xx) are skipped so the console shows only the zap-level
+		// app messages. Flip LOG_HTTP_SUCCESS=true in an env file to
+		// log every request (useful when tracing a specific call
+		// end-to-end); failures are always visible via zap.Error in
+		// the handlers themselves.
 		Next: func(c *fiber.Ctx) bool {
-			if configs.EnvConfigs != nil && configs.EnvConfigs.LogHttpSuccess {
-				return false
+			if configs.EnvConfigs == nil || !configs.EnvConfigs.LogHttpSuccess {
+				return true
 			}
-			return c.Response().StatusCode() < 400
+			return false
 		},
 	}
 }
