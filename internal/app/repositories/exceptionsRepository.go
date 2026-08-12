@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"securityrules/security-rules/configs"
@@ -13,6 +14,44 @@ import (
 	"securityrules/security-rules/internal/utils/snowflake"
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
+
+// Package-level cache for ExpireSuppressDates so it runs at most once
+// per UTC calendar day per process. SUPPRESS_DATE is DATE-granular —
+// running the sweep more than once a day is pure UPDATE cost. The
+// mutex protects lastExpireDate; time.Time zero value means "never
+// ran", which forces the first call in the process to fire.
+var (
+	lastExpireDateMu sync.Mutex
+	lastExpireDate   time.Time
+)
+
+// maybeExpireSuppressDates fires SP_EXPIRE_SUPPRESS_DATES at most once
+// per UTC calendar day per process. All GetExceptions callers route
+// through this instead of calling ExpireSuppressDates directly, so
+// the underlying UPDATE runs on the first LHS tree click of the day
+// and is skipped for every subsequent click / filter change / mode
+// toggle. Failures don't advance lastExpireDate — the next call
+// retries. ExpireSuppressDates itself stays exported for cron /
+// manual callers that want to force a sweep.
+func maybeExpireSuppressDates() {
+	lastExpireDateMu.Lock()
+	defer lastExpireDateMu.Unlock()
+
+	todayUTC := time.Now().UTC().Truncate(24 * time.Hour)
+	if !lastExpireDate.Before(todayUTC) {
+		return
+	}
+
+	n, err := ExpireSuppressDates()
+	if err != nil {
+		log.Logger.Warn(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates failed, continuing: %v", err))
+		return
+	}
+	lastExpireDate = todayUTC
+	if n > 0 {
+		log.Logger.Info(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates - reverted %d row(s) to New", n))
+	}
+}
 
 // GetExceptionCountsByGroup returns one row per RULE_GROUP with the
 // count of matching EXCEPTION rows. Collapses the count panel's old
@@ -400,15 +439,13 @@ func GetExceptionTypes() ([]string, error) {
 // table and joins RULE + the lookup tables. Returns the new Exception
 // model (23-column shape â€” no dummy NULLs to fit the legacy struct).
 func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
-	// Best-effort auto-expire before the read so any Suppress row whose
-	// SUPPRESS_DATE has passed reverts to STATUS_ID=1 (New) with a null
-	// SUPPRESS_DATE. Logged and swallowed on failure — a sweep error must
-	// not blank the grid.
-	if n, expErr := ExpireSuppressDates(); expErr != nil {
-		log.Logger.Warn(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates failed, continuing: %v", expErr))
-	} else if n > 0 {
-		log.Logger.Info(fmt.Sprintf("exceptionsRepository: ExpireSuppressDates - reverted %d row(s) to New", n))
-	}
+	// Once-per-day sweep: any Suppress row whose SUPPRESS_DATE has
+	// passed reverts to STATUS_ID=1 (New) with a null SUPPRESS_DATE.
+	// Guarded by lastExpireDate so this only fires the first
+	// GetExceptions call of each UTC day per process instead of on
+	// every LHS tree click. SUPPRESS_DATE is DATE-granular, so
+	// re-running mid-day would just re-scan-then-no-op.
+	maybeExpireSuppressDates()
 
 	var rows *sql.Rows
 	var err error
@@ -430,15 +467,32 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	assignToArg := nilIfEmpty(assignTo)
 	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
 
+	// SP_GET_EXCEPTIONS no longer defaults P_EXCEPTION_DATE to today
+	// (the WHERE clause is a plain equality, not COALESCE-with-fallback),
+	// so the repository always resolves the target date up front and
+	// passes it explicitly. "Today UTC" is the correct default for the
+	// live grid — the historical view goes through GetExceptionsHist.
+	todayUTC := time.Now().UTC().Format("2006-01-02")
+
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL SP_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg)
+		// SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(...)) invokes the
+		// table-valued SQL UDF that replaces SP_GET_EXCEPTIONS. UDFs
+		// inline into the query plan (no per-call SP compilation, so
+		// predicate push-down + partition pruning work across the
+		// boundary). If it ever misbehaves, swap this line back to
+		// `CALL SP_GET_EXCEPTIONS(...)` — the SP is kept in place
+		// for exactly this rollback.
+		rows, err = snowflake.Query(
+			"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?))",
+			assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, todayUTC,
+		)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, todayUTC)
 	}
 	if err != nil {
 		return nil, err

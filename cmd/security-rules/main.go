@@ -159,19 +159,29 @@ func tunePostgresPool(db *sql.DB) {
 }
 
 func newTracerProvider() *sdktrace.TracerProvider {
-	exporter, err := stdout.New(stdout.WithPrettyPrint())
-	if err != nil {
-		log.Logger.Fatal(fmt.Sprintf("unable to create a new OTEL tracer provider: %v", err))
-	}
-	tp := sdktrace.NewTracerProvider(
+	// LOG_OTEL_SPANS (env) gates the stdout span exporter — the noisy
+	// pretty-printed multi-line JSON dumps ("Name", "SpanContext",
+	// ...) that used to appear after every request. Default false:
+	// no exporter is registered, spans record into the SDK but never
+	// flush anywhere (still cheap and safe — Shutdown() below stays
+	// valid). Flip LOG_OTEL_SPANS=true to attach the pretty-print
+	// stdout exporter for local trace inspection.
+	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(
 			resource.NewWithAttributes(
 				semconv.SchemaURL,
 				semconv.ServiceNameKey.String("security-rules"),
 			)),
-	)
+	}
+	if configs.EnvConfigs != nil && configs.EnvConfigs.LogOtelSpans {
+		exporter, err := stdout.New(stdout.WithPrettyPrint())
+		if err != nil {
+			log.Logger.Fatal(fmt.Sprintf("unable to create a new OTEL tracer provider: %v", err))
+		}
+		opts = append(opts, sdktrace.WithBatcher(exporter))
+	}
+	tp := sdktrace.NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 

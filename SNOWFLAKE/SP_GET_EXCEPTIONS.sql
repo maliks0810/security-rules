@@ -9,9 +9,9 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     P_EXCEPTION_STATE  VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
     P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
-    -- EXCEPTION_DATE cut-off (defaults to today UTC when NULL) so the
-    -- grid never surfaces stale-date rows that haven't been swept to
-    -- EXCEPTION_HIST yet.
+    -- EXCEPTION_DATE cut-off. Required — callers must resolve
+    -- "today" (or the target day) themselves and pass an explicit
+    -- date. Passing NULL matches no rows.
     P_EXCEPTION_DATE    DATE    DEFAULT NULL
 )
 RETURNS TABLE (
@@ -105,8 +105,7 @@ BEGIN
             WHERE rn = 1
         ) rao ON rao."RULE_ID" = r."RULE_ID"
         LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
-        WHERE e."EXCEPTION_DATE" = COALESCE(:P_EXCEPTION_DATE,
-                                            TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
+        WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)

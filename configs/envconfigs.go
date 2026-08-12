@@ -50,6 +50,13 @@ type envConfigs struct {
 	// end-to-end); failures remain visible via zap.Error at the
 	// handler layer.
 	LogHttpSuccess bool `mapstructure:"LOG_HTTP_SUCCESS"`
+	// LogOtelSpans gates the OpenTelemetry stdout span exporter that
+	// pretty-prints every completed span as multi-line JSON
+	// ("Name":"/", "SpanContext":{...}, ...). Default false — the
+	// exporter is skipped so no span noise appears on the console.
+	// Flip to true when you want to inspect trace data locally
+	// (e.g., latency of a slow request end-to-end).
+	LogOtelSpans bool `mapstructure:"LOG_OTEL_SPANS"`
 }
 
 var EnvConfigs *envConfigs
@@ -131,6 +138,14 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	// true in an env file to log every request end-to-end.
 	viper.SetDefault("LOG_HTTP_SUCCESS", false)
 	viper.BindEnv("LOG_HTTP_SUCCESS")
+
+	// OTel stdout span exporter toggle. Default false — the
+	// pretty-printed multi-line span dumps ("Name", "SpanContext",
+	// ...) that used to spam the console after every request are
+	// suppressed. Set LOG_OTEL_SPANS=true when you want to inspect
+	// trace data locally.
+	viper.SetDefault("LOG_OTEL_SPANS", false)
+	viper.BindEnv("LOG_OTEL_SPANS")
 
 	golangEnv := viper.GetString("GOLANG_ENVIRONMENT")
 
