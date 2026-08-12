@@ -483,8 +483,14 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		// boundary). If it ever misbehaves, swap this line back to
 		// `CALL SP_GET_EXCEPTIONS(...)` — the SP is kept in place
 		// for exactly this rollback.
+		//
+		// TO_DATE(?) around the last param: Snowflake UDF argument
+		// typing is stricter than SP CALL. The string "YYYY-MM-DD"
+		// coerces to DATE inside a SP CALL context but not inside a
+		// SELECT-invoked UDF, which reports "invalid argument types
+		// for function UDF_GET_EXCEPTIONS" without the explicit cast.
 		rows, err = snowflake.Query(
-			"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?))",
+			"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?)))",
 			assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, todayUTC,
 		)
 	} else {
