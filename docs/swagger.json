@@ -1096,6 +1096,69 @@
                 }
             }
         },
+        "/v1/api/getUserPreferences": {
+            "get": {
+                "description": "Reads USER_PREFERENCES for the (user, rule_group,\nrule_catalog) tuple. rule_catalog empty / omitted =\nLHS tree at the group root (matches the row where\nRULE_CATALOG_ID IS NULL). Returns column_order as an\nopaque string (JSON array on the wire today, but the\nbackend doesn't parse it). Empty string when no\nsaved layout exists — client falls back to canonical\ndefault column order.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Load the operator's saved column layout for a scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER display name",
+                        "name": "user",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME",
+                        "name": "rule_group",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME (empty for group-root scope)",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{column_order: ...}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to load user preferences",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/info": {
             "get": {
                 "description": "Returns a static welcome string used as a basic liveness check.",
@@ -1547,6 +1610,61 @@
                     }
                 }
             }
+        },
+        "/v1/api/updateUserPreferences": {
+            "post": {
+                "description": "Upserts USER_PREFERENCES for the (user, rule_group,\nrule_catalog) tuple. rule_catalog empty / omitted =\nLHS tree at the group root (RULE_CATALOG_ID stored\nas NULL). column_order is an opaque string the client\nencodes (JSON array of grid column names today).\nReturns {\"status\": 1} for insert, {\"status\": 2} for\nupdate, {\"status\": 0} for no-op (unknown user, group,\nor explicit catalog name).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Save the operator's UI preferences (column order)",
+                "parameters": [
+                    {
+                        "description": "user + rule_group + rule_catalog + column_order",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateUserPreferencesBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "insert/update status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to update user preferences",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1626,6 +1744,23 @@
                     "type": "integer"
                 },
                 "suppress_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.updateUserPreferencesBody": {
+            "type": "object",
+            "properties": {
+                "column_order": {
+                    "type": "string"
+                },
+                "rule_catalog": {
+                    "type": "string"
+                },
+                "rule_group": {
+                    "type": "string"
+                },
+                "user": {
                     "type": "string"
                 }
             }

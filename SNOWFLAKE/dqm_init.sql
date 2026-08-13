@@ -1605,6 +1605,50 @@ BEGIN
 END;
 $$;
 
+-- GET_USER_PREFERENCES --------------------------------------------------------
+-- Returns the saved COLUMN_ORDER for the (user, rule_group,
+-- rule_catalog) scope, or zero rows when nothing is saved. Callers
+-- fall back to the canonical default order on zero rows. Name-based
+-- inputs (mirrors SP_UPDATE_USER_PREFERENCES); RULE_CATALOG_ID IS
+-- NULL matched via EQUAL_NULL when the LHS tree is at the group
+-- root.
+CREATE OR REPLACE PROCEDURE SP_GET_USER_PREFERENCES(
+    P_USER          VARCHAR,
+    P_RULE_GROUP    VARCHAR,
+    P_RULE_CATALOG  VARCHAR
+)
+RETURNS TABLE(
+    "COLUMN_ORDER" VARCHAR
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT up."COLUMN_ORDER"
+        FROM "USER_PREFERENCES" up
+        JOIN "DM_USER"    du ON du."ID"            = up."DM_USER_ID"
+        JOIN "RULE_GROUP" rg ON rg."RULE_GROUP_ID" = up."RULE_GROUP_ID"
+        LEFT JOIN "RULE_CATALOG" rc
+               ON rc."RULE_CATALOG_ID" = up."RULE_CATALOG_ID"
+        WHERE du."USER" = :P_USER
+          AND rg."NAME" = :P_RULE_GROUP
+          AND EQUAL_NULL(
+                  rc."NAME",
+                  CASE
+                      WHEN :P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = ''
+                          THEN NULL
+                      ELSE :P_RULE_CATALOG
+                  END
+              )
+        LIMIT 1
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
 -- GET_DM_USERS ----------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SP_GET_DM_USERS()
 RETURNS TABLE("USER" VARCHAR, "ROLE" VARCHAR, "EMAIL" VARCHAR)

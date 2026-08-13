@@ -172,6 +172,54 @@ func UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder string) (in
 	return int(status.Int64), nil
 }
 
+// GetUserPreferences reads the saved COLUMN_ORDER for the (user,
+// rule group, rule catalog) scope from USER_PREFERENCES. Pass
+// ruleCatalog as "" when the LHS tree is at the group root — the
+// SP matches the row where RULE_CATALOG_ID IS NULL via EQUAL_NULL /
+// IS NOT DISTINCT FROM. Returns "" when no matching row exists so
+// callers can fall back to the canonical default column layout.
+func GetUserPreferences(user, ruleGroup, ruleCatalog string) (string, error) {
+	if strings.TrimSpace(user) == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(ruleGroup) == "" {
+		return "", nil
+	}
+	var columnOrder sql.NullString
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("usersRepository: GetUserPreferences - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query(
+			"CALL SP_GET_USER_PREFERENCES(?, ?, ?)",
+			user, ruleGroup, ruleCatalog,
+		)
+		if err != nil {
+			return "", err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if err := rows.Scan(&columnOrder); err != nil {
+				return "", err
+			}
+		}
+		return sqlutil.NullStr(columnOrder), nil
+	}
+	log.Logger.Info("usersRepository: GetUserPreferences - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return "", sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT * FROM public."SP_GET_USER_PREFERENCES"($1, $2, $3)`,
+		user, ruleGroup, ruleCatalog,
+	).Scan(&columnOrder)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return sqlutil.NullStr(columnOrder), nil
+}
+
 // GetDMUsers returns every row from DM_USER as {user, role, email}
 // tuples in DM_USER.ID order. Row 0 is always the "Unassigned"
 // placeholder — role + email come back empty for that row.

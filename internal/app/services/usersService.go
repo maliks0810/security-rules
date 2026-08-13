@@ -20,3 +20,7 @@ func GetRuleGroupsForUser(user string) ([]models.RuleGroup, error) {
 func UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder string) (int, error) {
 	return repositories.UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder)
 }
+
+func GetUserPreferences(user, ruleGroup, ruleCatalog string) (string, error) {
+	return repositories.GetUserPreferences(user, ruleGroup, ruleCatalog)
+}

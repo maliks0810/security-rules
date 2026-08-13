@@ -54,6 +54,17 @@ definitions:
       suppress_date:
         type: string
     type: object
+  handlers.updateUserPreferencesBody:
+    properties:
+      column_order:
+        type: string
+      rule_catalog:
+        type: string
+      rule_group:
+        type: string
+      user:
+        type: string
+    type: object
   models.Asset:
     properties:
       all_complete:
@@ -1064,6 +1075,56 @@ paths:
       summary: List severity codes
       tags:
       - severity-types
+  /v1/api/getUserPreferences:
+    get:
+      description: |-
+        Reads USER_PREFERENCES for the (user, rule_group,
+        rule_catalog) tuple. rule_catalog empty / omitted =
+        LHS tree at the group root (matches the row where
+        RULE_CATALOG_ID IS NULL). Returns column_order as an
+        opaque string (JSON array on the wire today, but the
+        backend doesn't parse it). Empty string when no
+        saved layout exists — client falls back to canonical
+        default column order.
+      parameters:
+      - description: DM_USER.USER display name
+        in: query
+        name: user
+        required: true
+        type: string
+      - description: RULE_GROUP.NAME
+        in: query
+        name: rule_group
+        required: true
+        type: string
+      - description: RULE_CATALOG.NAME (empty for group-root scope)
+        in: query
+        name: rule_catalog
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{column_order: ...}'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: invalid params
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to load user preferences
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Load the operator's saved column layout for a scope
+      tags:
+      - users
   /v1/api/info:
     get:
       description: Returns a static welcome string used as a basic liveness check.
@@ -1391,4 +1452,48 @@ paths:
       summary: Update EXCEPTION.SUPPRESS_DATE for a single row
       tags:
       - exceptions
+  /v1/api/updateUserPreferences:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Upserts USER_PREFERENCES for the (user, rule_group,
+        rule_catalog) tuple. rule_catalog empty / omitted =
+        LHS tree at the group root (RULE_CATALOG_ID stored
+        as NULL). column_order is an opaque string the client
+        encodes (JSON array of grid column names today).
+        Returns {"status": 1} for insert, {"status": 2} for
+        update, {"status": 0} for no-op (unknown user, group,
+        or explicit catalog name).
+      parameters:
+      - description: user + rule_group + rule_catalog + column_order
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.updateUserPreferencesBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: insert/update status
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: invalid params
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: failed to update user preferences
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Save the operator's UI preferences (column order)
+      tags:
+      - users
 swagger: "2.0"

@@ -566,6 +566,44 @@ type updateUserPreferencesBody struct {
 	ColumnOrder string `json:"column_order"`
 }
 
+// GetUserPreferences godoc
+// @Summary      Load the operator's saved column layout for a scope
+// @Description  Reads USER_PREFERENCES for the (user, rule_group,
+// @Description  rule_catalog) tuple. rule_catalog empty / omitted =
+// @Description  LHS tree at the group root (matches the row where
+// @Description  RULE_CATALOG_ID IS NULL). Returns column_order as an
+// @Description  opaque string (JSON array on the wire today, but the
+// @Description  backend doesn't parse it). Empty string when no
+// @Description  saved layout exists — client falls back to canonical
+// @Description  default column order.
+// @Tags         users
+// @Produce      json
+// @Param        user          query     string  true   "DM_USER.USER display name"
+// @Param        rule_group    query     string  true   "RULE_GROUP.NAME"
+// @Param        rule_catalog  query     string  false  "RULE_CATALOG.NAME (empty for group-root scope)"
+// @Success      200  {object}  map[string]string  "{column_order: ...}"
+// @Failure      400  {object}  map[string]string  "invalid params"
+// @Failure      500  {object}  map[string]string  "failed to load user preferences"
+// @Router       /v1/api/getUserPreferences [get]
+func GetUserPreferences(ctx *fiber.Ctx) error {
+	user := ctx.Query("user")
+	ruleGroup := ctx.Query("rule_group")
+	ruleCatalog := ctx.Query("rule_catalog")
+	if user == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	if ruleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group is required"})
+	}
+	columnOrder, err := services.GetUserPreferences(user, ruleGroup, ruleCatalog)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to load user preferences: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"column_order": columnOrder})
+}
+
 // GetDMUsers godoc
 // @Summary      List DM users
 // @Description  Returns DM_USER rows as {user, role, email} tuples,
