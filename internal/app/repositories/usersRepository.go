@@ -116,6 +116,62 @@ func GetRuleGroupsForUser(userName string) ([]models.RuleGroup, error) {
 	return groups, nil
 }
 
+// UpdateUserPreferences upserts a per-operator UI preference row
+// into USER_PREFERENCES for the (user, rule group, rule catalog)
+// tuple. Today the only persisted field is columnOrder (an opaque
+// JSON string the client encodes). Pass ruleCatalog as "" when the
+// LHS tree is at the group root — the row is then scoped to the
+// whole group and RULE_CATALOG_ID is stored NULL.
+//
+// Returns the proc's status code verbatim:
+//   0 — no-op (unknown user, group, or explicit catalog name).
+//   1 — inserted a new preferences row.
+//   2 — updated an existing preferences row.
+func UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder string) (int, error) {
+	if strings.TrimSpace(user) == "" {
+		return 0, nil
+	}
+	if strings.TrimSpace(ruleGroup) == "" {
+		return 0, nil
+	}
+	var status sql.NullInt64
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("usersRepository: UpdateUserPreferences - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query(
+			"CALL SP_UPDATE_USER_PREFERENCES(?, ?, ?, ?)",
+			user, ruleGroup, ruleCatalog, columnOrder,
+		)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if err := rows.Scan(&status); err != nil {
+				return 0, err
+			}
+		}
+		if !status.Valid {
+			return 0, nil
+		}
+		return int(status.Int64), nil
+	}
+	log.Logger.Info("usersRepository: UpdateUserPreferences - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_UPDATE_USER_PREFERENCES"($1, $2, $3, $4)`,
+		user, ruleGroup, ruleCatalog, columnOrder,
+	).Scan(&status)
+	if err != nil {
+		return 0, err
+	}
+	if !status.Valid {
+		return 0, nil
+	}
+	return int(status.Int64), nil
+}
+
 // GetDMUsers returns every row from DM_USER as {user, role, email}
 // tuples in DM_USER.ID order. Row 0 is always the "Unassigned"
 // placeholder — role + email come back empty for that row.

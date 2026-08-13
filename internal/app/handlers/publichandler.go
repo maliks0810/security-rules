@@ -516,6 +516,56 @@ func GetDMRole(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"role": role})
 }
 
+// UpdateUserPreferences godoc
+// @Summary      Save the operator's UI preferences (column order)
+// @Description  Upserts USER_PREFERENCES for the (user, rule_group,
+// @Description  rule_catalog) tuple. rule_catalog empty / omitted =
+// @Description  LHS tree at the group root (RULE_CATALOG_ID stored
+// @Description  as NULL). column_order is an opaque string the client
+// @Description  encodes (JSON array of grid column names today).
+// @Description  Returns {"status": 1} for insert, {"status": 2} for
+// @Description  update, {"status": 0} for no-op (unknown user, group,
+// @Description  or explicit catalog name).
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.updateUserPreferencesBody  true  "user + rule_group + rule_catalog + column_order"
+// @Success      200  {object}  map[string]int   "insert/update status"
+// @Failure      400  {object}  map[string]string "invalid params"
+// @Failure      500  {object}  map[string]string "failed to update user preferences"
+// @Router       /v1/api/updateUserPreferences [post]
+func UpdateUserPreferences(ctx *fiber.Ctx) error {
+	var body updateUserPreferencesBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if body.User == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	if body.RuleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group is required"})
+	}
+	status, err := services.UpdateUserPreferences(body.User, body.RuleGroup, body.RuleCatalog, body.ColumnOrder)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update user preferences: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"status": status})
+}
+
+// RuleCatalog is empty when the LHS tree is at the group root — the
+// proc treats "" the same as NULL and stores the row scoped to the
+// whole group. ColumnOrder is opaque to the backend (JSON on the
+// wire today, but no server-side validation so future client
+// formats don't require a proto change).
+type updateUserPreferencesBody struct {
+	User        string `json:"user"`
+	RuleGroup   string `json:"rule_group"`
+	RuleCatalog string `json:"rule_catalog"`
+	ColumnOrder string `json:"column_order"`
+}
+
 // GetDMUsers godoc
 // @Summary      List DM users
 // @Description  Returns DM_USER rows as {user, role, email} tuples,

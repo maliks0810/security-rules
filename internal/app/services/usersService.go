@@ -16,3 +16,7 @@ func GetDMRole(user string) (string, error) {
 func GetRuleGroupsForUser(user string) ([]models.RuleGroup, error) {
 	return repositories.GetRuleGroupsForUser(user)
 }
+
+func UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder string) (int, error) {
+	return repositories.UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder)
+}
