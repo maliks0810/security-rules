@@ -56,8 +56,15 @@ func GetExceptions(ctx *fiber.Ctx) error {
 	exceptionState := ctx.Query("exception_state")
 	assignTo := ctx.Query("assign_to")
 	ruleNamePattern := ctx.Query("rule_name_pattern")
+	// Optional: caller-supplied EXCEPTION_DATE (YYYY-MM-DD). The DQM
+	// frontend passes the top of its LHS Exception-date dropdown
+	// (MAX(EXCEPTION.EXCEPTION_DATE) via SP_GET_EXCEPTION_HIST_DATES)
+	// so the live grid stays correct on days when today's ETL hasn't
+	// run yet (holidays / delayed loads) — server-side default would
+	// use time.Now().UTC() and return 0 rows in that case.
+	exceptionDate := ctx.Query("exception_date")
 
-	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
+	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exceptions"})
 	}

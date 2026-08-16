@@ -438,7 +438,7 @@ func GetExceptionTypes() ([]string, error) {
 // GetExceptions calls GET_EXCEPTIONS_2, which reads from the slim EXCEPTION
 // table and joins RULE + the lookup tables. Returns the new Exception
 // model (23-column shape â€” no dummy NULLs to fit the legacy struct).
-func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate string) ([]models.Exception, error) {
 	// Once-per-day sweep: any Suppress row whose SUPPRESS_DATE has
 	// passed reverts to STATUS_ID=1 (New) with a null SUPPRESS_DATE.
 	// Guarded by lastExpireDate so this only fires the first
@@ -470,9 +470,22 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	// SP_GET_EXCEPTIONS no longer defaults P_EXCEPTION_DATE to today
 	// (the WHERE clause is a plain equality, not COALESCE-with-fallback),
 	// so the repository always resolves the target date up front and
-	// passes it explicitly. "Today UTC" is the correct default for the
-	// live grid — the historical view goes through GetExceptionsHist.
-	todayUTC := time.Now().UTC().Format("2006-01-02")
+	// passes it explicitly.
+	//
+	// Priority:
+	//   1. explicit exceptionDate argument (frontend passes histDates[0],
+	//      the max EXCEPTION_DATE the server actually has data for). This
+	//      keeps the live grid correct on days when today's ETL hasn't
+	//      run yet (holidays, delayed runs) — the LHS dropdown already
+	//      surfaces the true latest date, so aligning the query with it
+	//      is the natural fix.
+	//   2. today (UTC) as a fallback for first-render before the LHS
+	//      dropdown has resolved, and for legacy callers that don't
+	//      pass an explicit date.
+	targetDate := strings.TrimSpace(exceptionDate)
+	if targetDate == "" {
+		targetDate = time.Now().UTC().Format("2006-01-02")
+	}
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using SNOWFLAKE database environment")
@@ -491,14 +504,14 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		// for function UDF_GET_EXCEPTIONS" without the explicit cast.
 		rows, err = snowflake.Query(
 			"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?)))",
-			assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, todayUTC,
+			assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate,
 		)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, todayUTC)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate)
 	}
 	if err != nil {
 		return nil, err
