@@ -25,6 +25,7 @@ import (
 	"securityrules/security-rules/configs"
 	_ "securityrules/security-rules/docs"
 	"securityrules/security-rules/internal/app/handlers"
+	"securityrules/security-rules/internal/app/services"
 	"securityrules/security-rules/internal/middleware"
 	"securityrules/security-rules/internal/routes"
 	"securityrules/security-rules/internal/utils/azure"
@@ -194,6 +195,18 @@ func newTracerProvider() *sdktrace.TracerProvider {
 }
 
 func prepare() {
+	// Warm the process-local rules-for-group cache so the first LHS
+	// tree click doesn't eat a Snowflake round-trip. WarmRulesForGroupCache
+	// enumerates every RULE_GROUP row and calls SP_GET_RULES_FOR_GROUP
+	// for each. Runs in a goroutine so DB warm-up latency doesn't
+	// gate the HTTP server coming online — the cache-miss path in
+	// getRulesForGroupCached transparently covers any group that
+	// hasn't been warmed yet.
+	go func() {
+		if _, err := services.WarmRulesForGroupCache(); err != nil {
+			log.Logger.Info("main.go: prepare - rules-for-group warm returned error (miss-through will backfill): " + err.Error())
+		}
+	}()
 }
 
 func privateRouteHandlers() routes.Handlers {

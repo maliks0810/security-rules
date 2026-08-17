@@ -611,6 +611,51 @@ func GetUserPreferences(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"column_order": columnOrder})
 }
 
+// RefreshUserPreferences godoc
+// @Summary      Force-refresh the cached column layout for a scope
+// @Description  Hits Snowflake for the (user, rule_group,
+// @Description  rule_catalog) tuple via SP_GET_USER_PREFERENCES and
+// @Description  rewrites the process-local cache slot with the
+// @Description  result — the next /getUserPreferences call for the
+// @Description  same scope returns the cached value without another
+// @Description  Snowflake round-trip. Called by the frontend
+// @Description  immediately after Save Column Order so the
+// @Description  just-persisted layout is the cached one, and
+// @Description  available for any admin flow that suspects cache
+// @Description  drift. rule_catalog empty / omitted = LHS tree at
+// @Description  the group root (row where RULE_CATALOG_ID IS NULL).
+// @Description  Uses GET (mirrors /getUserPreferences) even though
+// @Description  it mutates in-process cache state — the underlying
+// @Description  DB stays read-only, so the endpoint remains safe to
+// @Description  retry and cache-bust from browsers / debug tooling.
+// @Tags         users
+// @Produce      json
+// @Param        user          query     string  true   "DM_USER.USER display name"
+// @Param        rule_group    query     string  true   "RULE_GROUP.NAME"
+// @Param        rule_catalog  query     string  false  "RULE_CATALOG.NAME (empty for group-root scope)"
+// @Success      200  {object}  map[string]string  "{column_order: ...}"
+// @Failure      400  {object}  map[string]string  "invalid params"
+// @Failure      500  {object}  map[string]string  "failed to refresh user preferences"
+// @Router       /v1/api/refreshUserPreferences [get]
+func RefreshUserPreferences(ctx *fiber.Ctx) error {
+	user := ctx.Query("user")
+	ruleGroup := ctx.Query("rule_group")
+	ruleCatalog := ctx.Query("rule_catalog")
+	if user == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	if ruleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group is required"})
+	}
+	columnOrder, err := services.RefreshUserPreferences(user, ruleGroup, ruleCatalog)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to refresh user preferences: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"column_order": columnOrder})
+}
+
 // GetDMUsers godoc
 // @Summary      List DM users
 // @Description  Returns DM_USER rows as {user, role, email} tuples,
@@ -780,6 +825,52 @@ func GetRulesForGroup(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query rules for group"})
 	}
 	return ctx.Status(fiber.StatusOK).JSON(out)
+}
+
+// RefreshRulesByGroup godoc
+// @Summary      Force-refresh the rules-for-group cache
+// @Description  Hits Snowflake for the requested scope via
+// @Description  SP_GET_RULES_FOR_GROUP and rewrites the process-local
+// @Description  cache slot(s) with the result — the next
+// @Description  /getRulesForGroup call for the same group returns
+// @Description  the cached value without another Snowflake round-trip.
+// @Description  Called after DDL / seed changes touched the rule set
+// @Description  so operators don't wait for the startup warm-up on
+// @Description  the next service restart.
+// @Description  rule_group omitted / empty = re-warm every row in
+// @Description  RULE_GROUP (bulk-invalidation path, same code path
+// @Description  the startup warmer runs).
+// @Description  Uses GET (mirrors /getRulesForGroup) even though it
+// @Description  mutates in-process cache state — the underlying DB
+// @Description  stays read-only, so the endpoint remains safe to
+// @Description  retry and cache-bust from browsers / debug tooling.
+// @Tags         rules
+// @Produce      json
+// @Param        rule_group  query     string  false  "RULE_GROUP.NAME (empty to refresh every group)"
+// @Success      200         {object}  map[string]interface{}  "{refreshed: <count>, rule_group: <name>?}"
+// @Failure      500         {object}  map[string]string       "failed to refresh rules-by-group cache"
+// @Router       /v1/api/refreshRulesByGroup [get]
+func RefreshRulesByGroup(ctx *fiber.Ctx) error {
+	ruleGroup := ctx.Query("rule_group")
+	if ruleGroup == "" {
+		count, err := services.RefreshAllRulesByGroup()
+		if err != nil {
+			return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "failed to refresh rules-by-group cache: " + err.Error(),
+			})
+		}
+		return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"refreshed": count})
+	}
+	rows, err := services.RefreshRulesByGroup(ruleGroup)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to refresh rules-by-group cache: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"rule_group": ruleGroup,
+		"refreshed":  len(rows),
+	})
 }
 
 // GetRules godoc

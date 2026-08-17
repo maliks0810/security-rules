@@ -32,9 +32,11 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getDMRole", handlers.GetDMRole)
 	route.Post("/updateUserPreferences", handlers.UpdateUserPreferences)
 	route.Get("/getUserPreferences", handlers.GetUserPreferences)
+	route.Get("/refreshUserPreferences", handlers.RefreshUserPreferences)
 	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
 	route.Get("/getRuleNames", handlers.GetRuleNames)
 	route.Get("/getRulesForGroup", handlers.GetRulesForGroup)
+	route.Get("/refreshRulesByGroup", handlers.RefreshRulesByGroup)
 	route.Get("/getExceptionCountsByGroup", handlers.GetExceptionCountsByGroup)
 	// Accept both POST and GET. POST is the preferred entry point —
 	// this endpoint mutates state (archive-then-insert), and load

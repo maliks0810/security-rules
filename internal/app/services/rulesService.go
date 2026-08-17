@@ -43,8 +43,14 @@ func GetRuleNames(ruleCatalog string) ([]models.RuleName, error) {
 	return repositories.GetRuleNames(ruleCatalog)
 }
 
+// GetRulesForGroup reads through the process-local cache — see
+// rulesForGroupCache.go for the warm / miss-through / refresh
+// semantics. Startup warmup pre-populates every RULE_GROUP row so
+// the first LHS click never hits Snowflake; anything that wasn't
+// warmed (new group, warm failure) falls through to the SP on
+// demand.
 func GetRulesForGroup(ruleGroup string) ([]models.RuleForGroup, error) {
-	return repositories.GetRulesForGroup(ruleGroup)
+	return getRulesForGroupCached(ruleGroup)
 }
 
 // ExecuteRules runs every catalog in (req.RuleName, req.RuleType) scope,
