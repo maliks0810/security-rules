@@ -137,11 +137,16 @@ func tuneSnowflakePool(db *sql.DB) {
 	if db == nil {
 		return
 	}
-	db.SetMaxOpenConns(5)
-	db.SetMaxIdleConns(2)
-	db.SetConnMaxLifetime(50 * time.Minute)
-	db.SetConnMaxIdleTime(10 * time.Minute)
-	log.Logger.Info("main.go: tuneSnowflakePool - pool limits applied (max=5, idle=2, lifetime=50m, idle_timeout=10m)")
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
+	// Lifetime pulled to 55m (from 60m) to stay under Snowflake's ~60m
+	// auth-token TTL — otherwise the very first query on a returning
+	// connection can hit an expired-token error. Idle timeout stays at
+	// 60m; lifetime wins for long-idle connections so this doesn't
+	// weaken the idle bound.
+	db.SetConnMaxLifetime(55 * time.Minute)
+	db.SetConnMaxIdleTime(60 * time.Minute)
+	log.Logger.Info("main.go: tuneSnowflakePool - pool limits applied (max=10, idle=10, lifetime=55m, idle_timeout=60m)")
 }
 
 // tunePostgresPool mirrors tuneSnowflakePool for the Postgres pool. The
