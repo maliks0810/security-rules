@@ -825,23 +825,34 @@ func GetRuleNames(ctx *fiber.Ctx) error {
 // @Description  applied — the count panel's "All" summary is unfiltered
 // @Description  by status. Powers the count-panel single-call path
 // @Description  that replaces the earlier N-call fetchExceptions fanout.
+// @Description  exception_date is required and scopes the counts to a
+// @Description  single day, exactly as /getExceptions does — without it
+// @Description  the totals spanned every date in EXCEPTION and read far
+// @Description  higher than the grid rows they summarise.
 // @Tags         exceptions
 // @Produce      json
+// @Param        exception_date   query     string  true   "ISO YYYY-MM-DD"
 // @Param        exception_type   query     string  false  "Exception type filter"
 // @Param        severity         query     string  false  "Severity filter"
 // @Param        priority         query     string  false  "Priority filter"
 // @Param        exception_state  query     string  false  "Exception state filter"
 // @Param        assign_to        query     string  false  "Assign-to filter"
 // @Success      200  {array}   models.GroupCount
+// @Failure      400  {object}  map[string]string  "exception_date is required"
 // @Failure      500  {object}  map[string]string  "failed to query exception counts by group"
 // @Router       /v1/api/getExceptionCountsByGroup [get]
 func GetExceptionCountsByGroup(ctx *fiber.Ctx) error {
+	exceptionDate := ctx.Query("exception_date")
+	if exceptionDate == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_date is required"})
+	}
 	out, err := services.GetExceptionCountsByGroup(
 		ctx.Query("exception_type"),
 		ctx.Query("severity"),
 		ctx.Query("priority"),
 		ctx.Query("exception_state"),
 		ctx.Query("assign_to"),
+		exceptionDate,
 	)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception counts by group"})

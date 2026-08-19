@@ -8,6 +8,61 @@
     },
     "basePath": "/de/securities/rules",
     "paths": {
+        "/v1/api/clearUserPreferences": {
+            "post": {
+                "description": "Removes the USER_PREFERENCES row for the (user,\nrule_group, rule_catalog) tuple so the grid falls back\nto its canonical default column order. Powers\nSettings → Reset Column Headers. rule_catalog empty /\nomitted = LHS tree at the group root (targets the row\nwhere RULE_CATALOG_ID IS NULL). Only that one scope is\ncleared; the user's other saved layouts are untouched.\nReturns {\"cleared\": 1} when a row was deleted and\n{\"cleared\": 0} when there was nothing to delete —\nboth are success, since \"no saved layout\" is the\nstate the caller is asking for.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Delete the operator's saved column layout for a scope",
+                "parameters": [
+                    {
+                        "description": "user + rule_group + rule_catalog",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.clearUserPreferencesBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "rows cleared",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to clear user preferences",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/events": {
             "get": {
                 "description": "Long-lived text/event-stream that pushes events such as security_exception.inserted to subscribed clients.",
@@ -360,7 +415,7 @@
         },
         "/v1/api/getExceptionCountsByGroup": {
             "get": {
-                "description": "Aggregation-only counterpart to /getExceptions: returns\none {rule_group, count} row per group with matching\nEXCEPTION rows after applying the same predicates the\ncount panel uses (exception_type, severity, priority,\nexception_state, assign_to). Status filter is not\napplied — the count panel's \"All\" summary is unfiltered\nby status. Powers the count-panel single-call path\nthat replaces the earlier N-call fetchExceptions fanout.",
+                "description": "Aggregation-only counterpart to /getExceptions: returns\none {rule_group, count} row per group with matching\nEXCEPTION rows after applying the same predicates the\ncount panel uses (exception_type, severity, priority,\nexception_state, assign_to). Status filter is not\napplied — the count panel's \"All\" summary is unfiltered\nby status. Powers the count-panel single-call path\nthat replaces the earlier N-call fetchExceptions fanout.\nexception_date is required and scopes the counts to a\nsingle day, exactly as /getExceptions does — without it\nthe totals spanned every date in EXCEPTION and read far\nhigher than the grid rows they summarise.",
                 "produces": [
                     "application/json"
                 ],
@@ -369,6 +424,13 @@
                 ],
                 "summary": "Count of EXCEPTION rows per RULE_GROUP",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ISO YYYY-MM-DD",
+                        "name": "exception_date",
+                        "in": "query",
+                        "required": true
+                    },
                     {
                         "type": "string",
                         "description": "Exception type filter",
@@ -407,6 +469,15 @@
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/models.GroupCount"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "exception_date is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     },
@@ -1211,6 +1282,107 @@
                 }
             }
         },
+        "/v1/api/refreshRulesByGroup": {
+            "get": {
+                "description": "Hits Snowflake for the requested scope via\nSP_GET_RULES_FOR_GROUP and rewrites the process-local\ncache slot(s) with the result — the next\n/getRulesForGroup call for the same group returns\nthe cached value without another Snowflake round-trip.\nCalled after DDL / seed changes touched the rule set\nso operators don't wait for the startup warm-up on\nthe next service restart.\nrule_group omitted / empty = re-warm every row in\nRULE_GROUP (bulk-invalidation path, same code path\nthe startup warmer runs).\nUses GET (mirrors /getRulesForGroup) even though it\nmutates in-process cache state — the underlying DB\nstays read-only, so the endpoint remains safe to\nretry and cache-bust from browsers / debug tooling.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Force-refresh the rules-for-group cache",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME (empty to refresh every group)",
+                        "name": "rule_group",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{refreshed: \u003ccount\u003e, rule_group: \u003cname\u003e?}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "failed to refresh rules-by-group cache",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/refreshUserPreferences": {
+            "get": {
+                "description": "Hits Snowflake for the (user, rule_group,\nrule_catalog) tuple via SP_GET_USER_PREFERENCES and\nrewrites the process-local cache slot with the\nresult — the next /getUserPreferences call for the\nsame scope returns the cached value without another\nSnowflake round-trip. Called by the frontend\nimmediately after Save Column Order so the\njust-persisted layout is the cached one, and\navailable for any admin flow that suspects cache\ndrift. rule_catalog empty / omitted = LHS tree at\nthe group root (row where RULE_CATALOG_ID IS NULL).\nUses GET (mirrors /getUserPreferences) even though\nit mutates in-process cache state — the underlying\nDB stays read-only, so the endpoint remains safe to\nretry and cache-bust from browsers / debug tooling.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Force-refresh the cached column layout for a scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DM_USER.USER display name",
+                        "name": "user",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME",
+                        "name": "rule_group",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME (empty for group-root scope)",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{column_order: ...}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid params",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to refresh user preferences",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/api/updateAssignTo": {
             "get": {
                 "description": "Resolves assign_to against DM_USER and updates every",
@@ -1668,6 +1840,20 @@
         }
     },
     "definitions": {
+        "handlers.clearUserPreferencesBody": {
+            "type": "object",
+            "properties": {
+                "rule_catalog": {
+                    "type": "string"
+                },
+                "rule_group": {
+                    "type": "string"
+                },
+                "user": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.executeSNBody": {
             "type": "object",
             "properties": {

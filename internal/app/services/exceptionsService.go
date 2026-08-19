@@ -94,6 +94,6 @@ func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppr
 	return repositories.UpdateBulkStatus(ruleNames, status, comments, suppressDate)
 }
 
-func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo string) ([]models.GroupCount, error) {
-	return repositories.GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo)
+func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string) ([]models.GroupCount, error) {
+	return repositories.GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate)
 }

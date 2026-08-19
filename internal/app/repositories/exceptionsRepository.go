@@ -57,15 +57,20 @@ func maybeExpireSuppressDates() {
 // count of matching EXCEPTION rows. Collapses the count panel's old
 // N-call fanout (fetchExceptions per group) into a single call.
 // Empty-string filter args map to the SP's "no filter" branch.
-func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo string) ([]models.GroupCount, error) {
+//
+// exceptionDate is NOT one of those — the SP equality-matches it, so an
+// empty value yields zero rows rather than every date. The handler
+// rejects an empty exception_date before reaching here, matching
+// GetExceptions / GetExceptionsHist.
+func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string) ([]models.GroupCount, error) {
 	var rows *sql.Rows
 	var err error
 
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptionCountsByGroup - using SNOWFLAKE database environment")
 		rows, err = snowflake.Query(
-			"CALL SP_GET_EXCEPTION_COUNTS_BY_GROUP(?, ?, ?, ?, ?)",
-			exceptionType, severity, priority, exceptionState, assignTo,
+			"CALL SP_GET_EXCEPTION_COUNTS_BY_GROUP(?, ?, ?, ?, ?, ?)",
+			exceptionType, severity, priority, exceptionState, assignTo, exceptionDate,
 		)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptionCountsByGroup - using POSTGRES database environment")
@@ -73,8 +78,8 @@ func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState
 			return nil, sql.ErrConnDone
 		}
 		rows, err = postgres.DB.Query(
-			`SELECT * FROM public."SP_GET_EXCEPTION_COUNTS_BY_GROUP"($1, $2, $3, $4, $5)`,
-			exceptionType, severity, priority, exceptionState, assignTo,
+			`SELECT * FROM public."SP_GET_EXCEPTION_COUNTS_BY_GROUP"($1, $2, $3, $4, $5, $6::date)`,
+			exceptionType, severity, priority, exceptionState, assignTo, exceptionDate,
 		)
 	}
 	if err != nil {
