@@ -611,6 +611,55 @@ func GetUserPreferences(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"column_order": columnOrder})
 }
 
+// ClearUserPreferences godoc
+// @Summary      Delete the operator's saved column layout for a scope
+// @Description  Removes the USER_PREFERENCES row for the (user,
+// @Description  rule_group, rule_catalog) tuple so the grid falls back
+// @Description  to its canonical default column order. Powers
+// @Description  Settings → Reset Column Headers. rule_catalog empty /
+// @Description  omitted = LHS tree at the group root (targets the row
+// @Description  where RULE_CATALOG_ID IS NULL). Only that one scope is
+// @Description  cleared; the user's other saved layouts are untouched.
+// @Description  Returns {"cleared": 1} when a row was deleted and
+// @Description  {"cleared": 0} when there was nothing to delete —
+// @Description  both are success, since "no saved layout" is the
+// @Description  state the caller is asking for.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      handlers.clearUserPreferencesBody  true  "user + rule_group + rule_catalog"
+// @Success      200  {object}  map[string]int     "rows cleared"
+// @Failure      400  {object}  map[string]string  "invalid params"
+// @Failure      500  {object}  map[string]string  "failed to clear user preferences"
+// @Router       /v1/api/clearUserPreferences [post]
+func ClearUserPreferences(ctx *fiber.Ctx) error {
+	var body clearUserPreferencesBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	if body.User == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user is required"})
+	}
+	if body.RuleGroup == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_group is required"})
+	}
+	affected, err := services.ClearUserPreferences(body.User, body.RuleGroup, body.RuleCatalog)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to clear user preferences: " + err.Error(),
+		})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"cleared": affected})
+}
+
+// RuleCatalog is empty when the LHS tree is at the group root — the
+// proc then targets the row whose RULE_CATALOG_ID IS NULL.
+type clearUserPreferencesBody struct {
+	User        string `json:"user"`
+	RuleGroup   string `json:"rule_group"`
+	RuleCatalog string `json:"rule_catalog"`
+}
+
 // RefreshUserPreferences godoc
 // @Summary      Force-refresh the cached column layout for a scope
 // @Description  Hits Snowflake for the (user, rule_group,

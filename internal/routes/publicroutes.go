@@ -33,6 +33,7 @@ func PublicRoutes(app *fiber.App) {
 	route.Post("/updateUserPreferences", handlers.UpdateUserPreferences)
 	route.Get("/getUserPreferences", handlers.GetUserPreferences)
 	route.Get("/refreshUserPreferences", handlers.RefreshUserPreferences)
+	route.Post("/clearUserPreferences", handlers.ClearUserPreferences)
 	route.Get("/getRuleCatalogs", handlers.GetRuleCatalogs)
 	route.Get("/getRuleNames", handlers.GetRuleNames)
 	route.Get("/getRulesForGroup", handlers.GetRulesForGroup)

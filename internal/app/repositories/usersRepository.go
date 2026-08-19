@@ -172,6 +172,63 @@ func UpdateUserPreferences(user, ruleGroup, ruleCatalog, columnOrder string) (in
 	return int(status.Int64), nil
 }
 
+// ClearUserPreferences deletes the saved column layout for the
+// (user, rule group, rule catalog) scope so the grid falls back to
+// its canonical default order. Powers Settings → Reset Column
+// Headers. Pass ruleCatalog as "" when the LHS tree is at the group
+// root — the SP then targets the row whose RULE_CATALOG_ID IS NULL.
+// Only that one scope's row is removed; the user's other saved
+// layouts are untouched.
+//
+// Returns the proc's row count: 0 when nothing was deleted (unknown
+// user / group / catalog, or simply no saved layout — callers treat
+// that as success, since "no saved layout" is the target state), 1
+// when the row was removed.
+func ClearUserPreferences(user, ruleGroup, ruleCatalog string) (int, error) {
+	if strings.TrimSpace(user) == "" {
+		return 0, nil
+	}
+	if strings.TrimSpace(ruleGroup) == "" {
+		return 0, nil
+	}
+	var affected sql.NullInt64
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("usersRepository: ClearUserPreferences - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query(
+			"CALL SP_CLEAR_USER_PREFERENCES(?, ?, ?)",
+			user, ruleGroup, ruleCatalog,
+		)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if err := rows.Scan(&affected); err != nil {
+				return 0, err
+			}
+		}
+		if !affected.Valid {
+			return 0, nil
+		}
+		return int(affected.Int64), nil
+	}
+	log.Logger.Info("usersRepository: ClearUserPreferences - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_CLEAR_USER_PREFERENCES"($1, $2, $3)`,
+		user, ruleGroup, ruleCatalog,
+	).Scan(&affected)
+	if err != nil {
+		return 0, err
+	}
+	if !affected.Valid {
+		return 0, nil
+	}
+	return int(affected.Int64), nil
+}
+
 // GetUserPreferences reads the saved COLUMN_ORDER for the (user,
 // rule group, rule catalog) scope from USER_PREFERENCES. Pass
 // ruleCatalog as "" when the LHS tree is at the group root — the

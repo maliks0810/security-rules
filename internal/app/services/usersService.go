@@ -40,6 +40,20 @@ func GetUserPreferences(user, ruleGroup, ruleCatalog string) (string, error) {
 	return getUserPreferencesCached(user, ruleGroup, ruleCatalog)
 }
 
+// ClearUserPreferences deletes the saved column layout for the scope
+// and drops the matching cache entry, so the next GetUserPreferences
+// reports "no saved layout" rather than serving the value that was
+// just deleted. Without the invalidation the grid would keep
+// re-applying the old order until the process restarted.
+func ClearUserPreferences(user, ruleGroup, ruleCatalog string) (int, error) {
+	affected, err := repositories.ClearUserPreferences(user, ruleGroup, ruleCatalog)
+	if err != nil {
+		return affected, err
+	}
+	invalidateUserPreferences(user, ruleGroup, ruleCatalog)
+	return affected, nil
+}
+
 // RefreshUserPreferences forces a Snowflake round-trip and rewrites
 // the cache slot for the (user, ruleGroup, ruleCatalog) tuple with
 // the freshly-fetched value. Called by the /refreshUserPreferences

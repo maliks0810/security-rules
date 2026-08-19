@@ -37,10 +37,17 @@ AS $$
     ) rao ON TRUE
     LEFT JOIN public."DM_USER" du
       ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
-    WHERE (p_exception_type  IS NULL OR p_exception_type  = '' OR et."NAME"  = p_exception_type)
-      AND (p_severity        IS NULL OR p_severity        = '' OR est."NAME" = p_severity)
-      AND (p_priority        IS NULL OR p_priority        = '' OR ept."NAME" = p_priority)
-      AND (p_exception_state IS NULL OR p_exception_state = 'All' OR es."NAME" = p_exception_state)
-      AND (p_assign_to       IS NULL OR p_assign_to       = 'All' OR du."USER" = p_assign_to)
+    -- Every param treats BOTH '' and 'All' as "no filter". The two
+    -- sentinels used to be split inconsistently (the first three
+    -- honored '' only, the last two 'All' only), which zeroed the
+    -- count panel either way: the client sends 'All' for a default
+    -- dropdown, and an omitted query param arrives here as '' since
+    -- the Go layer forwards the raw string with no nil conversion.
+    -- Accepting both keeps this correct whichever the caller uses.
+    WHERE (p_exception_type  IS NULL OR p_exception_type  IN ('', 'All') OR et."NAME"  = p_exception_type)
+      AND (p_severity        IS NULL OR p_severity        IN ('', 'All') OR est."NAME" = p_severity)
+      AND (p_priority        IS NULL OR p_priority        IN ('', 'All') OR ept."NAME" = p_priority)
+      AND (p_exception_state IS NULL OR p_exception_state IN ('', 'All') OR es."NAME"  = p_exception_state)
+      AND (p_assign_to       IS NULL OR p_assign_to       IN ('', 'All') OR du."USER" = p_assign_to)
     GROUP BY rg."NAME";
 $$;
