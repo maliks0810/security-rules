@@ -20,6 +20,14 @@
 -- grid immediately reflects the new assignee. Returns the number of
 -- EXCEPTION rows updated.
 
+-- This procedure's signature changed arity (3 args -> 4) when targeting
+-- moved from rule names to exception ids. Snowflake overloads procedures
+-- by signature, so CREATE OR REPLACE below does NOT touch the old 3-arg
+-- definition: without this DROP it stays live alongside the new one,
+-- still assigning by whole rule. The Postgres mirror drops its old
+-- signatures the same way.
+DROP PROCEDURE IF EXISTS SP_UPDATE_BULK_ASSIGN(VARCHAR, VARCHAR, BOOLEAN);
+
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
     P_EXCEPTION_IDS VARCHAR,
     P_RULE_NAMES  VARCHAR,
@@ -28,6 +36,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
 )
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE

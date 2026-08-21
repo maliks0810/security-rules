@@ -1240,6 +1240,14 @@ $$;
 -- Regardless of P_IS_PERMANENT, EXCEPTION.ASSIGN_TO_ID is updated for
 -- the selected rows so the grid immediately reflects the new assignee.
 -- Returns the number of EXCEPTION rows updated.
+--
+-- The DROP is load-bearing: this procedure's signature changed arity
+-- (3 args -> 4) when targeting moved from rule names to exception ids,
+-- and Snowflake overloads procedures by signature, so CREATE OR REPLACE
+-- alone would leave the old 3-arg definition live beside the new one,
+-- still assigning by whole rule.
+DROP PROCEDURE IF EXISTS SP_UPDATE_BULK_ASSIGN(VARCHAR, VARCHAR, BOOLEAN);
+
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
     P_EXCEPTION_IDS VARCHAR,
     P_RULE_NAMES  VARCHAR,
@@ -1248,6 +1256,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
 )
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
@@ -1383,6 +1392,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_STATUS(
 )
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
