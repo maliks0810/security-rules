@@ -3,6 +3,7 @@ package repositories
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -731,21 +732,46 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return n, nil
 }
 
-// UpdateBulkAssign hands the (rule-names, assign-to, is-permanent)
-// triple to SP_UPDATE_BULK_ASSIGN. Regardless of isPermanent the SP
-// updates EXCEPTION.ASSIGN_TO_ID for every existing exception whose
-// RULE_NAME matches. The rule-side write depends on isPermanent:
+// joinExceptionIDs renders a selection of EXCEPTION_IDs as the plain
+// comma-separated string both bulk SPs split on. Digits only, so there
+// is no delimiter conflict and no quoting to get wrong. An empty or nil
+// slice yields "", which both SPs treat as "nothing selected" and
+// answer with a zero-row no-op — the callers reject that case earlier
+// so it never reaches the database in practice.
+func joinExceptionIDs(ids []int64) string {
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+// UpdateBulkAssign hands (exception-ids, rule-names, assign-to,
+// is-permanent) to SP_UPDATE_BULK_ASSIGN.
+//
+// exceptionIDs is the target set: EXCEPTION.ASSIGN_TO_ID is updated for
+// exactly those rows — the ones ticked in the grid's bulk-selection
+// column — and for nothing else. It replaced rule-name targeting, which
+// swept in every exception of a rule rather than the picked ones.
+//
+// ruleNames is NOT a target set. It is the distinct set of rules the
+// selected rows belong to, derived client-side, and drives only the
+// rule-level write:
 //   false → INSERT one RULE_ASSIGN_OVERRIDE row per rule (soft
 //           override; later runs pick it up via the rao join in
 //           SP_GET_EXCEPTIONS / _HIST / _ASSETS).
-//   true  → UPDATE RULE.ASSIGN_TO_ID directly for every matched rule
+//   true  → UPDATE RULE.ASSIGN_TO_ID directly for every named rule
 //           (permanent change to the rule default; no override row).
-// Rule names are sent as a plain comma-separated string — the SP
-// splits on ',' — because rule names are all-caps underscored (see
-// dqm_seed_data.sql) so there is no delimiter conflict. An empty
-// ruleNames slice or an empty assignTo resolves to a zero-row no-op
-// inside the SP. Returns the number of EXCEPTION rows updated.
-func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (int, error) {
+// An empty ruleNames slice skips that side effect entirely and still
+// reassigns the selected exceptions.
+//
+// Both lists travel as plain comma-separated strings — the SP splits on
+// ',' — matching the delimiter contract already used here: rule names
+// are all-caps underscored (see dqm_seed_data.sql) and ids are digits,
+// so neither can contain a comma. An empty exceptionIDs slice or an
+// empty assignTo resolves to a zero-row no-op inside the SP. Returns
+// the number of EXCEPTION rows updated.
+func UpdateBulkAssign(exceptionIDs []int64, ruleNames []string, assignTo string, isPermanent bool) (int, error) {
 	// Trim and drop blanks so a stray "" from the client doesn't become
 	// an empty rule-name lookup inside the SP.
 	cleaned := make([]string, 0, len(ruleNames))
@@ -755,11 +781,12 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 		}
 	}
 	joined := strings.Join(cleaned, ",")
+	joinedIDs := joinExceptionIDs(exceptionIDs)
 
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: UpdateBulkAssign - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_ASSIGN(?, ?, ?)", joined, assignTo, isPermanent)
+		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_ASSIGN(?, ?, ?, ?)", joinedIDs, joined, assignTo, isPermanent)
 		if err != nil {
 			return 0, err
 		}
@@ -774,8 +801,8 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 		return 0, sql.ErrConnDone
 	}
 	err := postgres.DB.QueryRow(
-		`SELECT public."SP_UPDATE_BULK_ASSIGN"($1, $2, $3)`,
-		joined, assignTo, isPermanent,
+		`SELECT public."SP_UPDATE_BULK_ASSIGN"($1, $2, $3, $4)`,
+		joinedIDs, joined, assignTo, isPermanent,
 	).Scan(&n)
 	if err != nil {
 		return 0, err
@@ -783,12 +810,14 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 	return n, nil
 }
 
-// UpdateBulkStatus hands (rule-names, status-name, comments,
-// suppress-date) to SP_UPDATE_BULK_STATUS. The SP resolves rule_names
-// → RULE_IDs, status → EXCEPTION_STATUS_ID, and updates
-// EXCEPTION.STATUS_ID (plus EXCEPTION.COMMENTS when comments is
-// non-null, plus EXCEPTION.SUPPRESS_DATE when suppressDate is
-// non-empty) for every matched row.
+// UpdateBulkStatus hands (exception-ids, status-name, comments,
+// suppress-date) to SP_UPDATE_BULK_STATUS. exceptionIDs is the target
+// set — the rows ticked in the grid's bulk-selection column — replacing
+// the rule-name targeting this used to do. The SP resolves status →
+// EXCEPTION_STATUS_ID and updates EXCEPTION.STATUS_ID (plus
+// EXCEPTION.COMMENTS when comments is non-null, plus
+// EXCEPTION.SUPPRESS_DATE when suppressDate is non-empty) for exactly
+// those rows.
 //   - comments is *string: nil → leave existing COMMENTS untouched;
 //     "" clears them. SP mirrors via COALESCE(:P_COMMENTS, "COMMENTS").
 //   - suppressDate is a plain string because the Bulk Status panel has
@@ -796,17 +825,11 @@ func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (in
 //     untouched; "YYYY-MM-DD" → set. Empty string round-trips through
 //     NULLIF('','') → NULL on both DB backends, then TRY_TO_DATE /
 //     ::date, then COALESCE(NULL, existing) preserves the original.
-// Rule-name delimiter contract matches UpdateBulkAssign (plain comma
-// join, whitespace trimmed). Returns the number of EXCEPTION rows
-// updated.
-func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppressDate string) (int, error) {
-	cleaned := make([]string, 0, len(ruleNames))
-	for _, r := range ruleNames {
-		if t := strings.TrimSpace(r); t != "" {
-			cleaned = append(cleaned, t)
-		}
-	}
-	joined := strings.Join(cleaned, ",")
+// Id delimiter contract matches UpdateBulkAssign (plain comma join).
+// An empty exceptionIDs slice is a zero-row no-op inside the SP.
+// Returns the number of EXCEPTION rows updated.
+func UpdateBulkStatus(exceptionIDs []int64, status string, comments *string, suppressDate string) (int, error) {
+	joinedIDs := joinExceptionIDs(exceptionIDs)
 
 	// database/sql translates nil interface → SQL NULL, and a *string
 	// that dereferences to "" → the empty-string literal. Passing the
@@ -821,7 +844,7 @@ func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppr
 	var n int
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: UpdateBulkStatus - using SNOWFLAKE database environment")
-		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_STATUS(?, ?, ?, ?)", joined, status, commentsArg, suppressDate)
+		rows, err := snowflake.Query("CALL SP_UPDATE_BULK_STATUS(?, ?, ?, ?)", joinedIDs, status, commentsArg, suppressDate)
 		if err != nil {
 			return 0, err
 		}
@@ -837,7 +860,7 @@ func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppr
 	}
 	err := postgres.DB.QueryRow(
 		`SELECT public."SP_UPDATE_BULK_STATUS"($1, $2, $3, $4)`,
-		joined, status, commentsArg, suppressDate,
+		joinedIDs, status, commentsArg, suppressDate,
 	).Scan(&n)
 	if err != nil {
 		return 0, err

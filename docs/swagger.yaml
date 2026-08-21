@@ -22,6 +22,10 @@ definitions:
     properties:
       assign_to:
         type: string
+      exception_ids:
+        items:
+          type: integer
+        type: array
       is_permanent:
         type: boolean
       rule_names:
@@ -33,9 +37,9 @@ definitions:
     properties:
       comments:
         type: string
-      rule_names:
+      exception_ids:
         items:
-          type: string
+          type: integer
         type: array
       status:
         type: string
@@ -1373,16 +1377,19 @@ paths:
       consumes:
       - application/json
       description: |-
-        Updates EXCEPTION.ASSIGN_TO_ID for every existing exception
-        whose RULE_NAME matches. When is_permanent is false (default),
-        also writes one RULE_ASSIGN_OVERRIDE row per rule so
-        subsequent rule runs inherit the assignee via the rao join.
-        When is_permanent is true, RULE.ASSIGN_TO_ID itself is
-        updated for every matched rule and no override row is
-        written. Rule names + assignee name are resolved
-        server-side via DM_USER."USER" / RULE."RULE_NAME".
+        Updates EXCEPTION.ASSIGN_TO_ID for exactly the EXCEPTION_IDs
+        passed in exception_ids - the rows the operator ticked in the
+        Exceptions grid's bulk-selection column. rule_names is NOT a
+        target set: it is the distinct set of rules those rows belong
+        to, and drives only the rule-level side effect. When
+        is_permanent is false (default), one RULE_ASSIGN_OVERRIDE row
+        is written per rule so subsequent rule runs inherit the
+        assignee via the rao join. When is_permanent is true,
+        RULE.ASSIGN_TO_ID itself is updated for those rules and no
+        override row is written. The assignee name is resolved
+        server-side via DM_USER."USER".
       parameters:
-      - description: rule_names + assign_to + is_permanent
+      - description: exception_ids + assign_to + is_permanent + rule_names
         in: body
         name: payload
         required: true
@@ -1409,7 +1416,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Bulk-assign a user to every EXCEPTION under the passed rules
+      summary: Bulk-assign a user to an explicit set of EXCEPTION rows
       tags:
       - exceptions
   /v1/api/updateBulkStatus:
@@ -1417,14 +1424,17 @@ paths:
       consumes:
       - application/json
       description: |-
-        Resolves rule names → RULE_IDs, resolves status name →
-        EXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID
-        (and EXCEPTION.COMMENTS when comments is non-null) for
-        every row whose RULE_ID falls in the resolved set.
-        Comments set to null in the JSON body leaves the
-        existing COMMENTS untouched; empty string clears them.
+        Updates EXCEPTION.STATUS_ID / COMMENTS / SUPPRESS_DATE for
+        exactly the EXCEPTION_IDs passed in exception_ids - the rows
+        the operator ticked in the Exceptions grid's bulk-selection
+        column. The status name is resolved server-side to an
+        EXCEPTION_STATUS_ID. Comments set to null in the JSON body
+        leaves the existing COMMENTS untouched; empty string clears
+        them. status may be empty for a comments-only update; when it
+        is 'Suppress', suppress_date is written to every selected row
+        and the SP rejects the call without one.
       parameters:
-      - description: rule_names + status + comments
+      - description: exception_ids + status + comments + suppress_date
         in: body
         name: payload
         required: true
@@ -1451,7 +1461,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules
+      summary: Bulk-set STATUS + COMMENTS on an explicit set of EXCEPTION rows
       tags:
       - exceptions
   /v1/api/updateExceptionAssignTo:

@@ -86,12 +86,14 @@ func UpdateExceptionAssignTo(exceptionID int64, assignTo string) (int, error) {
 	return repositories.UpdateExceptionAssignTo(exceptionID, assignTo)
 }
 
-func UpdateBulkAssign(ruleNames []string, assignTo string, isPermanent bool) (int, error) {
-	return repositories.UpdateBulkAssign(ruleNames, assignTo, isPermanent)
+// exceptionIDs is the target set for both calls; ruleNames on the assign
+// path is only the rule-level side effect (see the repository comments).
+func UpdateBulkAssign(exceptionIDs []int64, ruleNames []string, assignTo string, isPermanent bool) (int, error) {
+	return repositories.UpdateBulkAssign(exceptionIDs, ruleNames, assignTo, isPermanent)
 }
 
-func UpdateBulkStatus(ruleNames []string, status string, comments *string, suppressDate string) (int, error) {
-	return repositories.UpdateBulkStatus(ruleNames, status, comments, suppressDate)
+func UpdateBulkStatus(exceptionIDs []int64, status string, comments *string, suppressDate string) (int, error) {
+	return repositories.UpdateBulkStatus(exceptionIDs, status, comments, suppressDate)
 }
 
 func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string) ([]models.GroupCount, error) {

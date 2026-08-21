@@ -1448,7 +1448,7 @@ const docTemplate = `{
         },
         "/v1/api/updateBulkAssign": {
             "post": {
-                "description": "Updates EXCEPTION.ASSIGN_TO_ID for every existing exception\nwhose RULE_NAME matches. When is_permanent is false (default),\nalso writes one RULE_ASSIGN_OVERRIDE row per rule so\nsubsequent rule runs inherit the assignee via the rao join.\nWhen is_permanent is true, RULE.ASSIGN_TO_ID itself is\nupdated for every matched rule and no override row is\nwritten. Rule names + assignee name are resolved\nserver-side via DM_USER.\"USER\" / RULE.\"RULE_NAME\".",
+                "description": "Updates EXCEPTION.ASSIGN_TO_ID for exactly the EXCEPTION_IDs\npassed in exception_ids - the rows the operator ticked in the\nExceptions grid's bulk-selection column. rule_names is NOT a\ntarget set: it is the distinct set of rules those rows belong\nto, and drives only the rule-level side effect. When\nis_permanent is false (default), one RULE_ASSIGN_OVERRIDE row\nis written per rule so subsequent rule runs inherit the\nassignee via the rao join. When is_permanent is true,\nRULE.ASSIGN_TO_ID itself is updated for those rules and no\noverride row is written. The assignee name is resolved\nserver-side via DM_USER.\"USER\".",
                 "consumes": [
                     "application/json"
                 ],
@@ -1458,10 +1458,10 @@ const docTemplate = `{
                 "tags": [
                     "exceptions"
                 ],
-                "summary": "Bulk-assign a user to every EXCEPTION under the passed rules",
+                "summary": "Bulk-assign a user to an explicit set of EXCEPTION rows",
                 "parameters": [
                     {
-                        "description": "rule_names + assign_to + is_permanent",
+                        "description": "exception_ids + assign_to + is_permanent + rule_names",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -1503,7 +1503,7 @@ const docTemplate = `{
         },
         "/v1/api/updateBulkStatus": {
             "post": {
-                "description": "Resolves rule names → RULE_IDs, resolves status name →\nEXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID\n(and EXCEPTION.COMMENTS when comments is non-null) for\nevery row whose RULE_ID falls in the resolved set.\nComments set to null in the JSON body leaves the\nexisting COMMENTS untouched; empty string clears them.",
+                "description": "Updates EXCEPTION.STATUS_ID / COMMENTS / SUPPRESS_DATE for\nexactly the EXCEPTION_IDs passed in exception_ids - the rows\nthe operator ticked in the Exceptions grid's bulk-selection\ncolumn. The status name is resolved server-side to an\nEXCEPTION_STATUS_ID. Comments set to null in the JSON body\nleaves the existing COMMENTS untouched; empty string clears\nthem. status may be empty for a comments-only update; when it\nis 'Suppress', suppress_date is written to every selected row\nand the SP rejects the call without one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1513,10 +1513,10 @@ const docTemplate = `{
                 "tags": [
                     "exceptions"
                 ],
-                "summary": "Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules",
+                "summary": "Bulk-set STATUS + COMMENTS on an explicit set of EXCEPTION rows",
                 "parameters": [
                     {
-                        "description": "rule_names + status + comments",
+                        "description": "exception_ids + status + comments + suppress_date",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -1877,6 +1877,12 @@ const docTemplate = `{
                 "assign_to": {
                     "type": "string"
                 },
+                "exception_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "is_permanent": {
                     "type": "boolean"
                 },
@@ -1894,10 +1900,10 @@ const docTemplate = `{
                 "comments": {
                     "type": "string"
                 },
-                "rule_names": {
+                "exception_ids": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "integer"
                     }
                 },
                 "status": {

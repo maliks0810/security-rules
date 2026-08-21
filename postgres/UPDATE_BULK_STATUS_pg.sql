@@ -1,19 +1,22 @@
 DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_STATUS"(text, text, text);
 DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_STATUS"(text, text, text, text);
 
--- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) for
--- every EXCEPTION belonging to any of the passed rule names. Mirrors
--- SNOWFLAKE SP_UPDATE_BULK_STATUS. Pass NULL / '' for p_comments to
--- leave existing COMMENTS untouched; empty string clears them.
+-- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) on an
+-- explicit set of EXCEPTION rows - the ones the operator ticked in the
+-- Exceptions grid's bulk-selection column, named outright by
+-- p_exception_ids. Mirrors SNOWFLAKE SP_UPDATE_BULK_STATUS. Pass
+-- NULL / '' for p_comments to leave existing COMMENTS untouched; empty
+-- string clears them.
 -- SUPPRESS_DATE handling depends on p_status:
 --   'Suppress'  → use p_suppress_date if provided, else keep existing.
 --   any other   → NULL out SUPPRESS_DATE. Moving an exception off
 --                 Suppress makes the old suppression irrelevant, so
 --                 the date is cleared automatically.
--- Rule names are a comma-joined string (matches the SNOWFLAKE
--- contract).
+-- Exception ids are a comma-joined string (matches the SNOWFLAKE
+-- contract). An empty list updates nothing - it must never be read as
+-- "every row".
 CREATE OR REPLACE FUNCTION public."SP_UPDATE_BULK_STATUS"(
-    p_rule_names    text,
+    p_exception_ids text,
     p_status        text,
     p_comments      text,
     p_suppress_date text DEFAULT NULL
@@ -24,7 +27,7 @@ AS $$
 DECLARE
     v_status_id integer;
     v_now_ts    timestamp := (NOW() AT TIME ZONE 'UTC');
-    v_names     text[];
+    v_ids       bigint[];
     v_affected  integer := 0;
     -- Resolve to a DATE up front. NULLIF('') → NULL so an empty
     -- suppress_date string is treated as "leave untouched" (parity
@@ -32,7 +35,7 @@ DECLARE
     -- existing SUPPRESS_DATE when v_suppress is NULL.
     v_suppress  date := NULLIF(p_suppress_date, '')::date;
 BEGIN
-    IF p_rule_names IS NULL OR p_rule_names = '' THEN
+    IF p_exception_ids IS NULL OR p_exception_ids = '' THEN
         RETURN 0;
     END IF;
 
@@ -86,14 +89,16 @@ BEGIN
     END IF;
 
     -- Trim + drop empty tokens so trailing / adjacent commas don't
-    -- become empty rule-name lookups.
+    -- become empty id lookups. Non-numeric tokens are dropped rather
+    -- than raising: the client only ever sends digits, and a cast error
+    -- here would fail the whole batch over one malformed token.
     SELECT ARRAY(
-        SELECT btrim(t.name)
-        FROM unnest(string_to_array(p_rule_names, ',')) AS t(name)
-        WHERE btrim(t.name) <> ''
-    ) INTO v_names;
+        SELECT btrim(t.id)::bigint
+        FROM unnest(string_to_array(p_exception_ids, ',')) AS t(id)
+        WHERE btrim(t.id) ~ '^[0-9]+$'
+    ) INTO v_ids;
 
-    IF v_names IS NULL OR array_length(v_names, 1) IS NULL THEN
+    IF v_ids IS NULL OR array_length(v_ids, 1) IS NULL THEN
         RETURN 0;
     END IF;
 
@@ -144,11 +149,7 @@ BEGIN
                              END,
            "MODIFIED_DATE" = v_now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE e."RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM public."RULE" r
-        WHERE r."RULE_NAME" = ANY(v_names)
-     );
+     WHERE e."EXCEPTION_ID" = ANY(v_ids);
 
     GET DIAGNOSTICS v_affected = ROW_COUNT;
     RETURN v_affected;

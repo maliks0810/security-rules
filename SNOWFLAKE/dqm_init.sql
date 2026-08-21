@@ -1210,28 +1210,38 @@ END;
 $$;
 
 -- UPDATE_BULK_ASSIGN ----------------------------------------------------------
--- Bulk-assigns a user to every EXCEPTION belonging to any of the passed
--- rule names. The per-rule assignee is persisted in one of two places
--- depending on P_IS_PERMANENT:
---   FALSE (default) — INSERT one RULE_ASSIGN_OVERRIDE row per rule
+-- Bulk-assigns a user to an explicit set of EXCEPTION rows. The rows
+-- are named outright by P_EXCEPTION_IDS; the rule-level side effect is
+-- persisted in one of two places depending on P_IS_PERMANENT:
+--   FALSE (default) - INSERT one RULE_ASSIGN_OVERRIDE row per rule
 --                     (soft override; RULE.ASSIGN_TO_ID untouched).
 --                     Later runs pick up the override via the rao join
 --                     in SP_GET_EXCEPTIONS / _HIST / _ASSETS.
---   TRUE            — UPDATE RULE.ASSIGN_TO_ID directly for every
---                     matched rule (permanent change to the rule
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID directly for every
+--                     named rule (permanent change to the rule
 --                     default). No RULE_ASSIGN_OVERRIDE row is written.
 --
 -- Inputs:
---   P_RULE_NAMES  — comma-separated RULE_NAME list.
---   P_ASSIGN_TO   — DM_USER."USER" display name; resolved to DM_USER.ID
+--   P_EXCEPTION_IDS - comma-separated EXCEPTION_ID list: the rows the
+--                   operator ticked in the Exceptions grid's
+--                   bulk-selection column, and the ONLY rows whose
+--                   ASSIGN_TO_ID is touched. Empty / NULL -> RETURN 0.
+--                   Replaced rule-name targeting, which swept in every
+--                   exception of a rule rather than the picked ones.
+--   P_RULE_NAMES  - comma-separated RULE_NAME list. NOT a target set:
+--                   the distinct rules behind the selected rows,
+--                   driving only the rule-level write above. Empty
+--                   skips that write and still reassigns the rows.
+--   P_ASSIGN_TO   - DM_USER."USER" display name; resolved to DM_USER.ID
 --                   the same way as SP_UPDATE_EXCEPTION_ASSIGN_TO.
---   P_IS_PERMANENT — TRUE writes to RULE.ASSIGN_TO_ID; FALSE (default)
+--   P_IS_PERMANENT - TRUE writes to RULE.ASSIGN_TO_ID; FALSE (default)
 --                   writes to RULE_ASSIGN_OVERRIDE.
 --
 -- Regardless of P_IS_PERMANENT, EXCEPTION.ASSIGN_TO_ID is updated for
--- every existing row so the current grid immediately reflects the new
--- assignee. Returns the number of EXCEPTION rows updated.
+-- the selected rows so the grid immediately reflects the new assignee.
+-- Returns the number of EXCEPTION rows updated.
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
+    P_EXCEPTION_IDS VARCHAR,
     P_RULE_NAMES  VARCHAR,
     P_ASSIGN_TO   VARCHAR,
     P_IS_PERMANENT BOOLEAN DEFAULT FALSE
@@ -1259,11 +1269,15 @@ BEGIN
         RETURN 0;
     END IF;
 
-    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
+    -- The selection is what gets reassigned, so an empty id list is the
+    -- only fatal case. An empty P_RULE_NAMES just means "no rule-level
+    -- side effect" and still reassigns the selected exceptions.
+    IF (:P_EXCEPTION_IDS IS NULL OR :P_EXCEPTION_IDS = '') THEN
         RETURN 0;
     END IF;
 
-    IF (:P_IS_PERMANENT) THEN
+    IF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
+        AND COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see RULE.sql),
         -- so only the assignee is set here. The permanent write becomes
         -- the new rule default; SP_GET_EXCEPTIONS / _HIST / _ASSETS
@@ -1294,7 +1308,8 @@ BEGIN
             ) req
               ON r."RULE_NAME" = req.rule_name
          );
-    ELSE
+    ELSEIF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
+            AND NOT COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         INSERT INTO "RULE_ASSIGN_OVERRIDE" (
             "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",
             "CREATED_BY", "CREATED_DATE"
@@ -1317,15 +1332,10 @@ BEGIN
        SET "ASSIGN_TO_ID"  = :user_id,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE "RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM "RULE" r
-        JOIN (
-            SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM LATERAL SPLIT_TO_TABLE(:P_RULE_NAMES, ',') t
-            WHERE TRIM(t.VALUE::STRING) <> ''
-        ) req
-          ON r."RULE_NAME" = req.rule_name
+     WHERE "EXCEPTION_ID" IN (
+        SELECT TRY_TO_NUMBER(TRIM(t.VALUE::STRING))
+        FROM TABLE(SPLIT_TO_TABLE(:P_EXCEPTION_IDS, ',')) t
+        WHERE TRY_TO_NUMBER(TRIM(t.VALUE::STRING)) IS NOT NULL
      );
 
     affected := SQLROWCOUNT;
@@ -1334,32 +1344,39 @@ END;
 $$;
 
 -- UPDATE_BULK_STATUS ----------------------------------------------------------
--- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) for
--- every EXCEPTION belonging to any of the passed rule names.
+-- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) on an
+-- explicit set of EXCEPTION rows.
 --
 -- Inputs:
---   P_RULE_NAMES   — comma-separated RULE_NAME list (same shape as
---                    SP_UPDATE_BULK_ASSIGN).
---   P_STATUS       — EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
---                    'Suppress', 'Override', 'Complete'). Unknown /
---                    empty → RETURN 0, no writes.
---   P_COMMENTS     — text written to EXCEPTION.COMMENTS on every
---                    matched row. Pass '' to clear, NULL to leave
+--   P_EXCEPTION_IDS - comma-separated EXCEPTION_ID list. These are the
+--                    rows the operator ticked in the Exceptions grid's
+--                    bulk-selection column, and they are the ONLY rows
+--                    touched. Replaced rule-name targeting, which
+--                    matched every exception of a rule rather than the
+--                    ones actually picked. Empty / NULL -> RETURN 0:
+--                    an empty selection must never mean "all rows".
+--   P_STATUS       - EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
+--                    'Suppress', 'Override', 'Complete'). Unknown ->
+--                    RETURN 0. Empty -> leave STATUS_ID alone, for a
+--                    comments-only update.
+--   P_COMMENTS     - text written to EXCEPTION.COMMENTS on every
+--                    selected row. Pass '' to clear, NULL to leave
 --                    existing comments untouched.
---   P_SUPPRESS_DATE — 'YYYY-MM-DD' string written to
---                    EXCEPTION.SUPPRESS_DATE on every matched row.
+--   P_SUPPRESS_DATE - 'YYYY-MM-DD' string written to
+--                    EXCEPTION.SUPPRESS_DATE on every selected row.
 --                    Pass NULL or '' to leave existing suppress dates
 --                    untouched (there is no bulk-clear affordance on
---                    the Bulk Status panel).
+--                    the Bulk Status panel). Mandatory when P_STATUS
+--                    is 'Suppress'.
 --
--- Only current-day EXCEPTION rows are touched — the Bulk Status button
+-- Only current-day EXCEPTION rows are touched - the Bulk Status button
 -- is gated to the current date on the client (see DqMonitorPage
 -- showBulkAssign wiring), so this SP intentionally does not filter
 -- EXCEPTION_DATE server-side; the client's gate is authoritative.
 --
 -- Returns the number of EXCEPTION rows updated.
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_STATUS(
-    P_RULE_NAMES   VARCHAR,
+    P_EXCEPTION_IDS VARCHAR,
     P_STATUS       VARCHAR,
     P_COMMENTS     VARCHAR,
     P_SUPPRESS_DATE VARCHAR DEFAULT NULL
@@ -1377,7 +1394,7 @@ DECLARE
     -- "leave suppress_date untouched" (parity with COMMENTS).
     parsed_suppress DATE := TRY_TO_DATE(NULLIF(:P_SUPPRESS_DATE, ''));
 BEGIN
-    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
+    IF (:P_EXCEPTION_IDS IS NULL OR :P_EXCEPTION_IDS = '') THEN
         RETURN 0;
     END IF;
 
@@ -1479,15 +1496,10 @@ BEGIN
                              END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE "RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM "RULE" r
-        JOIN (
-            SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
-            WHERE TRIM(t.VALUE::STRING) <> ''
-        ) req
-          ON r."RULE_NAME" = req.rule_name
+     WHERE "EXCEPTION_ID" IN (
+        SELECT TRY_TO_NUMBER(TRIM(t.VALUE::STRING))
+        FROM TABLE(SPLIT_TO_TABLE(:P_EXCEPTION_IDS, ',')) t
+        WHERE TRY_TO_NUMBER(TRIM(t.VALUE::STRING)) IS NOT NULL
      );
 
     affected := SQLROWCOUNT;

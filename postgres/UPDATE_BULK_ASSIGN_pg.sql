@@ -1,20 +1,28 @@
 DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_ASSIGN"(text, text);
 DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_ASSIGN"(text, text, boolean);
+DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_ASSIGN"(text, text, text, boolean);
 
--- Bulk-assigns a user to every EXCEPTION belonging to any of the passed
--- rule names. Persistence target depends on p_is_permanent:
---   FALSE (default) — INSERT one RULE_ASSIGN_OVERRIDE row per rule
+-- Bulk-assigns a user to an explicit set of EXCEPTION rows, named
+-- outright by p_exception_ids - the rows the operator ticked in the
+-- Exceptions grid's bulk-selection column, and the only rows whose
+-- ASSIGN_TO_ID is touched.
+--
+-- p_rule_names is NOT a target set: it is the distinct set of rules
+-- those selected rows belong to, driving only the rule-level write,
+-- whose destination depends on p_is_permanent:
+--   FALSE (default) - INSERT one RULE_ASSIGN_OVERRIDE row per rule
 --                     (soft override; RULE.ASSIGN_TO_ID untouched).
---   TRUE            — UPDATE RULE.ASSIGN_TO_ID directly for every
---                     matched rule (permanent). No override row is
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID directly for every
+--                     named rule (permanent). No override row is
 --                     written.
--- Regardless of p_is_permanent, EXCEPTION.ASSIGN_TO_ID is updated for
--- every existing row so the current grid immediately reflects the new
--- assignee. Rule names are passed as a plain comma-separated string
--- (matches the SNOWFLAKE contract). Empty p_rule_names / unknown
--- p_assign_to → 0-row no-op. Returns the number of EXCEPTION rows
--- updated.
+-- An empty p_rule_names skips that write entirely and still reassigns
+-- the selected exceptions.
+--
+-- Both lists are plain comma-separated strings (matches the SNOWFLAKE
+-- contract). Empty p_exception_ids / unknown p_assign_to -> 0-row
+-- no-op. Returns the number of EXCEPTION rows updated.
 CREATE OR REPLACE FUNCTION public."SP_UPDATE_BULK_ASSIGN"(
+    p_exception_ids text,
     p_rule_names   text,
     p_assign_to    text,
     p_is_permanent boolean DEFAULT false
@@ -27,6 +35,7 @@ DECLARE
     v_today   date := (NOW() AT TIME ZONE 'UTC')::date;
     v_now_ts  timestamp := (NOW() AT TIME ZONE 'UTC');
     v_names   text[];
+    v_ids     bigint[];
     v_affected integer := 0;
 BEGIN
     IF p_assign_to IS NULL OR p_assign_to = '' THEN
@@ -42,24 +51,39 @@ BEGIN
         RETURN 0;
     END IF;
 
-    IF p_rule_names IS NULL OR p_rule_names = '' THEN
+    -- The selection is what gets reassigned, so an empty id list is the
+    -- only fatal case here.
+    IF p_exception_ids IS NULL OR p_exception_ids = '' THEN
+        RETURN 0;
+    END IF;
+
+    -- Non-numeric tokens are dropped rather than raising: the client
+    -- only ever sends digits, and a cast error would fail the whole
+    -- batch over one malformed token.
+    SELECT ARRAY(
+        SELECT btrim(t.id)::bigint
+        FROM unnest(string_to_array(p_exception_ids, ',')) AS t(id)
+        WHERE btrim(t.id) ~ '^[0-9]+$'
+    ) INTO v_ids;
+
+    IF v_ids IS NULL OR array_length(v_ids, 1) IS NULL THEN
         RETURN 0;
     END IF;
 
     -- Trim + drop empty tokens so trailing / adjacent commas don't
     -- become empty rule-name lookups. Column alias `AS t(name)` is
-    -- explicit — bare `unnest(...) AS t` gives column `unnest`, not `t`.
+    -- explicit - bare `unnest(...) AS t` gives column `unnest`, not `t`.
     SELECT ARRAY(
         SELECT btrim(t.name)
         FROM unnest(string_to_array(p_rule_names, ',')) AS t(name)
         WHERE btrim(t.name) <> ''
     ) INTO v_names;
 
+    -- An empty rule list is not fatal - it just means no rule-level
+    -- side effect. Both branches below are skipped in that case.
     IF v_names IS NULL OR array_length(v_names, 1) IS NULL THEN
-        RETURN 0;
-    END IF;
-
-    IF p_is_permanent THEN
+        NULL;
+    ELSIF p_is_permanent THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see
         -- RULE_pg.sql), so only the assignee is set here.
         UPDATE public."RULE" r
@@ -94,11 +118,7 @@ BEGIN
        SET "ASSIGN_TO_ID"  = v_user_id,
            "MODIFIED_DATE" = v_now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE e."RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM public."RULE" r
-        WHERE r."RULE_NAME" = ANY(v_names)
-     );
+     WHERE e."EXCEPTION_ID" = ANY(v_ids);
 
     GET DIAGNOSTICS v_affected = ROW_COUNT;
     RETURN v_affected;

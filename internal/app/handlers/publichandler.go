@@ -336,19 +336,22 @@ type updateExceptionAssignToBody struct {
 }
 
 // UpdateBulkAssign godoc
-// @Summary      Bulk-assign a user to every EXCEPTION under the passed rules
-// @Description  Updates EXCEPTION.ASSIGN_TO_ID for every existing exception
-// @Description  whose RULE_NAME matches. When is_permanent is false (default),
-// @Description  also writes one RULE_ASSIGN_OVERRIDE row per rule so
-// @Description  subsequent rule runs inherit the assignee via the rao join.
-// @Description  When is_permanent is true, RULE.ASSIGN_TO_ID itself is
-// @Description  updated for every matched rule and no override row is
-// @Description  written. Rule names + assignee name are resolved
-// @Description  server-side via DM_USER."USER" / RULE."RULE_NAME".
+// @Summary      Bulk-assign a user to an explicit set of EXCEPTION rows
+// @Description  Updates EXCEPTION.ASSIGN_TO_ID for exactly the EXCEPTION_IDs
+// @Description  passed in exception_ids - the rows the operator ticked in the
+// @Description  Exceptions grid's bulk-selection column. rule_names is NOT a
+// @Description  target set: it is the distinct set of rules those rows belong
+// @Description  to, and drives only the rule-level side effect. When
+// @Description  is_permanent is false (default), one RULE_ASSIGN_OVERRIDE row
+// @Description  is written per rule so subsequent rule runs inherit the
+// @Description  assignee via the rao join. When is_permanent is true,
+// @Description  RULE.ASSIGN_TO_ID itself is updated for those rules and no
+// @Description  override row is written. The assignee name is resolved
+// @Description  server-side via DM_USER."USER".
 // @Tags         exceptions
 // @Accept       json
 // @Produce      json
-// @Param        payload  body      handlers.updateBulkAssignBody  true  "rule_names + assign_to + is_permanent"
+// @Param        payload  body      handlers.updateBulkAssignBody  true  "exception_ids + assign_to + is_permanent + rule_names"
 // @Success      200  {object}  map[string]int   "rows updated"
 // @Failure      400  {object}  map[string]string "invalid params"
 // @Failure      500  {object}  map[string]string "failed to update bulk assign"
@@ -358,13 +361,16 @@ func UpdateBulkAssign(ctx *fiber.Ctx) error {
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
 	}
-	if len(body.RuleNames) == 0 {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_names is required"})
+	// Guarded here as well as inside the SP. An empty id list splits to
+	// zero tokens and updates nothing, but answering 200 with "0 rows"
+	// reads like a backend failure to the operator - say what was wrong.
+	if len(body.ExceptionIDs) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_ids is required"})
 	}
 	if body.AssignTo == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "assign_to is required"})
 	}
-	n, err := services.UpdateBulkAssign(body.RuleNames, body.AssignTo, body.IsPermanent)
+	n, err := services.UpdateBulkAssign(body.ExceptionIDs, body.RuleNames, body.AssignTo, body.IsPermanent)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "failed to update bulk assign: " + err.Error(),
@@ -373,24 +379,33 @@ func UpdateBulkAssign(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"updated": n})
 }
 
+// ExceptionIDs is the target set - EXCEPTION.EXCEPTION_ID values for the
+// rows ticked in the grid. RuleNames is derived from those same rows by
+// the client and drives only the RULE / RULE_ASSIGN_OVERRIDE write; it
+// never widens which EXCEPTION rows are touched. An absent or empty
+// RuleNames simply skips the rule-level side effect.
 type updateBulkAssignBody struct {
-	RuleNames   []string `json:"rule_names"`
-	AssignTo    string   `json:"assign_to"`
-	IsPermanent bool     `json:"is_permanent"`
+	ExceptionIDs []int64  `json:"exception_ids"`
+	RuleNames    []string `json:"rule_names"`
+	AssignTo     string   `json:"assign_to"`
+	IsPermanent  bool     `json:"is_permanent"`
 }
 
 // UpdateBulkStatus godoc
-// @Summary      Bulk-set STATUS + COMMENTS on every EXCEPTION under the passed rules
-// @Description  Resolves rule names → RULE_IDs, resolves status name →
-// @Description  EXCEPTION_STATUS_ID, then updates EXCEPTION.STATUS_ID
-// @Description  (and EXCEPTION.COMMENTS when comments is non-null) for
-// @Description  every row whose RULE_ID falls in the resolved set.
-// @Description  Comments set to null in the JSON body leaves the
-// @Description  existing COMMENTS untouched; empty string clears them.
+// @Summary      Bulk-set STATUS + COMMENTS on an explicit set of EXCEPTION rows
+// @Description  Updates EXCEPTION.STATUS_ID / COMMENTS / SUPPRESS_DATE for
+// @Description  exactly the EXCEPTION_IDs passed in exception_ids - the rows
+// @Description  the operator ticked in the Exceptions grid's bulk-selection
+// @Description  column. The status name is resolved server-side to an
+// @Description  EXCEPTION_STATUS_ID. Comments set to null in the JSON body
+// @Description  leaves the existing COMMENTS untouched; empty string clears
+// @Description  them. status may be empty for a comments-only update; when it
+// @Description  is 'Suppress', suppress_date is written to every selected row
+// @Description  and the SP rejects the call without one.
 // @Tags         exceptions
 // @Accept       json
 // @Produce      json
-// @Param        payload  body      handlers.updateBulkStatusBody  true  "rule_names + status + comments"
+// @Param        payload  body      handlers.updateBulkStatusBody  true  "exception_ids + status + comments + suppress_date"
 // @Success      200  {object}  map[string]int   "rows updated"
 // @Failure      400  {object}  map[string]string "invalid params"
 // @Failure      500  {object}  map[string]string "failed to update bulk status"
@@ -400,13 +415,22 @@ func UpdateBulkStatus(ctx *fiber.Ctx) error {
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
 	}
-	if len(body.RuleNames) == 0 {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "rule_names is required"})
+	if len(body.ExceptionIDs) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_ids is required"})
 	}
-	if body.Status == "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is required"})
+	// Status is deliberately NOT required. The Bulk Status panel allows a
+	// comments-only update (blank status + typed comment, or the Clear
+	// Comments tick), and SP_UPDATE_BULK_STATUS has handled a blank
+	// P_STATUS as "leave STATUS_ID alone" since that panel shipped - this
+	// handler was rejecting those calls with a 400 before they ever
+	// reached it. The SP still refuses a call that asks for nothing at
+	// all (no status, no comment change, no suppress date).
+	if body.Status == "" && body.Comments == nil && body.SuppressDate == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "one of status, comments or suppress_date is required",
+		})
 	}
-	n, err := services.UpdateBulkStatus(body.RuleNames, body.Status, body.Comments, body.SuppressDate)
+	n, err := services.UpdateBulkStatus(body.ExceptionIDs, body.Status, body.Comments, body.SuppressDate)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "failed to update bulk status: " + err.Error(),
@@ -423,10 +447,10 @@ func UpdateBulkStatus(ctx *fiber.Ctx) error {
 // 'YYYY-MM-DD' means "set to this date". Empty string round-trips
 // through NULLIF('','') → NULL on both DB backends.
 type updateBulkStatusBody struct {
-	RuleNames    []string `json:"rule_names"`
-	Status       string   `json:"status"`
-	Comments     *string  `json:"comments"`
-	SuppressDate string   `json:"suppress_date"`
+	ExceptionIDs []int64 `json:"exception_ids"`
+	Status       string  `json:"status"`
+	Comments     *string `json:"comments"`
+	SuppressDate string  `json:"suppress_date"`
 }
 
 // GetExceptionStatus godoc

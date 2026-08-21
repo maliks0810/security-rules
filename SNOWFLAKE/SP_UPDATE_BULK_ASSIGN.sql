@@ -1,18 +1,27 @@
--- Bulk-assigns a user to every EXCEPTION belonging to any of the passed
--- rule names. Persistence target depends on P_IS_PERMANENT:
---   FALSE (default) — INSERT one RULE_ASSIGN_OVERRIDE row per rule
+-- Bulk-assigns a user to an explicit set of EXCEPTION rows.
+--
+-- P_EXCEPTION_IDS is a comma-separated EXCEPTION_ID list - the rows the
+-- operator ticked in the Exceptions grid's bulk-selection column, and
+-- the only rows whose ASSIGN_TO_ID is touched. Empty / NULL -> RETURN 0.
+--
+-- P_RULE_NAMES is NOT a target set. It is the distinct set of rules
+-- those selected rows belong to, and drives only the rule-level write:
+--   FALSE (default) - INSERT one RULE_ASSIGN_OVERRIDE row per rule
 --                     (soft override; RULE.ASSIGN_TO_ID untouched).
 --                     Later runs pick up the override via the rao join
 --                     in SP_GET_EXCEPTIONS / _HIST / _ASSETS.
---   TRUE            — UPDATE RULE.ASSIGN_TO_ID directly for every
---                     matched rule (permanent change to the rule
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID directly for every
+--                     named rule (permanent change to the rule
 --                     default). No RULE_ASSIGN_OVERRIDE row is written.
+-- An empty P_RULE_NAMES skips the rule-level write entirely and still
+-- reassigns the selected exceptions.
 --
--- EXCEPTION.ASSIGN_TO_ID is updated for every existing row regardless
--- of P_IS_PERMANENT so the current grid immediately reflects the new
--- assignee. Returns the number of EXCEPTION rows updated.
+-- EXCEPTION.ASSIGN_TO_ID is updated regardless of P_IS_PERMANENT so the
+-- grid immediately reflects the new assignee. Returns the number of
+-- EXCEPTION rows updated.
 
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
+    P_EXCEPTION_IDS VARCHAR,
     P_RULE_NAMES  VARCHAR,
     P_ASSIGN_TO   VARCHAR,
     P_IS_PERMANENT BOOLEAN DEFAULT FALSE
@@ -40,11 +49,15 @@ BEGIN
         RETURN 0;
     END IF;
 
-    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
+    -- The selection is what gets reassigned, so an empty id list is the
+    -- only fatal case. An empty P_RULE_NAMES just means "no rule-level
+    -- side effect" and still reassigns the selected exceptions.
+    IF (:P_EXCEPTION_IDS IS NULL OR :P_EXCEPTION_IDS = '') THEN
         RETURN 0;
     END IF;
 
-    IF (:P_IS_PERMANENT) THEN
+    IF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
+        AND COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see RULE.sql),
         -- so only the assignee is set here. The permanent write becomes
         -- the new rule default; SP_GET_EXCEPTIONS / _HIST / _ASSETS
@@ -75,7 +88,8 @@ BEGIN
             ) req
               ON r."RULE_NAME" = req.rule_name
          );
-    ELSE
+    ELSEIF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
+            AND NOT COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         INSERT INTO "RULE_ASSIGN_OVERRIDE" (
             "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",
             "CREATED_BY", "CREATED_DATE"
@@ -98,15 +112,10 @@ BEGIN
        SET "ASSIGN_TO_ID"  = :user_id,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE "RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM "RULE" r
-        JOIN (
-            SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM LATERAL SPLIT_TO_TABLE(:P_RULE_NAMES, ',') t
-            WHERE TRIM(t.VALUE::STRING) <> ''
-        ) req
-          ON r."RULE_NAME" = req.rule_name
+     WHERE "EXCEPTION_ID" IN (
+        SELECT TRY_TO_NUMBER(TRIM(t.VALUE::STRING))
+        FROM TABLE(SPLIT_TO_TABLE(:P_EXCEPTION_IDS, ',')) t
+        WHERE TRY_TO_NUMBER(TRIM(t.VALUE::STRING)) IS NOT NULL
      );
 
     affected := SQLROWCOUNT;

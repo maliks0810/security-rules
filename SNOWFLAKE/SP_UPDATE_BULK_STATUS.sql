@@ -1,31 +1,37 @@
--- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) for
--- every EXCEPTION belonging to any of the passed rule names.
+-- Bulk-updates STATUS_ID (plus optional COMMENTS + SUPPRESS_DATE) on an
+-- explicit set of EXCEPTION rows.
 --
 -- Inputs:
---   P_RULE_NAMES    â€” comma-separated RULE_NAME list (same shape as
---                     SP_UPDATE_BULK_ASSIGN).
---   P_STATUS        â€” EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
---                     'Suppress', 'Override', 'Complete'). Unknown /
---                     empty â†’ RETURN 0, no writes.
---   P_COMMENTS      â€” text written to EXCEPTION.COMMENTS on every
---                     matched row. Pass '' to clear, NULL to leave
---                     existing comments untouched.
---   P_SUPPRESS_DATE â€” 'YYYY-MM-DD' string written to
---                     EXCEPTION.SUPPRESS_DATE on every matched row.
---                     Pass NULL or '' to leave existing suppress
---                     dates untouched (Bulk Status panel has no
---                     bulk-clear affordance).
+--   P_EXCEPTION_IDS - comma-separated EXCEPTION_ID list. These are the
+--                    rows the operator ticked in the Exceptions grid's
+--                    bulk-selection column, and they are the ONLY rows
+--                    touched. Replaced rule-name targeting, which
+--                    matched every exception of a rule rather than the
+--                    ones actually picked. Empty / NULL -> RETURN 0:
+--                    an empty selection must never mean "all rows".
+--   P_STATUS       - EXCEPTION_STATUS."NAME" (e.g. 'New', 'Accept',
+--                    'Suppress', 'Override', 'Complete'). Unknown ->
+--                    RETURN 0. Empty -> leave STATUS_ID alone, for a
+--                    comments-only update.
+--   P_COMMENTS     - text written to EXCEPTION.COMMENTS on every
+--                    selected row. Pass '' to clear, NULL to leave
+--                    existing comments untouched.
+--   P_SUPPRESS_DATE - 'YYYY-MM-DD' string written to
+--                    EXCEPTION.SUPPRESS_DATE on every selected row.
+--                    Pass NULL or '' to leave existing suppress dates
+--                    untouched (there is no bulk-clear affordance on
+--                    the Bulk Status panel). Mandatory when P_STATUS
+--                    is 'Suppress'.
 --
--- Only current-day EXCEPTION rows are touched â€” the Bulk Status
--- button is gated to the current date on the client (see
--- DqMonitorPage showBulkAssign wiring), so this SP intentionally
--- does not filter EXCEPTION_DATE server-side; the client's gate is
--- authoritative.
+-- Only current-day EXCEPTION rows are touched - the Bulk Status button
+-- is gated to the current date on the client (see DqMonitorPage
+-- showBulkAssign wiring), so this SP intentionally does not filter
+-- EXCEPTION_DATE server-side; the client's gate is authoritative.
 --
 -- Returns the number of EXCEPTION rows updated.
 
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_STATUS(
-    P_RULE_NAMES   VARCHAR,
+    P_EXCEPTION_IDS VARCHAR,
     P_STATUS       VARCHAR,
     P_COMMENTS     VARCHAR,
     P_SUPPRESS_DATE VARCHAR DEFAULT NULL
@@ -43,7 +49,7 @@ DECLARE
     -- "leave suppress_date untouched" (parity with COMMENTS).
     parsed_suppress DATE := TRY_TO_DATE(NULLIF(:P_SUPPRESS_DATE, ''));
 BEGIN
-    IF (:P_RULE_NAMES IS NULL OR :P_RULE_NAMES = '') THEN
+    IF (:P_EXCEPTION_IDS IS NULL OR :P_EXCEPTION_IDS = '') THEN
         RETURN 0;
     END IF;
 
@@ -145,15 +151,10 @@ BEGIN
                              END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
-     WHERE "RULE_ID" IN (
-        SELECT r."RULE_ID"
-        FROM "RULE" r
-        JOIN (
-            SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
-            WHERE TRIM(t.VALUE::STRING) <> ''
-        ) req
-          ON r."RULE_NAME" = req.rule_name
+     WHERE "EXCEPTION_ID" IN (
+        SELECT TRY_TO_NUMBER(TRIM(t.VALUE::STRING))
+        FROM TABLE(SPLIT_TO_TABLE(:P_EXCEPTION_IDS, ',')) t
+        WHERE TRY_TO_NUMBER(TRIM(t.VALUE::STRING)) IS NOT NULL
      );
 
     affected := SQLROWCOUNT;
