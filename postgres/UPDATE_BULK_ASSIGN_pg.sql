@@ -8,15 +8,21 @@ DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_ASSIGN"(text, text, text, boolean
 -- ASSIGN_TO_ID is touched.
 --
 -- p_rule_names is NOT a target set: it is the distinct set of rules
--- those selected rows belong to, driving only the rule-level write,
--- whose destination depends on p_is_permanent:
---   FALSE (default) - INSERT one RULE_ASSIGN_OVERRIDE row per rule
---                     (soft override; RULE.ASSIGN_TO_ID untouched).
---   TRUE            - UPDATE RULE.ASSIGN_TO_ID directly for every
---                     named rule (permanent). No override row is
---                     written.
--- An empty p_rule_names skips that write entirely and still reassigns
--- the selected exceptions.
+-- those selected rows belong to, and it drives ONLY the permanent
+-- rule-level write:
+--   FALSE (default) - no rule-level write at all. Only the selected
+--                     EXCEPTION rows change.
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID for every named rule, so
+--                     future exceptions of those rules inherit the
+--                     assignee, and purge any stale override rows.
+-- An empty p_rule_names skips that write and still reassigns the
+-- selected exceptions.
+--
+-- The FALSE branch deliberately no longer writes RULE_ASSIGN_OVERRIDE.
+-- SP_GET_EXCEPTIONS displays COALESCE(e.ASSIGN_TO_ID, rao.ASSIGN_TO_ID,
+-- r.ASSIGN_TO_ID), so an override row reassigned every unticked
+-- exception of the rule that had no assignee of its own - the grid
+-- reported "2 assigned" and showed 3.
 --
 -- Both lists are plain comma-separated strings (matches the SNOWFLAKE
 -- contract). Empty p_exception_ids / unknown p_assign_to -> 0-row
@@ -32,7 +38,6 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_user_id integer;
-    v_today   date := (NOW() AT TIME ZONE 'UTC')::date;
     v_now_ts  timestamp := (NOW() AT TIME ZONE 'UTC');
     v_names   text[];
     v_ids     bigint[];
@@ -79,11 +84,21 @@ BEGIN
         WHERE btrim(t.name) <> ''
     ) INTO v_names;
 
-    -- An empty rule list is not fatal - it just means no rule-level
-    -- side effect. Both branches below are skipped in that case.
-    IF v_names IS NULL OR array_length(v_names, 1) IS NULL THEN
-        NULL;
-    ELSIF p_is_permanent THEN
+    -- Rule-level write ONLY when the operator ticked Is Permanent.
+    --
+    -- The non-permanent branch used to INSERT a RULE_ASSIGN_OVERRIDE row
+    -- per rule. That made sense while a bulk assign targeted a whole
+    -- rule, but it is actively wrong now that it targets ticked rows:
+    -- SP_GET_EXCEPTIONS resolves the displayed assignee as
+    -- COALESCE(e.ASSIGN_TO_ID, rao.ASSIGN_TO_ID, r.ASSIGN_TO_ID), so an
+    -- override row silently reassigns every UNTICKED exception of that
+    -- rule that had no assignee of its own. Ticking 2 rows of a 3-row
+    -- rule reported "2 assigned" and showed 3 - and where no row had an
+    -- assignee, the whole rule appeared to change.
+    --
+    -- An empty rule list is likewise not fatal; it just means no
+    -- rule-level write at all.
+    IF p_is_permanent AND v_names IS NOT NULL AND array_length(v_names, 1) IS NOT NULL THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see
         -- RULE_pg.sql), so only the assignee is set here.
         UPDATE public."RULE" r
@@ -100,18 +115,6 @@ BEGIN
             FROM public."RULE" r
             WHERE r."RULE_NAME" = ANY(v_names)
          );
-    ELSE
-        INSERT INTO public."RULE_ASSIGN_OVERRIDE" (
-            "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",
-            "CREATED_BY", "CREATED_DATE"
-        )
-        SELECT r."RULE_ID",
-               v_user_id,
-               v_today,
-               'system',
-               v_now_ts
-        FROM public."RULE" r
-        WHERE r."RULE_NAME" = ANY(v_names);
     END IF;
 
     UPDATE public."EXCEPTION" e

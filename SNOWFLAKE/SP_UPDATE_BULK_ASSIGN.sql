@@ -5,16 +5,19 @@
 -- the only rows whose ASSIGN_TO_ID is touched. Empty / NULL -> RETURN 0.
 --
 -- P_RULE_NAMES is NOT a target set. It is the distinct set of rules
--- those selected rows belong to, and drives only the rule-level write:
---   FALSE (default) - INSERT one RULE_ASSIGN_OVERRIDE row per rule
---                     (soft override; RULE.ASSIGN_TO_ID untouched).
---                     Later runs pick up the override via the rao join
---                     in SP_GET_EXCEPTIONS / _HIST / _ASSETS.
---   TRUE            - UPDATE RULE.ASSIGN_TO_ID directly for every
---                     named rule (permanent change to the rule
---                     default). No RULE_ASSIGN_OVERRIDE row is written.
+-- those selected rows belong to, and it drives ONLY the permanent
+-- rule-level write:
+--   FALSE (default) - no rule-level write at all. Only the selected
+--                     EXCEPTION rows change.
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID for every named rule so
+--                     future exceptions inherit the assignee, and purge
+--                     any stale RULE_ASSIGN_OVERRIDE rows for them.
 -- An empty P_RULE_NAMES skips the rule-level write entirely and still
 -- reassigns the selected exceptions.
+--
+-- The FALSE branch deliberately writes no RULE_ASSIGN_OVERRIDE row:
+-- that override reassigned every unticked exception of the rule that
+-- had no assignee of its own (see the note at the branch below).
 --
 -- EXCEPTION.ASSIGN_TO_ID is updated regardless of P_IS_PERMANENT so the
 -- grid immediately reflects the new assignee. Returns the number of
@@ -41,7 +44,6 @@ AS
 $$
 DECLARE
     user_id  NUMBER := NULL;
-    today    DATE   := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     now_ts   TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     affected NUMBER := 0;
 BEGIN
@@ -65,6 +67,17 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- Rule-level write ONLY when the operator ticked Is Permanent.
+    --
+    -- There used to be a second branch here: when Is Permanent was off,
+    -- one RULE_ASSIGN_OVERRIDE row was inserted per rule. That fitted a
+    -- bulk assign that targeted a whole rule, but it is wrong now that
+    -- it targets ticked rows. SP_GET_EXCEPTIONS displays
+    -- COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID"),
+    -- so the override reassigned every UNTICKED exception of the rule
+    -- that had no assignee of its own: ticking 2 rows of a 3-row rule
+    -- reported "2 assigned" and showed 3, and where no row had an
+    -- assignee the entire rule appeared to change.
     IF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
         AND COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see RULE.sql),
@@ -97,24 +110,6 @@ BEGIN
             ) req
               ON r."RULE_NAME" = req.rule_name
          );
-    ELSEIF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
-            AND NOT COALESCE(:P_IS_PERMANENT, FALSE)) THEN
-        INSERT INTO "RULE_ASSIGN_OVERRIDE" (
-            "RULE_ID", "ASSIGN_TO_ID", "ASSIGN_TO_UNTIL_DATE",
-            "CREATED_BY", "CREATED_DATE"
-        )
-        SELECT r."RULE_ID",
-               :user_id,
-               :today,
-               'system',
-               :now_ts
-        FROM "RULE" r
-        JOIN (
-            SELECT TRIM(t.VALUE::STRING) AS rule_name
-            FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
-            WHERE TRIM(t.VALUE::STRING) <> ''
-        ) req
-          ON r."RULE_NAME" = req.rule_name;
     END IF;
 
     UPDATE "EXCEPTION"

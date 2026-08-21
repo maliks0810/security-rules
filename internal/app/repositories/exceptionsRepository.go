@@ -755,14 +755,18 @@ func joinExceptionIDs(ids []int64) string {
 // swept in every exception of a rule rather than the picked ones.
 //
 // ruleNames is NOT a target set. It is the distinct set of rules the
-// selected rows belong to, derived client-side, and drives only the
-// rule-level write:
-//   false → INSERT one RULE_ASSIGN_OVERRIDE row per rule (soft
-//           override; later runs pick it up via the rao join in
-//           SP_GET_EXCEPTIONS / _HIST / _ASSETS).
-//   true  → UPDATE RULE.ASSIGN_TO_ID directly for every named rule
-//           (permanent change to the rule default; no override row).
-// An empty ruleNames slice skips that side effect entirely and still
+// selected rows belong to, derived client-side, and it drives only the
+// PERMANENT rule-level write:
+//   false → nothing. Only the selected EXCEPTION rows change.
+//   true  → UPDATE RULE.ASSIGN_TO_ID for every named rule so future
+//           exceptions inherit the assignee, and purge stale override
+//           rows for them.
+// The false branch used to INSERT a RULE_ASSIGN_OVERRIDE row per rule.
+// That reassigned every UNTICKED exception of the rule that had no
+// assignee of its own, because SP_GET_EXCEPTIONS displays
+// COALESCE(EXCEPTION.ASSIGN_TO_ID, rao.ASSIGN_TO_ID, RULE.ASSIGN_TO_ID)
+// — the grid reported "2 assigned" and showed 3.
+// An empty ruleNames slice skips the permanent write entirely and still
 // reassigns the selected exceptions.
 //
 // Both lists travel as plain comma-separated strings — the SP splits on
