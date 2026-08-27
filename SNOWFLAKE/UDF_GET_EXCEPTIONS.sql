@@ -82,7 +82,7 @@ $$
            e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
            e."OPEN_DATE"               AS "OPEN_DATE",
            e."CLOSE_DATE"              AS "CLOSE_DATE",
-           COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+           COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
            du."USER"                   AS "ASSIGN_TO",
            e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
            ept."NAME"                  AS "PRIORITY",
@@ -101,23 +101,7 @@ $$
     LEFT JOIN "RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
     LEFT JOIN "EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
     LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
-    -- Latest RULE_ASSIGN_OVERRIDE row per RULE_ID (written by Bulk
-    -- Assign). Precedence: per-row EXCEPTION.ASSIGN_TO_ID wins over
-    -- the bulk override, which wins over the RULE default.
-    LEFT JOIN (
-        SELECT "RULE_ID", "ASSIGN_TO_ID"
-        FROM (
-            SELECT "RULE_ID", "ASSIGN_TO_ID",
-                   ROW_NUMBER() OVER (
-                       PARTITION BY "RULE_ID"
-                       ORDER BY "CREATED_DATE" DESC,
-                                "RULE_ASSIGN_OVERRIDE_ID" DESC
-                   ) AS rn
-            FROM "RULE_ASSIGN_OVERRIDE"
-        )
-        WHERE rn = 1
-    ) rao ON rao."RULE_ID" = r."RULE_ID"
-    LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+    LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     WHERE e."EXCEPTION_DATE" = P_EXCEPTION_DATE
       AND (P_ASSET_ID          IS NULL OR e."ASSET_ID" = P_ASSET_ID)
       AND (P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = P_EXCEPTION_TYPE)

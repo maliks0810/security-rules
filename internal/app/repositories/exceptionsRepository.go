@@ -732,6 +732,91 @@ func UpdateAssignTo(assetID, assignTo string) (int, error) {
 	return n, nil
 }
 
+// ruleDefaultAssignees returns RULE_ID -> RULE.ASSIGN_TO_ID for the
+// given rules, skipping rules with no default. Ids are interpolated
+// rather than bound because they are ints the caller just read out of
+// its own rows - there is no string to escape - and the placeholder
+// dialects differ between the two backends.
+func ruleDefaultAssignees(ruleIDs []int) (map[int]int, error) {
+	out := make(map[int]int, len(ruleIDs))
+	if len(ruleIDs) == 0 {
+		return out, nil
+	}
+	parts := make([]string, 0, len(ruleIDs))
+	for _, id := range ruleIDs {
+		parts = append(parts, strconv.Itoa(id))
+	}
+	q := `SELECT "RULE_ID", "ASSIGN_TO_ID" FROM "RULE" WHERE "RULE_ID" IN (` +
+		strings.Join(parts, ",") + `) AND "ASSIGN_TO_ID" IS NOT NULL`
+
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		rows, err = snowflake.Query(q)
+	} else {
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(strings.ReplaceAll(q, `"RULE"`, `public."RULE"`))
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ruleID, assignTo int
+		if err := rows.Scan(&ruleID, &assignTo); err != nil {
+			return nil, err
+		}
+		out[ruleID] = assignTo
+	}
+	return out, rows.Err()
+}
+
+// applyRuleDefaultAssignees stamps RULE.ASSIGN_TO_ID onto every incoming
+// exception that arrived without an assignee of its own.
+//
+// This is what makes a rule's default assignee stick to the rows it
+// produces. It used to be resolved at READ time instead, via
+// COALESCE(EXCEPTION.ASSIGN_TO_ID, ..., RULE.ASSIGN_TO_ID) in
+// SP_GET_EXCEPTIONS - which meant changing a rule's default silently
+// re-labelled every existing unassigned exception of that rule, so a
+// Bulk Assign with Is Permanent appeared to reassign rows nobody had
+// ticked. Stamping at insert time pins each row to the default that was
+// in force when it was created, and leaves later rule-default changes
+// to affect only rows created after them.
+//
+// Failures are returned to the caller: a row inserted with a NULL
+// assignee is not a disaster (the read path still falls back to the
+// rule default), but it is a silent divergence, so surface it.
+func applyRuleDefaultAssignees(exceptions []models.Exception) error {
+	needed := make([]int, 0, len(exceptions))
+	seen := make(map[int]bool)
+	for _, e := range exceptions {
+		if e.AssignToID != 0 || e.RuleID == 0 || seen[e.RuleID] {
+			continue
+		}
+		seen[e.RuleID] = true
+		needed = append(needed, e.RuleID)
+	}
+	if len(needed) == 0 {
+		return nil
+	}
+	defaults, err := ruleDefaultAssignees(needed)
+	if err != nil {
+		return err
+	}
+	for i := range exceptions {
+		if exceptions[i].AssignToID != 0 {
+			continue
+		}
+		if v, ok := defaults[exceptions[i].RuleID]; ok {
+			exceptions[i].AssignToID = v
+		}
+	}
+	return nil
+}
+
 // joinExceptionIDs renders a selection of EXCEPTION_IDs as the plain
 // comma-separated string both bulk SPs split on. Digits only, so there
 // is no delimiter conflict and no quoting to get wrong. An empty or nil
@@ -923,6 +1008,12 @@ func UpdateExceptionState(assetID string, ruleID int, complete bool) (int, error
 func InsertExceptions(exceptions []models.Exception) error {
 	if len(exceptions) == 0 {
 		return nil
+	}
+	// Stamp each row with its rule's default assignee before writing, so
+	// the assignment is a property of the row rather than something the
+	// read path infers from the rule's CURRENT default.
+	if err := applyRuleDefaultAssignees(exceptions); err != nil {
+		return err
 	}
 	nilIfEmpty := func(s string) any {
 		if s == "" {

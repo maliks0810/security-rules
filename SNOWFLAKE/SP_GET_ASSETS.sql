@@ -58,23 +58,8 @@ BEGIN
               ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
             LEFT JOIN "EXCEPTION_STATE" es
               ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
-            -- Latest per-rule bulk-assign override (see SP_GET_EXCEPTIONS
-            -- for full precedence rationale).
-            LEFT JOIN (
-                SELECT "RULE_ID", "ASSIGN_TO_ID"
-                FROM (
-                    SELECT "RULE_ID", "ASSIGN_TO_ID",
-                           ROW_NUMBER() OVER (
-                               PARTITION BY "RULE_ID"
-                               ORDER BY "CREATED_DATE" DESC,
-                                        "RULE_ASSIGN_OVERRIDE_ID" DESC
-                           ) AS rn
-                    FROM "RULE_ASSIGN_OVERRIDE"
-                )
-                WHERE rn = 1
-            ) rao ON rao."RULE_ID" = r."RULE_ID"
             LEFT JOIN "DM_USER" du
-              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
               AND (:P_SEVERITY         IS NULL OR est."NAME" = :P_SEVERITY)
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)

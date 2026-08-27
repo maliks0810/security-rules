@@ -41,16 +41,8 @@ AS $$
     LEFT JOIN public."EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
     LEFT JOIN public."EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
     LEFT JOIN public."EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
-    LEFT JOIN LATERAL (
-        SELECT rao_inner."ASSIGN_TO_ID"
-        FROM public."RULE_ASSIGN_OVERRIDE" rao_inner
-        WHERE rao_inner."RULE_ID" = r."RULE_ID"
-        ORDER BY rao_inner."CREATED_DATE" DESC,
-                 rao_inner."RULE_ASSIGN_OVERRIDE_ID" DESC
-        LIMIT 1
-    ) rao ON TRUE
     LEFT JOIN public."DM_USER" du
-      ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+      ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     -- Every param treats BOTH '' and 'All' as "no filter". The two
     -- sentinels used to be split inconsistently (the first three
     -- honored '' only, the last two 'All' only), which zeroed the

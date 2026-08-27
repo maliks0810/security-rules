@@ -12,17 +12,16 @@ DROP FUNCTION IF EXISTS public."SP_UPDATE_BULK_ASSIGN"(text, text, text, boolean
 -- rule-level write:
 --   FALSE (default) - no rule-level write at all. Only the selected
 --                     EXCEPTION rows change.
---   TRUE            - UPDATE RULE.ASSIGN_TO_ID for every named rule, so
---                     future exceptions of those rules inherit the
---                     assignee, and purge any stale override rows.
+--   TRUE            - UPDATE RULE.ASSIGN_TO_ID for every named rule.
+--                     Exceptions created later inherit it because
+--                     InsertExceptions stamps the rule default onto
+--                     each new row as it is written.
 -- An empty p_rule_names skips that write and still reassigns the
 -- selected exceptions.
 --
--- The FALSE branch deliberately no longer writes RULE_ASSIGN_OVERRIDE.
--- SP_GET_EXCEPTIONS displays COALESCE(e.ASSIGN_TO_ID, rao.ASSIGN_TO_ID,
--- r.ASSIGN_TO_ID), so an override row reassigned every unticked
--- exception of the rule that had no assignee of its own - the grid
--- reported "2 assigned" and showed 3.
+-- RULE_ASSIGN_OVERRIDE is neither written nor read anywhere any more:
+-- the assignee resolves as COALESCE(e.ASSIGN_TO_ID, r.ASSIGN_TO_ID)
+-- across every read function.
 --
 -- Both lists are plain comma-separated strings (matches the SNOWFLAKE
 -- contract). Empty p_exception_ids / unknown p_assign_to -> 0-row
@@ -85,36 +84,20 @@ BEGIN
     ) INTO v_names;
 
     -- Rule-level write ONLY when the operator ticked Is Permanent.
+    -- With Is Permanent ticked the UI forces every row selected and
+    -- locks the checkboxes, so the EXCEPTION update below covers the
+    -- whole grid; this rule write is what makes the assignment stick
+    -- for rows created LATER, because InsertExceptions stamps
+    -- RULE.ASSIGN_TO_ID onto each new exception as it is written.
     --
-    -- The non-permanent branch used to INSERT a RULE_ASSIGN_OVERRIDE row
-    -- per rule. That made sense while a bulk assign targeted a whole
-    -- rule, but it is actively wrong now that it targets ticked rows:
-    -- SP_GET_EXCEPTIONS resolves the displayed assignee as
-    -- COALESCE(e.ASSIGN_TO_ID, rao.ASSIGN_TO_ID, r.ASSIGN_TO_ID), so an
-    -- override row silently reassigns every UNTICKED exception of that
-    -- rule that had no assignee of its own. Ticking 2 rows of a 3-row
-    -- rule reported "2 assigned" and showed 3 - and where no row had an
-    -- assignee, the whole rule appeared to change.
-    --
-    -- An empty rule list is likewise not fatal; it just means no
-    -- rule-level write at all.
+    -- An empty rule list is not fatal; it just means no rule-level
+    -- write at all.
     IF p_is_permanent AND v_names IS NOT NULL AND array_length(v_names, 1) IS NOT NULL THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see
         -- RULE_pg.sql), so only the assignee is set here.
         UPDATE public."RULE" r
            SET "ASSIGN_TO_ID" = v_user_id
          WHERE r."RULE_NAME" = ANY(v_names);
-
-        -- Purge any pre-existing soft overrides for these rules —
-        -- otherwise a stale rao row would still win over the new
-        -- RULE.ASSIGN_TO_ID via the COALESCE precedence in
-        -- SP_GET_EXCEPTIONS / _HIST / _ASSETS.
-        DELETE FROM public."RULE_ASSIGN_OVERRIDE"
-         WHERE "RULE_ID" IN (
-            SELECT r."RULE_ID"
-            FROM public."RULE" r
-            WHERE r."RULE_NAME" = ANY(v_names)
-         );
     END IF;
 
     UPDATE public."EXCEPTION" e

@@ -1288,47 +1288,26 @@ BEGIN
     END IF;
 
     -- Rule-level write ONLY when the operator ticked Is Permanent.
+    -- With it ticked the UI forces every row selected and locks the
+    -- checkboxes, so the EXCEPTION update below covers the whole grid
+    -- and this rule write is what makes it stick for rows created
+    -- LATER: InsertExceptions stamps RULE.ASSIGN_TO_ID onto each new
+    -- exception as it is written.
     --
-    -- There used to be a second branch here: when Is Permanent was off,
-    -- one RULE_ASSIGN_OVERRIDE row was inserted per rule. That fitted a
-    -- bulk assign that targeted a whole rule, but it is wrong now that
-    -- it targets ticked rows. SP_GET_EXCEPTIONS displays
-    -- COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID"),
-    -- so the override reassigned every UNTICKED exception of the rule
-    -- that had no assignee of its own: ticking 2 rows of a 3-row rule
-    -- reported "2 assigned" and showed 3, and where no row had an
-    -- assignee the entire rule appeared to change.
+    -- RULE_ASSIGN_OVERRIDE is no longer involved on either branch. It
+    -- is not read by any procedure any more - the assignee resolves as
+    -- COALESCE(EXCEPTION.ASSIGN_TO_ID, RULE.ASSIGN_TO_ID) - so there is
+    -- nothing to write and nothing to purge.
     IF (:P_RULE_NAMES IS NOT NULL AND :P_RULE_NAMES <> ''
         AND COALESCE(:P_IS_PERMANENT, FALSE)) THEN
         -- RULE has no MODIFIED_DATE / MODIFIED_BY columns (see RULE.sql),
-        -- so only the assignee is set here. The permanent write becomes
-        -- the new rule default; SP_GET_EXCEPTIONS / _HIST / _ASSETS
-        -- pick it up via the r."ASSIGN_TO_ID" leg of the COALESCE
-        -- when no per-row or rao override wins.
+        -- so only the assignee is set here.
         UPDATE "RULE"
            SET "ASSIGN_TO_ID" = :user_id
          WHERE "RULE_NAME" IN (
             SELECT TRIM(t.VALUE::STRING)
             FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
             WHERE TRIM(t.VALUE::STRING) <> ''
-         );
-
-        -- Purge any pre-existing soft overrides for these rules —
-        -- once the rule default is set permanently, a stale rao row
-        -- pointing at a different user would still win over
-        -- RULE.ASSIGN_TO_ID via the COALESCE precedence and silently
-        -- override the permanent assignment. Deleting them keeps
-        -- the RULE row as the sole source of truth.
-        DELETE FROM "RULE_ASSIGN_OVERRIDE"
-         WHERE "RULE_ID" IN (
-            SELECT r."RULE_ID"
-            FROM "RULE" r
-            JOIN (
-                SELECT TRIM(t.VALUE::STRING) AS rule_name
-                FROM TABLE(SPLIT_TO_TABLE(:P_RULE_NAMES, ',')) t
-                WHERE TRIM(t.VALUE::STRING) <> ''
-            ) req
-              ON r."RULE_NAME" = req.rule_name
          );
     END IF;
 
@@ -2189,7 +2168,7 @@ BEGIN
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
                e."OPEN_DATE"               AS "OPEN_DATE",
                e."CLOSE_DATE"              AS "CLOSE_DATE",
-               COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -2208,25 +2187,7 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
-        -- Latest RULE_ASSIGN_OVERRIDE row per RULE_ID (written by Bulk
-        -- Assign). Precedence: per-row EXCEPTION.ASSIGN_TO_ID wins over
-        -- the bulk override, which wins over the RULE default. This
-        -- ensures subsequent-run exceptions of a bulk-assigned rule
-        -- pick up the new assignee before any per-row grid edit.
-        LEFT JOIN (
-            SELECT "RULE_ID", "ASSIGN_TO_ID"
-            FROM (
-                SELECT "RULE_ID", "ASSIGN_TO_ID",
-                       ROW_NUMBER() OVER (
-                           PARTITION BY "RULE_ID"
-                           ORDER BY "CREATED_DATE" DESC,
-                                    "RULE_ASSIGN_OVERRIDE_ID" DESC
-                       ) AS rn
-                FROM "RULE_ASSIGN_OVERRIDE"
-            )
-            WHERE rn = 1
-        ) rao ON rao."RULE_ID" = r."RULE_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
@@ -2363,7 +2324,7 @@ BEGIN
                e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
                e."OPEN_DATE"               AS "OPEN_DATE",
                e."CLOSE_DATE"              AS "CLOSE_DATE",
-               COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
                du."USER"                   AS "ASSIGN_TO",
                e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
                ept."NAME"                  AS "PRIORITY",
@@ -2382,23 +2343,7 @@ BEGIN
         LEFT JOIN "RULE_GROUP"              rg    ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
         LEFT JOIN "EXCEPTION_STATE"         es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
         LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
-        -- Latest per-rule bulk-assign override (see SP_GET_EXCEPTIONS
-        -- for full precedence rationale). History mirrors the live
-        -- grid so past-day views show the same effective assignee.
-        LEFT JOIN (
-            SELECT "RULE_ID", "ASSIGN_TO_ID"
-            FROM (
-                SELECT "RULE_ID", "ASSIGN_TO_ID",
-                       ROW_NUMBER() OVER (
-                           PARTITION BY "RULE_ID"
-                           ORDER BY "CREATED_DATE" DESC,
-                                    "RULE_ASSIGN_OVERRIDE_ID" DESC
-                       ) AS rn
-                FROM "RULE_ASSIGN_OVERRIDE"
-            )
-            WHERE rn = 1
-        ) rao ON rao."RULE_ID" = r."RULE_ID"
-        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND e."BATCH_ID" = (SELECT mb FROM max_batch)
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
@@ -2462,21 +2407,8 @@ BEGIN
         LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
         LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
         LEFT JOIN "EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
-        LEFT JOIN (
-            SELECT "RULE_ID", "ASSIGN_TO_ID"
-            FROM (
-                SELECT "RULE_ID", "ASSIGN_TO_ID",
-                       ROW_NUMBER() OVER (
-                           PARTITION BY "RULE_ID"
-                           ORDER BY "CREATED_DATE" DESC,
-                                    "RULE_ASSIGN_OVERRIDE_ID" DESC
-                       ) AS rn
-                FROM "RULE_ASSIGN_OVERRIDE"
-            )
-            WHERE rn = 1
-        ) rao ON rao."RULE_ID" = r."RULE_ID"
         LEFT JOIN "DM_USER" du
-          ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+          ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         -- Every param treats BOTH '' and 'All' as "no filter". The two
         -- sentinels used to be split inconsistently (the first three
         -- honored '' only, the last two 'All' only), which zeroed the
@@ -2558,23 +2490,8 @@ BEGIN
               ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
             LEFT JOIN "EXCEPTION_STATE" es
               ON es."EXCEPTION_STATE_ID" = e."STATE_ID"
-            -- Latest per-rule bulk-assign override (see SP_GET_EXCEPTIONS
-            -- for full precedence rationale).
-            LEFT JOIN (
-                SELECT "RULE_ID", "ASSIGN_TO_ID"
-                FROM (
-                    SELECT "RULE_ID", "ASSIGN_TO_ID",
-                           ROW_NUMBER() OVER (
-                               PARTITION BY "RULE_ID"
-                               ORDER BY "CREATED_DATE" DESC,
-                                        "RULE_ASSIGN_OVERRIDE_ID" DESC
-                           ) AS rn
-                    FROM "RULE_ASSIGN_OVERRIDE"
-                )
-                WHERE rn = 1
-            ) rao ON rao."RULE_ID" = r."RULE_ID"
             LEFT JOIN "DM_USER" du
-              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", rao."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+              ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
             WHERE (:P_EXCEPTION_TYPE   IS NULL OR et."NAME"  = :P_EXCEPTION_TYPE)
               AND (:P_SEVERITY         IS NULL OR est."NAME" = :P_SEVERITY)
               AND (:P_PRIORITY         IS NULL OR ept."NAME" = :P_PRIORITY)
