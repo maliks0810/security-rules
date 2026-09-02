@@ -49,15 +49,35 @@ AS $$
                -- Accept / Override / …) clears the date so the grid
                -- never shows a stale suppression next to a
                -- non-Suppress row.
+               -- 'Hold' is a Suppress whose date the operator does not
+               -- choose: always 2 business days out, computed here so
+               -- the client cannot disagree with the server about when
+               -- a hold ends. Weekends only, no holiday calendar.
+               -- Offsets by ISO weekday: Mon/Tue/Wed +2, Thu/Fri +4,
+               -- Sat +3, Sun +2 - a Friday hold runs to Tuesday. Any
+               -- p_suppress_date passed with Hold is ignored.
                "SUPPRESS_DATE" = CASE
+                                     WHEN p_status_name = 'Hold'
+                                         THEN (NOW() AT TIME ZONE 'UTC')::date
+                                              + (CASE EXTRACT(ISODOW FROM (NOW() AT TIME ZONE 'UTC')::date)
+                                                     WHEN 4 THEN 4
+                                                     WHEN 5 THEN 4
+                                                     WHEN 6 THEN 3
+                                                     ELSE 2
+                                                 END)::int
                                      WHEN p_status_name = 'Suppress'
                                          THEN COALESCE(p_suppress_date, "SUPPRESS_DATE")
                                      ELSE NULL
                                  END,
                -- OPEN_DATE ratchets when the row transitions TO 'New';
                -- otherwise the last-New date is preserved.
+               -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts
+               -- 2 business days forward from OPEN_DATE, so it has to
+               -- mean "the day this hold started". Without it a row
+               -- held today but opened weeks ago releases on the very
+               -- next sweep.
                "OPEN_DATE"     = CASE
-                                     WHEN p_status_name = 'New'
+                                     WHEN p_status_name IN ('New', 'Hold')
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
                                      ELSE "OPEN_DATE"
                                  END,
@@ -73,7 +93,9 @@ AS $$
                                      -- into an unresolved / pending
                                      -- state; the historical close date
                                      -- is no longer valid.
-                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge')
+                                     -- Hold joins them: a held row is
+                                     -- pending, not closed.
+                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge', 'Hold')
                                          THEN NULL
                                      ELSE "CLOSE_DATE"
                                  END,

@@ -889,7 +889,23 @@ BEGIN
            -- DB value. Moving off Suppress (to New / Accept /
            -- Override / …) clears the date so the grid never shows
            -- a stale suppression next to a non-Suppress row.
+           -- 'Hold' is a Suppress whose date the operator does not
+           -- choose: always 2 business days out, computed server-side.
+           -- Weekends only, no holiday calendar. Offsets by ISO
+           -- weekday: Mon/Tue/Wed +2, Thu/Fri +4, Sat +3, Sun +2 - a
+           -- Friday hold runs to Tuesday.
            "SUPPRESS_DATE" = CASE
+                                 WHEN :P_STATUS_NAME = 'Hold'
+                                     THEN DATEADD(
+                                              day,
+                                              CASE DAYOFWEEKISO(TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())))
+                                                  WHEN 4 THEN 4
+                                                  WHEN 5 THEN 4
+                                                  WHEN 6 THEN 3
+                                                  ELSE 2
+                                              END,
+                                              TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                          )
                                  WHEN :P_STATUS_NAME = 'Suppress'
                                      THEN COALESCE(:P_SUPPRESS_DATE, "SUPPRESS_DATE")
                                  ELSE NULL
@@ -897,8 +913,11 @@ BEGIN
            -- OPEN_DATE ratchets when the row transitions TO 'New';
            -- otherwise the last-New date is preserved so the grid can
            -- show when the exception was originally surfaced.
+           -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts 2
+           -- business days forward from OPEN_DATE, so it has to mean
+           -- "the day this hold started".
            "OPEN_DATE"     = CASE
-                                 WHEN :P_STATUS_NAME = 'New'
+                                 WHEN :P_STATUS_NAME IN ('New', 'Hold')
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  ELSE "OPEN_DATE"
                              END,
@@ -916,7 +935,7 @@ BEGIN
                                  -- an unresolved / pending state, so
                                  -- the historical close date is no
                                  -- longer valid and gets cleared.
-                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge')
+                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge', 'Hold')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
@@ -1030,6 +1049,34 @@ BEGIN
      WHERE "SUPPRESS_DATE" IS NOT NULL
        AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     affected := SQLROWCOUNT;
+
+    -- Hold release. A Hold stamps OPEN_DATE = the day it was applied
+    -- and SUPPRESS_DATE = 2 business days on from it, so this counts
+    -- the same 2 business days forward from OPEN_DATE and releases the
+    -- row once that day has passed: a Friday hold runs through Tuesday
+    -- and returns to New on Wednesday. Weekends only, no holiday
+    -- calendar. Agrees with the branch above by construction; kept
+    -- explicit so Hold's lifecycle is readable on its own.
+    UPDATE "EXCEPTION"
+       SET "STATUS_ID"     = 1,
+           "SUPPRESS_DATE" = NULL,
+           "OPEN_DATE"     = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),
+           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
+           "MODIFIED_BY"   = 'system'
+     WHERE "STATUS_ID" = 7
+       AND "OPEN_DATE" IS NOT NULL
+       AND TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())) >
+           DATEADD(
+               day,
+               CASE DAYOFWEEKISO("OPEN_DATE")
+                   WHEN 4 THEN 4
+                   WHEN 5 THEN 4
+                   WHEN 6 THEN 3
+                   ELSE 2
+               END,
+               "OPEN_DATE"
+           );
+    affected := affected + SQLROWCOUNT;
     RETURN affected;
 END;
 $$;
@@ -1443,9 +1490,21 @@ BEGIN
            --   any other status      → NULL out the date so the grid
            --     never shows a stale suppression next to a
            --     non-Suppress row.
+           -- 'Hold': always 2 business days out, computed server-side.
            "SUPPRESS_DATE" = CASE
                                  WHEN :status_id IS NULL
                                      THEN "SUPPRESS_DATE"
+                                 WHEN UPPER(:P_STATUS) = 'HOLD'
+                                     THEN DATEADD(
+                                              day,
+                                              CASE DAYOFWEEKISO(TO_DATE(:now_ts))
+                                                  WHEN 4 THEN 4
+                                                  WHEN 5 THEN 4
+                                                  WHEN 6 THEN 3
+                                                  ELSE 2
+                                              END,
+                                              TO_DATE(:now_ts)
+                                          )
                                  WHEN UPPER(:P_STATUS) = 'SUPPRESS'
                                      THEN COALESCE(:parsed_suppress, "SUPPRESS_DATE")
                                  ELSE NULL
@@ -1456,7 +1515,7 @@ BEGIN
            -- intact.
            "OPEN_DATE"     = CASE
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) = 'NEW'
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'HOLD')
                                      THEN TO_DATE(:now_ts)
                                  ELSE "OPEN_DATE"
                              END,
@@ -1474,7 +1533,7 @@ BEGIN
                                  -- the historical close date is no
                                  -- longer valid and gets cleared.
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE')
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
@@ -2384,7 +2443,20 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_COUNTS_BY_GROUP(
     -- rows behind it. Deliberately a hard equality below rather than an
     -- "IS NULL OR" escape hatch: an optional date is exactly what let
     -- this procedure drift away from SP_GET_EXCEPTIONS to begin with.
-    P_EXCEPTION_DATE  DATE    DEFAULT NULL
+    P_EXCEPTION_DATE  DATE    DEFAULT NULL,
+    -- Which table to count. FALSE reads EXCEPTION; TRUE reads
+    -- EXCEPTION_HIST restricted to that day's latest BATCH_ID per
+    -- group - the same source split the grid makes between
+    -- SP_GET_EXCEPTIONS and SP_GET_EXCEPTIONS_HIST.
+    --
+    -- Without this the panel always counted EXCEPTION, which only
+    -- holds recent days, so every historical date the LHS date
+    -- dropdown offers came back as 0 for every group while the grid
+    -- beside it showed rows. The two also disagreed on dates present
+    -- in BOTH tables, since the grid read the archived snapshot while
+    -- the panel read the live one. The caller decides, so panel and
+    -- grid read the same source by construction.
+    P_USE_HIST        BOOLEAN DEFAULT FALSE
 )
 RETURNS TABLE(
     "RULE_GROUP" VARCHAR,
@@ -2397,6 +2469,21 @@ DECLARE
     res RESULTSET;
 BEGIN
     res := (
+        -- Latest archived batch per group for the requested day.
+        -- Computed per group rather than globally, because
+        -- SP_GET_EXCEPTIONS_HIST resolves MAX(BATCH_ID) within the
+        -- caller's scope - a single global max would silently zero any
+        -- group whose rows were archived in an earlier batch that day.
+        WITH max_batch AS (
+            SELECT rg."RULE_GROUP_ID" AS grp_id, MAX(h."BATCH_ID") AS batch
+            FROM "EXCEPTION_HIST" h
+            JOIN "RULE"         r  ON r."RULE_ID"          = h."RULE_ID"
+            JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+            JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+            WHERE :P_USE_HIST
+              AND h."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+            GROUP BY rg."RULE_GROUP_ID"
+        )
         SELECT rg."NAME"  AS "RULE_GROUP",
                COUNT(*)   AS "COUNT"
         FROM "EXCEPTION" e
@@ -2417,7 +2504,34 @@ BEGIN
         -- since the Go layer forwards the raw string with no nil
         -- conversion. Accepting both keeps this correct whichever
         -- the caller uses.
-        WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+        WHERE NOT :P_USE_HIST
+          AND e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+          AND (:P_EXCEPTION_TYPE  IS NULL OR :P_EXCEPTION_TYPE  IN ('', 'All') OR et."NAME"  = :P_EXCEPTION_TYPE)
+          AND (:P_SEVERITY        IS NULL OR :P_SEVERITY        IN ('', 'All') OR est."NAME" = :P_SEVERITY)
+          AND (:P_PRIORITY        IS NULL OR :P_PRIORITY        IN ('', 'All') OR ept."NAME" = :P_PRIORITY)
+          AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE IN ('', 'All') OR es."NAME"  = :P_EXCEPTION_STATE)
+          AND (:P_ASSIGN_TO       IS NULL OR :P_ASSIGN_TO       IN ('', 'All') OR du."USER" = :P_ASSIGN_TO)
+        GROUP BY rg."NAME"
+
+        UNION ALL
+
+        -- Archived branch: same shape, same filters, EXCEPTION_HIST
+        -- pinned to each group's latest batch for the day.
+        SELECT rg."NAME"  AS "RULE_GROUP",
+               COUNT(*)   AS "COUNT"
+        FROM "EXCEPTION_HIST" e
+        JOIN "RULE"                        r   ON r."RULE_ID"                     = e."RULE_ID"
+        JOIN "RULE_CATALOG"                rc  ON rc."RULE_CATALOG_ID"            = r."RULE_CATALOG_ID"
+        JOIN "RULE_GROUP"                  rg  ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
+        JOIN max_batch mb ON mb.grp_id = rg."RULE_GROUP_ID" AND e."BATCH_ID" = mb.batch
+        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN "DM_USER" du
+          ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        WHERE :P_USE_HIST
+          AND e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND (:P_EXCEPTION_TYPE  IS NULL OR :P_EXCEPTION_TYPE  IN ('', 'All') OR et."NAME"  = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY        IS NULL OR :P_SEVERITY        IN ('', 'All') OR est."NAME" = :P_SEVERITY)
           AND (:P_PRIORITY        IS NULL OR :P_PRIORITY        IN ('', 'All') OR ept."NAME" = :P_PRIORITY)

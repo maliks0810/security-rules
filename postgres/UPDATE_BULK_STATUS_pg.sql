@@ -113,9 +113,22 @@ BEGIN
            --   any other status      → NULL out the date so the grid
            --     never shows a stale suppression next to a
            --     non-Suppress row.
+           -- 'Hold' is a Suppress whose date the operator does not
+           -- choose: always 2 business days out, computed server-side.
+           -- Weekends only, no holiday calendar. Offsets by ISO
+           -- weekday: Mon/Tue/Wed +2, Thu/Fri +4, Sat +3, Sun +2 - a
+           -- Friday hold runs to Tuesday. Any passed date is ignored.
            "SUPPRESS_DATE" = CASE
                                  WHEN v_status_id IS NULL
                                      THEN e."SUPPRESS_DATE"
+                                 WHEN upper(p_status) = 'HOLD'
+                                     THEN v_now_ts::date
+                                          + (CASE EXTRACT(ISODOW FROM v_now_ts::date)
+                                                 WHEN 4 THEN 4
+                                                 WHEN 5 THEN 4
+                                                 WHEN 6 THEN 3
+                                                 ELSE 2
+                                             END)::int
                                  WHEN upper(p_status) = 'SUPPRESS'
                                      THEN COALESCE(v_suppress, e."SUPPRESS_DATE")
                                  ELSE NULL
@@ -123,9 +136,12 @@ BEGIN
            -- OPEN_DATE ratchets only when this bulk update flips the
            -- row TO 'New'. Comments-only updates (v_status_id NULL) and
            -- transitions to any other status preserve the last-New date.
+           -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts 2
+           -- business days forward from OPEN_DATE, so it has to mean
+           -- "the day this hold started".
            "OPEN_DATE"     = CASE
                                  WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) = 'NEW'
+                                      AND upper(p_status) IN ('NEW', 'HOLD')
                                      THEN v_now_ts::date
                                  ELSE e."OPEN_DATE"
                              END,
@@ -142,8 +158,10 @@ BEGIN
                                  -- an unresolved / pending state; the
                                  -- historical close date is no longer
                                  -- valid.
+                                 -- Hold joins them: a held row is
+                                 -- pending, not closed.
                                  WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) IN ('NEW', 'SUPPRESS', 'CHALLENGE')
+                                      AND upper(p_status) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD')
                                      THEN NULL
                                  ELSE e."CLOSE_DATE"
                              END,

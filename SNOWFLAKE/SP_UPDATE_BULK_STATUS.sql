@@ -115,9 +115,27 @@ BEGIN
            --   any other status      → NULL out the date so the grid
            --     never shows a stale suppression next to a
            --     non-Suppress row.
+           -- 'Hold' is a Suppress whose date the operator does not
+           -- choose: always 2 business days out, computed server-side
+           -- so the client cannot disagree about when a hold ends.
+           -- Weekends only, no holiday calendar. Offsets by ISO
+           -- weekday: Mon/Tue/Wed +2, Thu/Fri +4, Sat +3, Sun +2 - a
+           -- Friday hold runs to Tuesday. Any passed suppress date is
+           -- ignored for Hold on purpose.
            "SUPPRESS_DATE" = CASE
                                  WHEN :status_id IS NULL
                                      THEN "SUPPRESS_DATE"
+                                 WHEN UPPER(:P_STATUS) = 'HOLD'
+                                     THEN DATEADD(
+                                              day,
+                                              CASE DAYOFWEEKISO(TO_DATE(:now_ts))
+                                                  WHEN 4 THEN 4
+                                                  WHEN 5 THEN 4
+                                                  WHEN 6 THEN 3
+                                                  ELSE 2
+                                              END,
+                                              TO_DATE(:now_ts)
+                                          )
                                  WHEN UPPER(:P_STATUS) = 'SUPPRESS'
                                      THEN COALESCE(:parsed_suppress, "SUPPRESS_DATE")
                                  ELSE NULL
@@ -126,9 +144,13 @@ BEGIN
            -- row TO 'New'. Comments-only updates (status_id NULL) and
            -- transitions to any other status leave the last-New date
            -- intact.
+           -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts the
+           -- 2 business days forward from OPEN_DATE, so it has to mean
+           -- "the day this hold started". Without it a row held today
+           -- but opened weeks ago releases on the very next sweep.
            "OPEN_DATE"     = CASE
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) = 'NEW'
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'HOLD')
                                      THEN TO_DATE(:now_ts)
                                  ELSE "OPEN_DATE"
                              END,
@@ -145,8 +167,10 @@ BEGIN
                                  -- an unresolved / pending state, so
                                  -- the historical close date is no
                                  -- longer valid and gets cleared.
+                                 -- Hold joins them: a held row is
+                                 -- pending, not closed.
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE')
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
