@@ -96,6 +96,6 @@ func UpdateBulkStatus(exceptionIDs []int64, status string, comments *string, sup
 	return repositories.UpdateBulkStatus(exceptionIDs, status, comments, suppressDate)
 }
 
-func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string) ([]models.GroupCount, error) {
-	return repositories.GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate)
+func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string, useHist bool) ([]models.GroupCount, error) {
+	return repositories.GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate, useHist)
 }

@@ -21,7 +21,20 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_COUNTS_BY_GROUP(
     -- rows behind it. Deliberately a hard equality below rather than an
     -- "IS NULL OR" escape hatch: an optional date is exactly what let
     -- this procedure drift away from SP_GET_EXCEPTIONS to begin with.
-    P_EXCEPTION_DATE  DATE    DEFAULT NULL
+    P_EXCEPTION_DATE  DATE    DEFAULT NULL,
+    -- Which table to count. FALSE reads EXCEPTION; TRUE reads
+    -- EXCEPTION_HIST restricted to that day's latest BATCH_ID per
+    -- group - the same source split the grid makes between
+    -- SP_GET_EXCEPTIONS and SP_GET_EXCEPTIONS_HIST.
+    --
+    -- Without this the panel always counted EXCEPTION, which only
+    -- holds recent days, so every historical date the LHS date
+    -- dropdown offers came back as 0 for every group while the grid
+    -- beside it showed rows. The two also disagreed on dates present
+    -- in BOTH tables, since the grid read the archived snapshot while
+    -- the panel read the live one. The caller decides, so panel and
+    -- grid read the same source by construction.
+    P_USE_HIST        BOOLEAN DEFAULT FALSE
 )
 RETURNS TABLE(
     "RULE_GROUP" VARCHAR,
@@ -34,6 +47,21 @@ DECLARE
     res RESULTSET;
 BEGIN
     res := (
+        -- Latest archived batch per group for the requested day.
+        -- Computed per group rather than globally, because
+        -- SP_GET_EXCEPTIONS_HIST resolves MAX(BATCH_ID) within the
+        -- caller's scope - a single global max would silently zero any
+        -- group whose rows were archived in an earlier batch that day.
+        WITH max_batch AS (
+            SELECT rg."RULE_GROUP_ID" AS grp_id, MAX(h."BATCH_ID") AS batch
+            FROM "EXCEPTION_HIST" h
+            JOIN "RULE"         r  ON r."RULE_ID"          = h."RULE_ID"
+            JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+            JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+            WHERE :P_USE_HIST
+              AND h."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+            GROUP BY rg."RULE_GROUP_ID"
+        )
         SELECT rg."NAME"  AS "RULE_GROUP",
                COUNT(*)   AS "COUNT"
         FROM "EXCEPTION" e
@@ -54,7 +82,34 @@ BEGIN
         -- since the Go layer forwards the raw string with no nil
         -- conversion. Accepting both keeps this correct whichever
         -- the caller uses.
-        WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+        WHERE NOT :P_USE_HIST
+          AND e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+          AND (:P_EXCEPTION_TYPE  IS NULL OR :P_EXCEPTION_TYPE  IN ('', 'All') OR et."NAME"  = :P_EXCEPTION_TYPE)
+          AND (:P_SEVERITY        IS NULL OR :P_SEVERITY        IN ('', 'All') OR est."NAME" = :P_SEVERITY)
+          AND (:P_PRIORITY        IS NULL OR :P_PRIORITY        IN ('', 'All') OR ept."NAME" = :P_PRIORITY)
+          AND (:P_EXCEPTION_STATE IS NULL OR :P_EXCEPTION_STATE IN ('', 'All') OR es."NAME"  = :P_EXCEPTION_STATE)
+          AND (:P_ASSIGN_TO       IS NULL OR :P_ASSIGN_TO       IN ('', 'All') OR du."USER" = :P_ASSIGN_TO)
+        GROUP BY rg."NAME"
+
+        UNION ALL
+
+        -- Archived branch: same shape, same filters, EXCEPTION_HIST
+        -- pinned to each group's latest batch for the day.
+        SELECT rg."NAME"  AS "RULE_GROUP",
+               COUNT(*)   AS "COUNT"
+        FROM "EXCEPTION_HIST" e
+        JOIN "RULE"                        r   ON r."RULE_ID"                     = e."RULE_ID"
+        JOIN "RULE_CATALOG"                rc  ON rc."RULE_CATALOG_ID"            = r."RULE_CATALOG_ID"
+        JOIN "RULE_GROUP"                  rg  ON rg."RULE_GROUP_ID"              = rc."RULE_GROUP_ID"
+        JOIN max_batch mb ON mb.grp_id = rg."RULE_GROUP_ID" AND e."BATCH_ID" = mb.batch
+        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_STATE"         es  ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN "DM_USER" du
+          ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        WHERE :P_USE_HIST
+          AND e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
           AND (:P_EXCEPTION_TYPE  IS NULL OR :P_EXCEPTION_TYPE  IN ('', 'All') OR et."NAME"  = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY        IS NULL OR :P_SEVERITY        IN ('', 'All') OR est."NAME" = :P_SEVERITY)
           AND (:P_PRIORITY        IS NULL OR :P_PRIORITY        IN ('', 'All') OR ept."NAME" = :P_PRIORITY)

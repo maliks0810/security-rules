@@ -467,6 +467,12 @@ const docTemplate = `{
                         "description": "Assign-to filter",
                         "name": "assign_to",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Count EXCEPTION_HIST (that day's latest batch per group) instead of EXCEPTION. Set it whenever the grid is showing a historical date.",
+                        "name": "use_hist",
+                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -654,6 +654,11 @@ paths:
         in: query
         name: assign_to
         type: string
+      - description: Count EXCEPTION_HIST (that day's latest batch per group) instead
+          of EXCEPTION. Set it whenever the grid is showing a historical date.
+        in: query
+        name: use_hist
+        type: boolean
       produces:
       - application/json
       responses:

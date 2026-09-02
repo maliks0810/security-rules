@@ -861,6 +861,7 @@ func GetRuleNames(ctx *fiber.Ctx) error {
 // @Param        priority         query     string  false  "Priority filter"
 // @Param        exception_state  query     string  false  "Exception state filter"
 // @Param        assign_to        query     string  false  "Assign-to filter"
+// @Param        use_hist         query     boolean false  "Count EXCEPTION_HIST (that day's latest batch per group) instead of EXCEPTION. Set it whenever the grid is showing a historical date."
 // @Success      200  {array}   models.GroupCount
 // @Failure      400  {object}  map[string]string  "exception_date is required"
 // @Failure      500  {object}  map[string]string  "failed to query exception counts by group"
@@ -870,6 +871,9 @@ func GetExceptionCountsByGroup(ctx *fiber.Ctx) error {
 	if exceptionDate == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_date is required"})
 	}
+	// Anything other than an explicit "true" counts the live table, so
+	// an older client that omits the param keeps its current behaviour.
+	useHist := strings.EqualFold(ctx.Query("use_hist"), "true")
 	out, err := services.GetExceptionCountsByGroup(
 		ctx.Query("exception_type"),
 		ctx.Query("severity"),
@@ -877,6 +881,7 @@ func GetExceptionCountsByGroup(ctx *fiber.Ctx) error {
 		ctx.Query("exception_state"),
 		ctx.Query("assign_to"),
 		exceptionDate,
+		useHist,
 	)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception counts by group"})
