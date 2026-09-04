@@ -13,12 +13,17 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     -- "today" (or the target day) themselves and pass an explicit
     -- date. Passing NULL matches no rows.
     P_EXCEPTION_DATE    DATE    DEFAULT NULL,
-    -- SECURITY_GROUP filter. NULL / '' / 'All' means no filter and the
+    -- SECURITY_GROUP filter. NULL or '' means no filter and the
     -- procedure runs its original query untouched. Any other value
     -- selects a SEPARATE query below that joins DIM_SECURITY, rather
     -- than bolting an always-evaluated OR onto the existing predicate
     -- list: the join narrows EXCEPTION early instead of filtering after
     -- the fact, and callers that do not use it pay nothing.
+    --
+    -- Deliberately NOT honouring the 'All' sentinel the other filters
+    -- accept. A security group literally named 'All' would be
+    -- unfilterable, and the caller already normalises its empty
+    -- selection to '' before sending.
     P_SECURITY_GROUP    VARCHAR DEFAULT NULL
 )
 RETURNS TABLE (
@@ -63,8 +68,7 @@ BEGIN
     -- in both; the ONLY difference is the DIM_SECURITY join. Keep them
     -- in step - a change made to one branch and not the other is
     -- invisible until someone filters by security group.
-    IF (:P_SECURITY_GROUP IS NULL OR :P_SECURITY_GROUP = ''
-        OR :P_SECURITY_GROUP = 'All') THEN
+    IF (:P_SECURITY_GROUP IS NULL OR :P_SECURITY_GROUP = '') THEN
         res := (
         SELECT e."EXCEPTION_ID"            AS "EXCEPTION_ID",
                e."RULE_ID"                 AS "RULE_ID",

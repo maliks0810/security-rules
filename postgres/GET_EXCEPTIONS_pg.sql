@@ -23,10 +23,15 @@ CREATE OR REPLACE FUNCTION public."SP_GET_EXCEPTIONS"(
     -- "today" (or the target day) themselves and pass an explicit
     -- date. Passing NULL matches no rows.
     p_exception_date    date DEFAULT NULL,
-    -- SECURITY_GROUP filter. NULL / '' / 'All' means no filter and the
+    -- SECURITY_GROUP filter. NULL or '' means no filter and the
     -- original query runs untouched. Any other value selects a SEPARATE
     -- query that joins DIM_SECURITY, rather than bolting an
     -- always-evaluated predicate onto the existing list.
+    --
+    -- Deliberately NOT honouring the 'All' sentinel the other filters
+    -- accept: a security group literally named 'All' would be
+    -- unfilterable, and the caller already normalises its empty
+    -- selection to ''.
     p_security_group    text DEFAULT NULL
 )
 RETURNS TABLE(
@@ -68,7 +73,7 @@ BEGIN
     -- The projection, the joins and every other predicate are identical
     -- in both branches; the ONLY difference is the DIM_SECURITY join.
     -- Keep them in step.
-    IF p_security_group IS NULL OR p_security_group IN ('', 'All') THEN
+    IF p_security_group IS NULL OR p_security_group = '' THEN
         RETURN QUERY
     SELECT e."EXCEPTION_ID",
            e."RULE_ID",

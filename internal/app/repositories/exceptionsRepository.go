@@ -513,14 +513,12 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	exceptionStateArg := nilIfEmpty(exceptionState)
 	assignToArg := nilIfEmpty(assignTo)
 	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
-	// "All" is the dropdowns' no-filter sentinel. The SP treats it the
-	// same as NULL, but normalising here also keeps the Snowflake
-	// dispatch below from taking the SP branch for what is really no
-	// filter at all.
+	// Empty string is the only no-filter sentinel for this parameter -
+	// unlike the other dropdowns, 'All' is NOT special-cased, so a
+	// security group genuinely named 'All' stays filterable. Trimmed so
+	// stray whitespace cannot send the Snowflake dispatch down the SP
+	// branch for what is really no filter.
 	securityGroupArg := strings.TrimSpace(securityGroup)
-	if strings.EqualFold(securityGroupArg, "All") {
-		securityGroupArg = ""
-	}
 
 	// SP_GET_EXCEPTIONS no longer defaults P_EXCEPTION_DATE to today
 	// (the WHERE clause is a plain equality, not COALESCE-with-fallback),
