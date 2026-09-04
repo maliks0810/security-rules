@@ -1339,13 +1339,11 @@ $$;
 -- the selected rows so the grid immediately reflects the new assignee.
 -- Returns the number of EXCEPTION rows updated.
 --
--- The DROP is load-bearing: this procedure's signature changed arity
--- (3 args -> 4) when targeting moved from rule names to exception ids,
--- and Snowflake overloads procedures by signature, so CREATE OR REPLACE
--- alone would leave the old 3-arg definition live beside the new one,
--- still assigning by whole rule.
-DROP PROCEDURE IF EXISTS SP_UPDATE_BULK_ASSIGN(VARCHAR, VARCHAR, BOOLEAN);
-
+-- This procedure's signature changed arity (3 args -> 4) when targeting
+-- moved from rule names to exception ids, and Snowflake overloads by
+-- signature, so the old 3-arg definition has to be dropped explicitly
+-- or it stays live beside this one, still assigning by whole rule.
+-- That DROP lives in 200_UPDATE_ADHOC.sql, which runs AFTER this file.
 CREATE OR REPLACE PROCEDURE SP_UPDATE_BULK_ASSIGN(
     P_EXCEPTION_IDS VARCHAR,
     P_RULE_NAMES  VARCHAR,
