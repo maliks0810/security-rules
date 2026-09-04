@@ -256,10 +256,11 @@ func ExecuteSecurityRules(ruleName, ruleType, assetID string, idBbGlobal ...stri
 
 	// Snapshot existing (RuleID, AssetID) pairs across all assets, scoped
 	// to the rule IDs the catalogs actually produced this round.
-	// Trailing "" for exceptionDate — ExecuteRules always deals with
-	// today's produced exceptions, so the repo's today-UTC fallback
-	// is the intended semantic here.
-	existing, err := repositories.GetExceptions("", "", "", "", "", "", "", "", "", "", "")
+	// Trailing ""s for exceptionDate and securityGroup — ExecuteRules
+	// always deals with today's produced exceptions across every
+	// security, so the repo's today-UTC fallback and no security-group
+	// filter are the intended semantics here.
+	existing, err := repositories.GetExceptions("", "", "", "", "", "", "", "", "", "", "", "")
 	if err != nil {
 		return err
 	}

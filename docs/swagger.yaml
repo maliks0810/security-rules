@@ -816,6 +816,11 @@ paths:
         in: query
         name: rule_name_pattern
         type: string
+      - description: SECURITY_GROUP filter. Selects a dedicated query that joins DIM_SECURITY
+          on ASSET_ID = ALADDIN_ID. Empty or 'All' means no filter.
+        in: query
+        name: security_group
+        type: string
       produces:
       - application/json
       responses:
@@ -1134,6 +1139,30 @@ paths:
       summary: List every active RULE under a group with its catalog + description
       tags:
       - rules
+  /v1/api/getSecurityGroups:
+    get:
+      description: |-
+        Returns the distinct SECURITY_GROUP values from
+        SECURITY_CURRENT_VW, ordered alphabetically. Feeds the
+        Security Group dropdown on the Bulk Assign panel.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: failed to query security groups
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List security group names
+      tags:
+      - securities
   /v1/api/getSeverityTypes:
     get:
       description: Returns CATEGORY_TYPE.CODE values ordered by CATEGORY_RANK.

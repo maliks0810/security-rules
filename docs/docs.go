@@ -704,6 +704,12 @@ const docTemplate = `{
                         "description": "SQL ILIKE pattern against RULE.RULE_NAME",
                         "name": "rule_name_pattern",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SECURITY_GROUP filter. Selects a dedicated query that joins DIM_SECURITY on ASSET_ID = ALADDIN_ID. Empty or 'All' means no filter.",
+                        "name": "security_group",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1138,6 +1144,38 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "failed to query rules for group",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getSecurityGroups": {
+            "get": {
+                "description": "Returns the distinct SECURITY_GROUP values from\nSECURITY_CURRENT_VW, ordered alphabetically. Feeds the\nSecurity Group dropdown on the Bulk Assign panel.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "securities"
+                ],
+                "summary": "List security group names",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query security groups",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

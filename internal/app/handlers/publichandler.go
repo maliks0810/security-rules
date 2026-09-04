@@ -42,6 +42,7 @@ func GetInformation(ctx *fiber.Ctx) error {
 // @Param        exception_state  query     string  false  "EXCEPTION_STATE.NAME filter"
 // @Param        assign_to         query     string  false  "DM_USER.USER filter"
 // @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
+// @Param        security_group    query     string  false  "SECURITY_GROUP filter. Selects a dedicated query that joins DIM_SECURITY on ASSET_ID = ALADDIN_ID. Empty or 'All' means no filter."
 // @Success      200             {array}   models.Exception
 // @Failure      500             {object}  map[string]string  "failed to query exceptions"
 // @Router       /v1/api/getExceptions [get]
@@ -64,7 +65,7 @@ func GetExceptions(ctx *fiber.Ctx) error {
 	// use time.Now().UTC() and return 0 rows in that case.
 	exceptionDate := ctx.Query("exception_date")
 
-	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate)
+	exceptions, err := services.GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate, ctx.Query("security_group"))
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exceptions"})
 	}
@@ -451,6 +452,24 @@ type updateBulkStatusBody struct {
 	Status       string  `json:"status"`
 	Comments     *string `json:"comments"`
 	SuppressDate string  `json:"suppress_date"`
+}
+
+// GetSecurityGroups godoc
+// @Summary      List security group names
+// @Description  Returns the distinct SECURITY_GROUP values from
+// @Description  SECURITY_CURRENT_VW, ordered alphabetically. Feeds the
+// @Description  Security Group dropdown on the Bulk Assign panel.
+// @Tags         securities
+// @Produce      json
+// @Success      200  {array}   string
+// @Failure      500  {object}  map[string]string  "failed to query security groups"
+// @Router       /v1/api/getSecurityGroups [get]
+func GetSecurityGroups(ctx *fiber.Ctx) error {
+	groups, err := services.GetSecurityGroups()
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query security groups"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(groups)
 }
 
 // GetExceptionStatus godoc

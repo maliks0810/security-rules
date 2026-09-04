@@ -355,6 +355,39 @@ func UpdateExceptionComments(exceptionID int64, comments string) (int, error) {
 	return n, nil
 }
 
+// GetSecurityGroups returns the distinct SECURITY_GROUP values from
+// SECURITY_CURRENT_VW, for the Bulk Assign panel's Security Group
+// dropdown. Blank / NULL groups are filtered out by the SP itself.
+func GetSecurityGroups() ([]string, error) {
+	var rows *sql.Rows
+	var err error
+
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetSecurityGroups - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_SECURITY_GROUPS()")
+	} else {
+		log.Logger.Info("exceptionsRepository: GetSecurityGroups - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_SECURITY_GROUPS"()`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	groups := []string{}
+	for rows.Next() {
+		var g sql.NullString
+		if err := rows.Scan(&g); err != nil {
+			return nil, err
+		}
+		groups = append(groups, sqlutil.NullStr(g))
+	}
+	return groups, rows.Err()
+}
+
 func GetExceptionStatus() ([]string, error) {
 	var rows *sql.Rows
 	var err error
@@ -448,7 +481,11 @@ func GetExceptionTypes() ([]string, error) {
 // GetExceptions calls GET_EXCEPTIONS_2, which reads from the slim EXCEPTION
 // table and joins RULE + the lookup tables. Returns the new Exception
 // model (23-column shape â€” no dummy NULLs to fit the legacy struct).
-func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate string) ([]models.Exception, error) {
+// securityGroup filters to exceptions whose ASSET_ID appears in
+// DIM_SECURITY under that SECURITY_GROUP. Empty / "All" means no
+// filter. See the query dispatch below for why it changes which
+// Snowflake object gets called.
+func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate, securityGroup string) ([]models.Exception, error) {
 	// Once-per-day sweep: any Suppress row whose SUPPRESS_DATE has
 	// passed reverts to STATUS_ID=1 (New) with a null SUPPRESS_DATE.
 	// Guarded by lastExpireDate so this only fires the first
@@ -476,6 +513,14 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 	exceptionStateArg := nilIfEmpty(exceptionState)
 	assignToArg := nilIfEmpty(assignTo)
 	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
+	// "All" is the dropdowns' no-filter sentinel. The SP treats it the
+	// same as NULL, but normalising here also keeps the Snowflake
+	// dispatch below from taking the SP branch for what is really no
+	// filter at all.
+	securityGroupArg := strings.TrimSpace(securityGroup)
+	if strings.EqualFold(securityGroupArg, "All") {
+		securityGroupArg = ""
+	}
 
 	// SP_GET_EXCEPTIONS no longer defaults P_EXCEPTION_DATE to today
 	// (the WHERE clause is a plain equality, not COALESCE-with-fallback),
@@ -512,16 +557,29 @@ func GetExceptions(assetID, exceptionType, severity, priority, ruleCatalog, rule
 		// coerces to DATE inside a SP CALL context but not inside a
 		// SELECT-invoked UDF, which reports "invalid argument types
 		// for function UDF_GET_EXCEPTIONS" without the explicit cast.
-		rows, err = snowflake.Query(
-			"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?)))",
-			assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate,
-		)
+		// The security-group filter lives in SP_GET_EXCEPTIONS, which
+		// branches into a dedicated query joining DIM_SECURITY. A
+		// table-valued SQL UDF cannot branch, so rather than bolt an
+		// always-evaluated predicate onto the UDF, CALL the SP for
+		// exactly the filtered case and leave the fast inlined UDF
+		// serving every other call unchanged.
+		if securityGroupArg != "" {
+			rows, err = snowflake.Query(
+				"CALL SP_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?), ?)",
+				assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate, securityGroupArg,
+			)
+		} else {
+			rows, err = snowflake.Query(
+				"SELECT * FROM TABLE(UDF_GET_EXCEPTIONS(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?)))",
+				assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate,
+			)
+		}
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptions - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTIONS"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, assetArg, typeArg, severityArg, priorityArg, ruleCatalogArg, ruleNameArg, ruleGroupArg, exceptionStateArg, assignToArg, ruleNamePatternArg, targetDate, nilIfEmpty(securityGroupArg))
 	}
 	if err != nil {
 		return nil, err

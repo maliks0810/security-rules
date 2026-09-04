@@ -305,6 +305,54 @@ CREATE OR REPLACE TABLE RULE_ASSIGN_OVERRIDE (
     CREATED_DATE            TIMESTAMP_NTZ(9)
 );
 
+-- DIM_SECURITY ----------------------------------------------------------------
+-- One row per security the exception data references, carrying its
+-- classification. ALADDIN_ID is the natural key and lines up with
+-- EXCEPTION.ASSET_ID / EXCEPTION_HIST.ASSET_ID (both VARCHAR(100)), so
+-- joins need no casting.
+--
+-- Exactly three columns, with no CREATED_BY / CREATED_DATE audit pair.
+-- Every other table here carries one, so that is a deliberate
+-- departure rather than an oversight. Populated in dqm_seed_data.sql.
+CREATE OR REPLACE TABLE DIM_SECURITY (
+    ALADDIN_ID      VARCHAR(100),
+    SECURITY_GROUP  VARCHAR(100),
+    SECURITY_TYPE   VARCHAR(100)
+);
+
+-- SECURITY_CURRENT_VW ---------------------------------------------------------
+-- The current view of DIM_SECURITY. SELECT * as specified - note
+-- Snowflake resolves the column list when the view is CREATED, not when
+-- it is queried, so a column added to DIM_SECURITY later will not
+-- appear here until this view is recreated.
+CREATE OR REPLACE VIEW SECURITY_CURRENT_VW AS
+SELECT * FROM DIM_SECURITY;
+
+-- SP_GET_SECURITY_GROUPS ------------------------------------------------------
+-- Distinct SECURITY_GROUP values available to pick from, sourced from
+-- SECURITY_CURRENT_VW rather than DIM_SECURITY directly so the
+-- procedure follows whatever the view decides "current" means. Blank /
+-- NULL groups are excluded - they are not selectable values.
+CREATE OR REPLACE PROCEDURE SP_GET_SECURITY_GROUPS()
+RETURNS TABLE("SECURITY_GROUP" VARCHAR)
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        SELECT DISTINCT "SECURITY_GROUP"
+        FROM "SECURITY_CURRENT_VW"
+        WHERE "SECURITY_GROUP" IS NOT NULL
+          AND TRIM("SECURITY_GROUP") <> ''
+        ORDER BY "SECURITY_GROUP" ASC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
 -- BBG_TDC_EXCEPTIONS_VW -------------------------------------------------------
 -- EXCEPTION rows for the 'Bloomberg Compare Differences' RULE_CATALOG,
 -- plus the four RESULT_DATA-only JSON keys (RULE_NAME, ALADDIN_ID,
@@ -2172,7 +2220,14 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS(
     -- EXCEPTION_DATE cut-off. Required — callers must resolve
     -- "today" (or the target day) themselves and pass an explicit
     -- date. Passing NULL matches no rows.
-    P_EXCEPTION_DATE    DATE    DEFAULT NULL
+    P_EXCEPTION_DATE    DATE    DEFAULT NULL,
+    -- SECURITY_GROUP filter. NULL / '' / 'All' means no filter and the
+    -- procedure runs its original query untouched. Any other value
+    -- selects a SEPARATE query below that joins DIM_SECURITY, rather
+    -- than bolting an always-evaluated OR onto the existing predicate
+    -- list: the join narrows EXCEPTION early instead of filtering after
+    -- the fact, and callers that do not use it pay nothing.
+    P_SECURITY_GROUP    VARCHAR DEFAULT NULL
 )
 RETURNS TABLE (
     "EXCEPTION_ID"      NUMBER,
@@ -2209,7 +2264,16 @@ $$
 DECLARE
     res RESULTSET;
 BEGIN
-    res := (
+    -- Two separate queries rather than one with an optional predicate.
+    -- Only the branch the caller asked for is planned and run.
+    --
+    -- The projection, the joins and every other predicate are identical
+    -- in both; the ONLY difference is the DIM_SECURITY join. Keep them
+    -- in step - a change made to one branch and not the other is
+    -- invisible until someone filters by security group.
+    IF (:P_SECURITY_GROUP IS NULL OR :P_SECURITY_GROUP = ''
+        OR :P_SECURITY_GROUP = 'All') THEN
+        res := (
         SELECT e."EXCEPTION_ID"            AS "EXCEPTION_ID",
                e."RULE_ID"                 AS "RULE_ID",
                r."RULE_NAME"               AS "RULE_NAME",
@@ -2258,7 +2322,63 @@ BEGIN
           AND (:P_EXCEPTION_STATE  IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
           AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
           AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
-    );
+        );
+    ELSE
+        res := (
+        SELECT e."EXCEPTION_ID"            AS "EXCEPTION_ID",
+               e."RULE_ID"                 AS "RULE_ID",
+               r."RULE_NAME"               AS "RULE_NAME",
+               e."ASSET_ID"                AS "ASSET_ID",
+               e."EXCEPTION_DATE"          AS "EXCEPTION_DATE",
+               e."EXCEPTION_TIME"          AS "EXCEPTION_TIME",
+               e."ID_BB_GLOBAL"            AS "ID_BB_GLOBAL",
+               e."STATE_ID"               AS "STATE_ID",
+               es."NAME"                   AS "EXCEPTION_STATE",
+               e."STATUS_ID"               AS "STATUS_ID",
+               est_s."NAME"                AS "EXCEPTION_STATUS",
+               e."COMMENTS"                AS "COMMENTS",
+               e."ISSUE_DESCRIPTION"       AS "ISSUE_DESCRIPTION",
+               TO_VARCHAR(e."RESULT_DATA") AS "RESULT_DATA",
+               e."SUPPRESS_DATE"           AS "SUPPRESS_DATE",
+               e."OPEN_DATE"               AS "OPEN_DATE",
+               e."CLOSE_DATE"              AS "CLOSE_DATE",
+               COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID") AS "ASSIGN_TO_ID",
+               du."USER"                   AS "ASSIGN_TO",
+               e."RESULT_TYPE_ID"          AS "RESULT_TYPE_ID",
+               ept."NAME"                  AS "PRIORITY",
+               est."NAME"                  AS "SEVERITY",
+               et."NAME"                   AS "EXCEPTION_TYPE",
+               e."CREATED_DATE"            AS "CREATED_DATE",
+               e."CREATED_BY"              AS "CREATED_BY",
+               e."MODIFIED_DATE"           AS "MODIFIED_DATE",
+               e."MODIFIED_BY"             AS "MODIFIED_BY"
+        FROM "EXCEPTION" e
+        -- Inner join, so a security with no DIM_SECURITY row simply
+        -- drops out of this branch. That is the point of the filter.
+        JOIN "DIM_SECURITY" ds ON ds."ALADDIN_ID" = e."ASSET_ID"
+                              AND ds."SECURITY_GROUP" = :P_SECURITY_GROUP
+        LEFT JOIN "RULE"                   r   ON r."RULE_ID"                     = e."RULE_ID"
+        LEFT JOIN "EXCEPTION_TYPE"          et  ON et."EXCEPTION_TYPE_ID"          = r."EXCEPTION_TYPE_ID"
+        LEFT JOIN "EXCEPTION_PRIORITY_TYPE" ept ON ept."EXCEPTION_PRIORITY_TYPE_ID" = r."EXCEPTION_PRIORITY_TYPE_ID"
+        LEFT JOIN "EXCEPTION_SEVERITY_TYPE" est ON est."EXCEPTION_SEVERITY_TYPE_ID" = r."EXCEPTION_SEVERITY_TYPE_ID"
+        LEFT JOIN "RULE_CATALOG"            rc  ON rc."RULE_CATALOG_ID"             = r."RULE_CATALOG_ID"
+        LEFT JOIN "RULE_GROUP"              rg  ON rg."RULE_GROUP_ID"               = rc."RULE_GROUP_ID"
+        LEFT JOIN "EXCEPTION_STATE"        es    ON es."EXCEPTION_STATE_ID"         = e."STATE_ID"
+        LEFT JOIN "EXCEPTION_STATUS"       est_s ON est_s."EXCEPTION_STATUS_ID"      = e."STATUS_ID"
+        LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
+        WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
+          AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
+          AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
+          AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
+          AND (:P_PRIORITY          IS NULL OR ept."NAME"   = :P_PRIORITY)
+          AND (:P_RULE_CATALOG      IS NULL OR :P_RULE_CATALOG  = 'All' OR rc."NAME" = :P_RULE_CATALOG)
+          AND (:P_RULE_NAME         IS NULL OR :P_RULE_NAME  = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+          AND (:P_RULE_GROUP        IS NULL OR :P_RULE_GROUP = 'All' OR rg."NAME" = :P_RULE_GROUP)
+          AND (:P_EXCEPTION_STATE  IS NULL OR :P_EXCEPTION_STATE = 'All' OR es."NAME" = :P_EXCEPTION_STATE)
+          AND (:P_ASSIGN_TO         IS NULL OR :P_ASSIGN_TO = 'All' OR du."USER" = :P_ASSIGN_TO)
+          AND (:P_RULE_NAME_PATTERN IS NULL OR r."RULE_NAME" ILIKE :P_RULE_NAME_PATTERN)
+        );
+    END IF;
     RETURN TABLE(res);
 END;
 $$;

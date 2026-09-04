@@ -294,4 +294,24 @@ SELECT
 FROM DATA_QUALITY.SECURITY_EXCEPTION;
 */
 
+-- DIM_SECURITY ----------------------------------------------------------------
+-- Seeded from the distinct ASSET_IDs across BOTH exception tables, not
+-- just the live one: EXCEPTION holds recent days while archived days
+-- live in EXCEPTION_HIST, so seeding from EXCEPTION alone would leave a
+-- historical-date view with rows whose security has no dimension entry.
+-- Blank / NULL ids are excluded - they are not securities.
+--
+-- SECURITY_GROUP and SECURITY_TYPE are seeded to the same constants for
+-- every row, as specified. They are placeholders for real
+-- classification data, not derived values.
+INSERT INTO DIM_SECURITY (ALADDIN_ID, SECURITY_GROUP, SECURITY_TYPE)
+SELECT a."ASSET_ID", 'ABS', 'AGENCY'
+FROM (
+    SELECT DISTINCT "ASSET_ID" FROM "EXCEPTION"
+    UNION
+    SELECT DISTINCT "ASSET_ID" FROM "EXCEPTION_HIST"
+) a
+WHERE a."ASSET_ID" IS NOT NULL
+  AND TRIM(a."ASSET_ID") <> '';
+
 -- End of dqm_seed_data.sql

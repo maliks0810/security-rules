@@ -54,8 +54,8 @@ func GetPriorityTypes() ([]string, error) {
 	return repositories.GetPriorityTypes()
 }
 
-func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate string) ([]models.Exception, error) {
-	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate)
+func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate, securityGroup string) ([]models.Exception, error) {
+	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate, securityGroup)
 }
 
 func GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
@@ -94,6 +94,10 @@ func UpdateBulkAssign(exceptionIDs []int64, ruleNames []string, assignTo string,
 
 func UpdateBulkStatus(exceptionIDs []int64, status string, comments *string, suppressDate string) (int, error) {
 	return repositories.UpdateBulkStatus(exceptionIDs, status, comments, suppressDate)
+}
+
+func GetSecurityGroups() ([]string, error) {
+	return repositories.GetSecurityGroups()
 }
 
 func GetExceptionCountsByGroup(exceptionType, severity, priority, exceptionState, assignTo, exceptionDate string, useHist bool) ([]models.GroupCount, error) {
