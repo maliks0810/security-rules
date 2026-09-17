@@ -136,6 +136,41 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		produced = append(produced, exceptions...)
 	}
 
+	// Drop rows for RULE.IS_ACTIVE = 0 rules. Catalog SPs produce rows
+	// for every rule they know about, so a catalog / group run would
+	// otherwise re-insert exceptions for rules the operator has turned
+	// off. Filter here (post-produce) rather than in each catalog's
+	// RULE_CATALOG_SOURCE — one place to fix, and it also covers the
+	// RULE-scope case where GET_RULES finds the catalog owning the
+	// inactive rule and its SP still fires with ${RULE_NAME} substituted.
+	// Best-effort: log-and-continue on lookup failure — a transient DB
+	// error shouldn't block the whole run; the worst case is that
+	// inactive-rule rows go through this cycle, matching the pre-fix
+	// behaviour.
+	inactiveRuleIDs, ierr := repositories.GetInactiveRuleIDs()
+	if ierr != nil {
+		log.Logger.Warn(fmt.Sprintf(
+			"rulesService: ExecuteRules - GetInactiveRuleIDs failed, continuing without IS_ACTIVE filter: %v", ierr,
+		))
+	} else if len(inactiveRuleIDs) > 0 && len(produced) > 0 {
+		filtered := produced[:0]
+		dropped := 0
+		for _, e := range produced {
+			if _, off := inactiveRuleIDs[e.RuleID]; off {
+				dropped++
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		produced = filtered
+		if dropped > 0 {
+			log.Logger.Info(fmt.Sprintf(
+				"rulesService: ExecuteRules - dropped %d rows for inactive rules (IS_ACTIVE=0)",
+				dropped,
+			))
+		}
+	}
+
 	// All catalogs succeeded — now archive today's EXCEPTION rows for
 	// this scope into EXCEPTION_HIST (stamped with a per-date BATCH_ID)
 	// and insert the freshly-produced batch. Archive-then-insert

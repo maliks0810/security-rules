@@ -115,6 +115,40 @@ func ArchiveExceptions(ruleName, ruleType string) (int, error) {
 	return n, nil
 }
 
+// GetInactiveRuleIDs returns every RULE.RULE_ID whose IS_ACTIVE column
+// is 0 (or NULL). ExecuteRules uses this to drop rows produced by a
+// catalog SP for rules the operator has turned off, so an inactive
+// rule stays out of EXCEPTION even when its owning catalog / group is
+// re-run. Small table (~hundreds of rows), full-scan is fine — no
+// need to scope by (RuleName, RuleType).
+func GetInactiveRuleIDs() (map[int]struct{}, error) {
+	ids := make(map[int]struct{})
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: GetInactiveRuleIDs - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(`SELECT "RULE_ID" FROM "RULE" WHERE COALESCE("IS_ACTIVE", 0) = 0`)
+	} else {
+		log.Logger.Info("rulesRepository: GetInactiveRuleIDs - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT "RULE_ID" FROM public."RULE" WHERE COALESCE("IS_ACTIVE", 0) = 0`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = struct{}{}
+	}
+	return ids, nil
+}
+
 // InheritExceptionStatuses calls SP_INHERIT_EXCEPTION_STATUSES(P_RULE_NAME,
 // P_RULE_TYPE), which for every EXCEPTION row in scope copies STATUS_ID
 // from the most recent EXCEPTION_HIST row for the same (RULE_ID, ASSET_ID).
