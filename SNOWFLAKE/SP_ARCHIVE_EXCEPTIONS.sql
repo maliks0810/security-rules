@@ -1,9 +1,16 @@
 -- Moves today's EXCEPTION rows in scope into EXCEPTION_HIST (stamping a
 -- per-date BATCH_ID) instead of deleting them outright. Scope semantics
--- match SP_GET_RULES / the retired SP_DELETE_EXCEPTIONS:
---   P_RULE_TYPE = 'CATALOG' or 'RULE'  Ã¢â€ â€™ P_RULE_NAME = RULE_CATALOG.NAME
---   P_RULE_TYPE = 'GROUP'              Ã¢â€ â€™ P_RULE_NAME = RULE_GROUP.NAME
---   P_RULE_NAME NULL / empty / 'All'   Ã¢â€ â€™ every catalog (full archive of today)
+-- match how ExecuteRules identifies its target:
+--   P_RULE_TYPE = 'CATALOG'            -> P_RULE_NAME = RULE_CATALOG.NAME
+--   P_RULE_TYPE = 'RULE'               -> P_RULE_NAME = RULE.RULE_NAME
+--   P_RULE_TYPE = 'GROUP'              -> P_RULE_NAME = RULE_GROUP.NAME
+--   P_RULE_NAME NULL / empty / 'All'   -> every catalog (full archive of today)
+--
+-- The RULE branch matches on r.RULE_NAME (not rc.NAME) because callers
+-- of ExecuteRules at RULE scope pass the rule identifier, not the
+-- catalog it lives in - the old catalog-name-only match archived
+-- nothing there, so intraday RULE-scope runs left the prior batch
+-- stacked in EXCEPTION alongside the fresh one.
 --
 -- BATCH_ID is per EXCEPTION_DATE. First run of a day starts at 1;
 -- subsequent same-day runs increment. A new day resets the counter
@@ -53,8 +60,10 @@ BEGIN
           WHERE :P_RULE_NAME IS NULL
              OR :P_RULE_NAME = ''
              OR :P_RULE_NAME = 'All'
-             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                    AND rc."NAME" = :P_RULE_NAME)
+             OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                   AND r."RULE_NAME" = :P_RULE_NAME)
              OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                    AND rg."NAME"  = :P_RULE_NAME)
       );
@@ -70,8 +79,10 @@ BEGIN
           WHERE :P_RULE_NAME IS NULL
              OR :P_RULE_NAME = ''
              OR :P_RULE_NAME = 'All'
-             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) IN ('CATALOG','RULE')
+             OR (UPPER(COALESCE(:P_RULE_TYPE, 'CATALOG')) = 'CATALOG'
                    AND rc."NAME" = :P_RULE_NAME)
+             OR (UPPER(:P_RULE_TYPE) = 'RULE'
+                   AND r."RULE_NAME" = :P_RULE_NAME)
              OR (UPPER(:P_RULE_TYPE) = 'GROUP'
                    AND rg."NAME"  = :P_RULE_NAME)
       );

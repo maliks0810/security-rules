@@ -3,10 +3,17 @@ DROP FUNCTION IF EXISTS public."SP_DELETE_EXCEPTIONS"(text, text);
 
 -- Moves today's EXCEPTION rows in scope into EXCEPTION_HIST (stamping a
 -- per-date BATCH_ID) instead of deleting them outright. Scope semantics
--- match SP_GET_RULES / the retired SP_DELETE_EXCEPTIONS:
---   p_rule_type = 'CATALOG' or 'RULE'  → p_rule_name = RULE_CATALOG.NAME
+-- match how ExecuteRules identifies its target:
+--   p_rule_type = 'CATALOG'            → p_rule_name = RULE_CATALOG.NAME
+--   p_rule_type = 'RULE'               → p_rule_name = RULE.RULE_NAME
 --   p_rule_type = 'GROUP'              → p_rule_name = RULE_GROUP.NAME
 --   p_rule_name NULL / empty / 'All'   → every catalog (full archive of today)
+--
+-- The RULE branch matches on r.RULE_NAME (not rc.NAME) because callers
+-- of ExecuteRules at RULE scope pass the rule identifier, not the
+-- catalog it lives in — the old catalog-name-only match archived
+-- nothing there, so intraday RULE-scope runs left the prior batch
+-- stacked in EXCEPTION alongside the fresh one.
 --
 -- BATCH_ID is per EXCEPTION_DATE. First run of a day starts at 1;
 -- subsequent same-day runs increment (MAX + 1). A new day starts over
@@ -46,8 +53,10 @@ BEGIN
               WHERE p_rule_name IS NULL
                  OR p_rule_name = ''
                  OR p_rule_name = 'All'
-                 OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) IN ('CATALOG','RULE')
+                 OR (UPPER(COALESCE(p_rule_type, 'CATALOG')) = 'CATALOG'
                        AND rc."NAME" = p_rule_name)
+                 OR (UPPER(p_rule_type) = 'RULE'
+                       AND r."RULE_NAME" = p_rule_name)
                  OR (UPPER(p_rule_type) = 'GROUP'
                        AND rg."NAME"  = p_rule_name)
           )
