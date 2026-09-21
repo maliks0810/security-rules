@@ -54,3 +54,34 @@ DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS(
     VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR,
     VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE
 );
+
+-- Backfill: EXCEPTION.ASSIGN_TO_ID is never NULL.
+--
+-- "Unassigned" is a real DM_USER row rather than an absent value, so
+-- every exception points at a user and read paths never reason about
+-- NULL. Every write path now upholds that - the two assign procedures
+-- resolve an empty name to 'Unassigned', and InsertExceptions stamps it
+-- on rows whose rule has no default - but rows written BEFORE those
+-- changes still carry NULL and need bringing into line once.
+--
+-- Guarded on the row existing, so on a schema without it this updates
+-- nothing rather than writing NULL over NULL. Idempotent: re-running
+-- matches no rows, because the first run left none.
+UPDATE "EXCEPTION"
+   SET "ASSIGN_TO_ID"  = (
+           SELECT "ID" FROM "DM_USER" WHERE "USER" = 'Unassigned' LIMIT 1
+       ),
+       "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
+       "MODIFIED_BY"   = 'system'
+ WHERE "ASSIGN_TO_ID" IS NULL
+   AND EXISTS (SELECT 1 FROM "DM_USER" WHERE "USER" = 'Unassigned');
+
+-- EXCEPTION_HIST carries the same column and the same reasoning, so the
+-- archive is brought into line too. Without this a historical-date view
+-- shows blank assignees where the live grid shows Unassigned.
+UPDATE "EXCEPTION_HIST"
+   SET "ASSIGN_TO_ID" = (
+           SELECT "ID" FROM "DM_USER" WHERE "USER" = 'Unassigned' LIMIT 1
+       )
+ WHERE "ASSIGN_TO_ID" IS NULL
+   AND EXISTS (SELECT 1 FROM "DM_USER" WHERE "USER" = 'Unassigned');

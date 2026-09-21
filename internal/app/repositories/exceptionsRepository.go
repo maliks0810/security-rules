@@ -866,15 +866,70 @@ func applyRuleDefaultAssignees(exceptions []models.Exception) error {
 	if err != nil {
 		return err
 	}
+	// Rows whose rule carries no default fall back to the 'Unassigned'
+	// user, so EXCEPTION.ASSIGN_TO_ID is never written NULL. Unassigned
+	// is a real DM_USER row, not an absent value, so the column always
+	// points at a user and read paths never reason about NULL.
+	//
+	// Resolved lazily - only when some row actually needs it - so the
+	// lookup costs nothing on the common path. A schema with no
+	// 'Unassigned' row yields 0, which nilIfZero writes as NULL: the old
+	// behaviour, and the one way this invariant breaks.
+	unassignedID := 0
+	unassignedLookedUp := false
 	for i := range exceptions {
 		if exceptions[i].AssignToID != 0 {
 			continue
 		}
 		if v, ok := defaults[exceptions[i].RuleID]; ok {
 			exceptions[i].AssignToID = v
+			continue
 		}
+		if !unassignedLookedUp {
+			unassignedLookedUp = true
+			id, err := unassignedUserID()
+			if err != nil {
+				return err
+			}
+			unassignedID = id
+		}
+		exceptions[i].AssignToID = unassignedID
 	}
 	return nil
+}
+
+// unassignedUserID returns DM_USER.ID for the 'Unassigned' user, or 0
+// when no such row exists.
+func unassignedUserID() (int, error) {
+	const q = `SELECT "ID" FROM "DM_USER" WHERE "USER" = 'Unassigned' LIMIT 1`
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		rows, err := snowflake.Query(q)
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		var id int
+		if rows.Next() {
+			if err := rows.Scan(&id); err != nil {
+				return 0, err
+			}
+		}
+		return id, rows.Err()
+	}
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	var id int
+	err := postgres.DB.QueryRow(
+		strings.ReplaceAll(q, `"DM_USER"`, `public."DM_USER"`),
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // joinExceptionIDs renders a selection of EXCEPTION_IDs as the plain

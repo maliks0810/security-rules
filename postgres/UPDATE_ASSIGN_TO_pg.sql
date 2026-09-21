@@ -12,15 +12,18 @@ LANGUAGE sql
 AS $$
     WITH updated AS (
         UPDATE public."EXCEPTION"
-           SET "ASSIGN_TO_ID" = CASE
-               WHEN p_assign_to IS NULL OR p_assign_to = '' THEN NULL
-               ELSE (
-                   SELECT "ID"::int
-                   FROM public."DM_USER"
-                   WHERE "USER" = p_assign_to
-                   LIMIT 1
-               )
-           END,
+           SET "ASSIGN_TO_ID" = (
+               -- Empty resolves to the 'Unassigned' user rather than to
+               -- NULL, so ASSIGN_TO_ID always points at a real user.
+               SELECT "ID"::int
+               FROM public."DM_USER"
+               WHERE "USER" = CASE
+                                 WHEN p_assign_to IS NULL OR p_assign_to = ''
+                                     THEN 'Unassigned'
+                                 ELSE p_assign_to
+                             END
+               LIMIT 1
+           ),
            "MODIFIED_DATE" = CURRENT_TIMESTAMP,
            "MODIFIED_BY"   = 'system'
          WHERE "ASSET_ID" = p_asset_id
