@@ -86,16 +86,17 @@ AS $$
                -- transition (New / Suppress / Override / Complete)
                -- preserves the previous CLOSE_DATE.
                "CLOSE_DATE"    = CASE
-                                     WHEN p_status_name IN ('Accept', 'Research')
+                                     WHEN p_status_name = 'Accept'
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
                                      -- Transitions to 'New' / 'Suppress'
                                      -- / 'Challenge' put the row back
                                      -- into an unresolved / pending
                                      -- state; the historical close date
                                      -- is no longer valid.
-                                     -- Hold joins them: a held row is
-                                     -- pending, not closed.
-                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge', 'Hold')
+                                     -- Hold and Research join them: a
+                                     -- held or researched row is
+                                     -- pending work, not closed.
+                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
                                          THEN NULL
                                      ELSE "CLOSE_DATE"
                                  END,

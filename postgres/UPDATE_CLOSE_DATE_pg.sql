@@ -52,8 +52,8 @@ BEGIN
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_disappeared FROM stamped;
 
-    -- Pass 2: live EXCEPTION rows currently in status 'Accept' or
-    -- 'Research' whose CLOSE_DATE is NULL. Belt-and-suspenders
+    -- Pass 2: live EXCEPTION rows currently in status 'Accept' whose
+    -- CLOSE_DATE is NULL. Belt-and-suspenders
     -- alongside SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS
     -- (which stamp CLOSE_DATE on the transition itself). Catches
     -- inherited-status rows — SP_INHERIT_EXCEPTION_STATUSES pulls
@@ -67,16 +67,16 @@ BEGIN
            AND e."STATUS_ID" IN (
                SELECT "EXCEPTION_STATUS_ID"
                  FROM public."EXCEPTION_STATUS"
-                WHERE "NAME" IN ('Accept', 'Research')
+                WHERE "NAME" = 'Accept'
            )
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_accept_research FROM stamped_ar;
 
     -- Pass 3: live EXCEPTION rows currently in an unresolved /
-    -- pending status ('New' / 'Suppress' / 'Challenge') whose
-    -- CLOSE_DATE is still populated from a previous Accept /
-    -- Research run. Clear it so the grid doesn't show one of these
+    -- pending status whose CLOSE_DATE is still populated from a
+    -- previous Accept run. Clear it so the grid doesn't show one of
+    -- these
     -- statuses carrying a stale close date. Idempotent via IS NOT
     -- NULL guard. Covers reopens via operator flip,
     -- SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES,
@@ -89,7 +89,7 @@ BEGIN
            AND e."STATUS_ID" IN (
                SELECT "EXCEPTION_STATUS_ID"
                  FROM public."EXCEPTION_STATUS"
-                WHERE "NAME" IN ('New', 'Suppress', 'Challenge')
+                WHERE "NAME" IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
            )
         RETURNING 1
     )

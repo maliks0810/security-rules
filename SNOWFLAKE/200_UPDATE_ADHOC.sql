@@ -85,3 +85,35 @@ UPDATE "EXCEPTION_HIST"
        )
  WHERE "ASSIGN_TO_ID" IS NULL
    AND EXISTS (SELECT 1 FROM "DM_USER" WHERE "USER" = 'Unassigned');
+
+-- Backfill: 'Research' no longer carries a CLOSE_DATE.
+--
+-- Researching an exception is open work, not a close, so Research moved
+-- from the stamp group to the clear group in SP_UPDATE_EXCEPTION_STATUS,
+-- SP_UPDATE_BULK_STATUS and pass 2/3 of SP_UPDATE_CLOSE_DATE. Rows that
+-- entered Research BEFORE that change still carry the date they were
+-- stamped with.
+--
+-- SP_UPDATE_CLOSE_DATE pass 3 would eventually clear these on its own,
+-- so this is only needed where that job is not scheduled - but it is
+-- idempotent and harmless where it is, matching no rows on a second run.
+--
+-- 'Hold' is included for the same reason: it was added to the pending
+-- statuses after the fact, so a row held before that could also be
+-- carrying a stale close date.
+UPDATE "EXCEPTION"
+   SET "CLOSE_DATE"    = NULL,
+       "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
+       "MODIFIED_BY"   = 'system'
+ WHERE "CLOSE_DATE" IS NOT NULL
+   AND "STATUS_ID" IN (
+       SELECT "EXCEPTION_STATUS_ID"
+         FROM "EXCEPTION_STATUS"
+        WHERE "NAME" IN ('Research', 'Hold')
+   );
+
+-- The archive is left ALONE on purpose. EXCEPTION_HIST is a record of
+-- what each row looked like on the day it was archived, and on those
+-- days a researched row genuinely did carry a close date. Rewriting it
+-- would falsify history rather than correct it - unlike the assignee
+-- backfill above, which fills a gap rather than restating a past fact.

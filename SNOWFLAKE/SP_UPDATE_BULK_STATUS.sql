@@ -160,7 +160,7 @@ BEGIN
            -- CLOSE_DATE (parity with SP_UPDATE_EXCEPTION_STATUS).
            "CLOSE_DATE"    = CASE
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('ACCEPT', 'RESEARCH')
+                                      AND UPPER(:P_STATUS) = 'ACCEPT'
                                      THEN TO_DATE(:now_ts)
                                  -- Transitions to 'New' / 'Suppress' /
                                  -- 'Challenge' put the row back into
@@ -169,8 +169,10 @@ BEGIN
                                  -- longer valid and gets cleared.
                                  -- Hold joins them: a held row is
                                  -- pending, not closed.
+                                 -- Research joins them: researching an
+                                 -- exception is open work, not a close.
                                  WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD')
+                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD', 'RESEARCH')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,

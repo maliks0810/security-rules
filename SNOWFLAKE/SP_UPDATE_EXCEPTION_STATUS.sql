@@ -65,23 +65,26 @@ BEGIN
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  ELSE "OPEN_DATE"
                              END,
-           -- CLOSE_DATE stamps today when the row is closed via a
-           -- transition to 'Accept' or 'Research'. Any other status
-           -- transition (New / Suppress / Override / Complete)
-           -- preserves the previous CLOSE_DATE — flipping back to New
-           -- does NOT clear it, since the historical close date is
-           -- useful even for a reopened row.
+           -- CLOSE_DATE stamps today only when the row is closed via a
+           -- transition to 'Accept'. Any other status transition
+           -- (Override / Complete) preserves the previous CLOSE_DATE.
+           --
+           -- 'Research' used to stamp it too, but researching an
+           -- exception is not closing it - the row is still open work,
+           -- so it clears the date along with the other pending
+           -- statuses below.
            "CLOSE_DATE"    = CASE
-                                 WHEN :P_STATUS_NAME IN ('Accept', 'Research')
+                                 WHEN :P_STATUS_NAME = 'Accept'
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
                                  -- Transitions to 'New' / 'Suppress' /
                                  -- 'Challenge' put the row back into
                                  -- an unresolved / pending state, so
                                  -- the historical close date is no
                                  -- longer valid and gets cleared.
-                                 -- Hold joins them: a held row is
-                                 -- pending, not closed.
-                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge', 'Hold')
+                                 -- Hold and Research join them: a held
+                                 -- or researched row is pending work,
+                                 -- not closed.
+                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
                                      THEN NULL
                                  ELSE "CLOSE_DATE"
                              END,
