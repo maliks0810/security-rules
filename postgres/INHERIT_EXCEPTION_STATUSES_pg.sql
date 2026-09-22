@@ -37,7 +37,7 @@ AS $$
     WITH last_hist AS (
         SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
                "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
-               "ASSIGN_TO_ID"
+               "ASSIGN_TO_ID", "OPEN_DATE"
           FROM public."EXCEPTION_HIST"
          WHERE "STATUS_ID" IS NOT NULL
          ORDER BY "RULE_ID", "ASSET_ID",
@@ -63,14 +63,20 @@ AS $$
     updated AS (
         UPDATE public."EXCEPTION" e
            SET "STATUS_ID"     = h."STATUS_ID",
-               -- OPEN_DATE moves to today only when this inherit flips
-               -- the row TO 'New' (STATUS_ID = 1). Inheriting Accept /
-               -- Override / Suppress leaves the last-New date alone.
-               "OPEN_DATE"     = CASE
-                                     WHEN h."STATUS_ID" = 1
-                                         THEN (NOW() AT TIME ZONE 'UTC')::date
-                                     ELSE e."OPEN_DATE"
-                                 END,
+               -- OPEN_DATE is INHERITED, never re-stamped. It records
+               -- when an exception was first surfaced, so it has to
+               -- survive the archive -> insert -> inherit cycle that
+               -- runs on every batch.
+               --
+               -- This used to set today whenever it inherited 'New',
+               -- which is why every row showed the latest run date:
+               -- InsertExceptions already stamps today on each freshly
+               -- inserted New row, and this then confirmed it rather
+               -- than restoring the original. COALESCE prefers the
+               -- archived value and falls back to whatever the insert
+               -- stamped, so a genuinely first-seen row still gets
+               -- today.
+               "OPEN_DATE"     = COALESCE(h."OPEN_DATE", e."OPEN_DATE"),
                -- CLOSE_DATE carries over from the last EXCEPTION_HIST
                -- row for the same (RULE_ID, ASSET_ID) so the day the
                -- row was originally closed survives the archive →
@@ -126,7 +132,9 @@ AS $$
                     AND h."ASSIGN_TO_ID" <> COALESCE(
                         (SELECT "ID" FROM public."DM_USER"
                           WHERE "USER" = 'Unassigned' LIMIT 1), -1)
-                    AND e."ASSIGN_TO_ID" IS DISTINCT FROM h."ASSIGN_TO_ID"))
+                    AND e."ASSIGN_TO_ID" IS DISTINCT FROM h."ASSIGN_TO_ID")
+                OR (h."OPEN_DATE" IS NOT NULL
+                    AND e."OPEN_DATE" IS DISTINCT FROM h."OPEN_DATE"))
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int FROM updated;

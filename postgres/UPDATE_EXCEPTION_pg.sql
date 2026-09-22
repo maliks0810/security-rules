@@ -52,14 +52,17 @@ AS $$
            "CREATED_BY"        = p_created_by,
            "ID_BB_GLOBAL"      = COALESCE(p_id_bb_global, "ID_BB_GLOBAL"),
            "STATUS_ID"         = COALESCE(p_status_id::int, "STATUS_ID"),
-           -- OPEN_DATE ratchets only when the row's new STATUS_ID is 1
-           -- (New). Any other transition — or a no-op status update —
-           -- preserves the last-New date.
-           "OPEN_DATE"         = CASE
-                                     WHEN COALESCE(p_status_id::int, "STATUS_ID") = 1
-                                         THEN (NOW() AT TIME ZONE 'UTC')::date
-                                     ELSE "OPEN_DATE"
-                                 END
+           -- OPEN_DATE is write-once: it records the day the exception
+           -- was FIRST surfaced, so an existing value is never
+           -- overwritten. Today is stamped only when the row's new
+           -- STATUS_ID is 1 (New) and there is nothing there yet.
+           "OPEN_DATE"         = COALESCE(
+                                     "OPEN_DATE",
+                                     CASE
+                                         WHEN COALESCE(p_status_id::int, "STATUS_ID") = 1
+                                             THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     END
+                                 )
      WHERE "ASSET_ID" = p_asset_id
        AND "RULE_ID"  = p_rule_id::int;
 $$;

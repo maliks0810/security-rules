@@ -69,36 +69,30 @@ AS $$
                                          THEN COALESCE(p_suppress_date, "SUPPRESS_DATE")
                                      ELSE NULL
                                  END,
-               -- OPEN_DATE ratchets when the row transitions TO 'New';
-               -- otherwise the last-New date is preserved.
-               -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts
-               -- 2 business days forward from OPEN_DATE, so it has to
-               -- mean "the day this hold started". Without it a row
-               -- held today but opened weeks ago releases on the very
-               -- next sweep.
-               "OPEN_DATE"     = CASE
-                                     WHEN p_status_name IN ('New', 'Hold')
-                                         THEN (NOW() AT TIME ZONE 'UTC')::date
-                                     ELSE "OPEN_DATE"
-                                 END,
-               -- CLOSE_DATE stamps today when the row is closed via a
-               -- transition to 'Accept' or 'Research'. Any other
-               -- transition (New / Suppress / Override / Complete)
-               -- preserves the previous CLOSE_DATE.
+               -- OPEN_DATE is write-once: it records the day an
+               -- exception was FIRST surfaced, so an existing value is
+               -- never overwritten. Today is stamped only when the row
+               -- lands on 'New' with nothing there yet.
+               --
+               -- 'Hold' no longer stamps it: hold release keys off
+               -- SUPPRESS_DATE, not OPEN_DATE - see
+               -- SP_EXPIRE_SUPPRESS_DATES.
+               "OPEN_DATE"     = COALESCE(
+                                     "OPEN_DATE",
+                                     CASE
+                                         WHEN p_status_name = 'New'
+                                             THEN (NOW() AT TIME ZONE 'UTC')::date
+                                     END
+                                 ),
+               -- CLOSE_DATE is a plain function of the status: the two
+               -- CLOSED statuses ('Accept', 'Override') stamp today,
+               -- and EVERY other status clears it. No "leave it alone"
+               -- branch - anything not explicitly closed is open,
+               -- including statuses added after this was written.
                "CLOSE_DATE"    = CASE
-                                     WHEN p_status_name = 'Accept'
+                                     WHEN p_status_name IN ('Accept', 'Override')
                                          THEN (NOW() AT TIME ZONE 'UTC')::date
-                                     -- Transitions to 'New' / 'Suppress'
-                                     -- / 'Challenge' put the row back
-                                     -- into an unresolved / pending
-                                     -- state; the historical close date
-                                     -- is no longer valid.
-                                     -- Hold and Research join them: a
-                                     -- held or researched row is
-                                     -- pending work, not closed.
-                                     WHEN p_status_name IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
-                                         THEN NULL
-                                     ELSE "CLOSE_DATE"
+                                     ELSE NULL
                                  END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'

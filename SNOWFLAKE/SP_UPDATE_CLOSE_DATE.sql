@@ -68,7 +68,7 @@ BEGIN
        AND e."STATUS_ID" IN (
            SELECT "EXCEPTION_STATUS_ID"
              FROM "EXCEPTION_STATUS"
-            WHERE "NAME" = 'Accept'
+            WHERE "NAME" IN ('Accept', 'Override')
        );
     accept_research := SQLROWCOUNT;
 
@@ -86,7 +86,11 @@ BEGIN
        AND e."STATUS_ID" IN (
            SELECT "EXCEPTION_STATUS_ID"
              FROM "EXCEPTION_STATUS"
-            WHERE "NAME" IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
+            -- NOT IN, not an explicit pending list. Research and Hold
+            -- were each added late and each carried a stale close date
+            -- until someone remembered this line; inverting it makes a
+            -- new status open by default.
+            WHERE "NAME" NOT IN ('Accept', 'Override')
        );
     reopened_new := SQLROWCOUNT;
 

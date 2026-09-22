@@ -1161,6 +1161,15 @@ func InsertExceptions(exceptions []models.Exception) error {
 	// set it via SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS.
 	// Computed once per call so every row in the batch shares the same
 	// stamp (matches the CURRENT_DATE semantics inside the SPs).
+	//
+	// This is a FIRST SIGHT stamp, not a per-run one. OPEN_DATE is
+	// write-once everywhere else, so today is only correct here for a
+	// genuinely new exception. A row that has been seen before is
+	// re-inserted with today as well - it has no history at insert time
+	// - and SP_INHERIT_EXCEPTION_STATUSES immediately restores the
+	// archived OPEN_DATE from EXCEPTION_HIST. The archive -> insert ->
+	// inherit order is what makes that correct; reversing it would leave
+	// every row stamped with the latest run date.
 	openToday := time.Now().UTC().Format("2006-01-02")
 	openDate := func(e models.Exception) any {
 		if defaultOne(e.StatusID) == 1 {

@@ -1,6 +1,7 @@
 CREATE OR REPLACE PROCEDURE SP_EXPIRE_SUPPRESS_DATES()
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
@@ -9,50 +10,35 @@ BEGIN
     UPDATE "EXCEPTION"
        SET "STATUS_ID"     = 1,
            "SUPPRESS_DATE" = NULL,
-           -- Every row this touches transitions back to STATUS_ID=1
-           -- (New), so OPEN_DATE ratchets to today.
-           "OPEN_DATE"     = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),
+           -- OPEN_DATE is write-once. A row coming back from Suppress
+           -- or Hold was surfaced long before this sweep, so releasing
+           -- it must NOT reset its age - the grid would show every
+           -- released row as opened today. COALESCE only fills a gap.
+           "OPEN_DATE"     = COALESCE("OPEN_DATE", TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))),
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
      WHERE "SUPPRESS_DATE" IS NOT NULL
        AND "SUPPRESS_DATE" < TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     affected := SQLROWCOUNT;
 
-    -- Hold release. A Hold stamps OPEN_DATE = the day it was applied
-    -- and SUPPRESS_DATE = 2 business days on from it, so this counts
-    -- the same 2 business days forward from OPEN_DATE and releases the
-    -- row once that day has passed: a Friday hold runs through Tuesday
-    -- and returns to New on Wednesday.
+    -- Hold release used to live here as a second pass that counted 2
+    -- business days forward from OPEN_DATE, on the assumption that
+    -- applying a Hold stamped OPEN_DATE with the day it was applied.
     --
-    -- Weekends only, no holiday calendar (none exists in this schema).
-    -- Offsets by ISO weekday: Mon/Tue/Wed +2, Thu/Fri +4 (skipping the
-    -- weekend), Sat +3, Sun +2.
+    -- OPEN_DATE is now write-once - it means "the day this exception
+    -- was first surfaced" and nothing else - so that assumption no
+    -- longer holds. Left in place it would have read the original
+    -- surfacing date, found it weeks past, and released every held row
+    -- on the very next sweep.
     --
-    -- Agrees with the SUPPRESS_DATE branch above by construction, since
-    -- both derive from the same day and the same offsets - that branch
-    -- would already catch these rows. Kept explicit so Hold's lifecycle
-    -- is readable on its own rather than an emergent property of the
-    -- date it happens to carry.
-    UPDATE "EXCEPTION"
-       SET "STATUS_ID"     = 1,
-           "SUPPRESS_DATE" = NULL,
-           "OPEN_DATE"     = TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),
-           "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
-           "MODIFIED_BY"   = 'system'
-     WHERE "STATUS_ID" = 7
-       AND "OPEN_DATE" IS NOT NULL
-       AND TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())) >
-           DATEADD(
-               day,
-               CASE DAYOFWEEKISO("OPEN_DATE")
-                   WHEN 4 THEN 4
-                   WHEN 5 THEN 4
-                   WHEN 6 THEN 3
-                   ELSE 2
-               END,
-               "OPEN_DATE"
-           );
-    affected := affected + SQLROWCOUNT;
+    -- Nothing is lost by removing it. Applying a Hold also sets
+    -- SUPPRESS_DATE to the same 2 business days out (see
+    -- SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS), so the
+    -- SUPPRESS_DATE branch above releases exactly the same rows on
+    -- exactly the same day: a Friday hold runs through Tuesday and
+    -- returns to New on Wednesday. The old pass was explicitly
+    -- documented as agreeing with that branch by construction; now it
+    -- is simply the one that does the work.
 
     RETURN affected;
 END;

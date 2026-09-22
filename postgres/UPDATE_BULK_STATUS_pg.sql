@@ -134,38 +134,31 @@ BEGIN
                                  ELSE NULL
                              END,
            -- OPEN_DATE ratchets only when this bulk update flips the
-           -- row TO 'New'. Comments-only updates (v_status_id NULL) and
-           -- transitions to any other status preserve the last-New date.
-           -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts 2
-           -- business days forward from OPEN_DATE, so it has to mean
-           -- "the day this hold started".
-           "OPEN_DATE"     = CASE
-                                 WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) IN ('NEW', 'HOLD')
-                                     THEN v_now_ts::date
-                                 ELSE e."OPEN_DATE"
-                             END,
-           -- CLOSE_DATE stamps today when this bulk update flips the
-           -- row TO 'Accept' or 'Research'. Comments-only updates and
-           -- transitions to any other status preserve the previous
-           -- CLOSE_DATE (parity with SP_UPDATE_EXCEPTION_STATUS).
+           -- row TO 'New' AND it has no date yet. OPEN_DATE is
+           -- write-once: an existing value is never overwritten, and a
+           -- comments-only update (v_status_id NULL) never touches it.
+           --
+           -- 'Hold' no longer stamps it: hold release keys off
+           -- SUPPRESS_DATE, not OPEN_DATE.
+           "OPEN_DATE"     = COALESCE(
+                                 e."OPEN_DATE",
+                                 CASE
+                                     WHEN v_status_id IS NOT NULL
+                                          AND upper(p_status) = 'NEW'
+                                         THEN v_now_ts::date
+                                 END
+                             ),
+           -- CLOSE_DATE is a plain function of the status: the two
+           -- CLOSED statuses ('Accept', 'Override') stamp today, every
+           -- other status clears it. The v_status_id IS NULL branch
+           -- stays - a comments-only bulk update is not a status change
+           -- and must leave CLOSE_DATE exactly as it found it.
            "CLOSE_DATE"    = CASE
-                                 WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) = 'ACCEPT'
+                                 WHEN v_status_id IS NULL
+                                     THEN e."CLOSE_DATE"
+                                 WHEN upper(p_status) IN ('ACCEPT', 'OVERRIDE')
                                      THEN v_now_ts::date
-                                 -- Transitions to 'New' / 'Suppress' /
-                                 -- 'Challenge' put the row back into
-                                 -- an unresolved / pending state; the
-                                 -- historical close date is no longer
-                                 -- valid.
-                                 -- Hold joins them: a held row is
-                                 -- pending, not closed.
-                                 -- Research joins them: researching an
-                                 -- exception is open work, not a close.
-                                 WHEN v_status_id IS NOT NULL
-                                      AND upper(p_status) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD', 'RESEARCH')
-                                     THEN NULL
-                                 ELSE e."CLOSE_DATE"
+                                 ELSE NULL
                              END,
            "MODIFIED_DATE" = v_now_ts,
            "MODIFIED_BY"   = 'system'

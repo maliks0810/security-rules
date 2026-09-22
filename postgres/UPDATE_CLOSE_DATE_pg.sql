@@ -67,7 +67,7 @@ BEGIN
            AND e."STATUS_ID" IN (
                SELECT "EXCEPTION_STATUS_ID"
                  FROM public."EXCEPTION_STATUS"
-                WHERE "NAME" = 'Accept'
+                WHERE "NAME" IN ('Accept', 'Override')
            )
         RETURNING 1
     )
@@ -89,7 +89,9 @@ BEGIN
            AND e."STATUS_ID" IN (
                SELECT "EXCEPTION_STATUS_ID"
                  FROM public."EXCEPTION_STATUS"
-                WHERE "NAME" IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
+                -- NOT IN, not an explicit pending list, so a status
+                -- added later is treated as open by default.
+                WHERE "NAME" NOT IN ('Accept', 'Override')
            )
         RETURNING 1
     )

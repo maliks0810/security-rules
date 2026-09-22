@@ -6,6 +6,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION_STATUS(
 )
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
@@ -52,41 +53,39 @@ BEGIN
                                      THEN COALESCE(:P_SUPPRESS_DATE, "SUPPRESS_DATE")
                                  ELSE NULL
                              END,
-           -- OPEN_DATE ratchets when the row transitions TO 'New';
-           -- otherwise the last-New date is preserved so the grid can
-           -- show when the exception was originally surfaced.
-           -- 'Hold' also stamps it: SP_EXPIRE_SUPPRESS_DATES counts the
-           -- 2 business days forward from OPEN_DATE, so it has to mean
-           -- "the day this hold started" rather than the day the row
-           -- was first surfaced. Without this a row held today but
-           -- opened weeks ago would release on the very next sweep.
-           "OPEN_DATE"     = CASE
-                                 WHEN :P_STATUS_NAME IN ('New', 'Hold')
-                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
-                                 ELSE "OPEN_DATE"
-                             END,
-           -- CLOSE_DATE stamps today only when the row is closed via a
-           -- transition to 'Accept'. Any other status transition
-           -- (Override / Complete) preserves the previous CLOSE_DATE.
+           -- OPEN_DATE is write-once: it records the day an exception
+           -- was FIRST surfaced, so an existing value is never
+           -- overwritten. Today is stamped only when the row lands on
+           -- 'New' with nothing there yet.
            --
-           -- 'Research' used to stamp it too, but researching an
-           -- exception is not closing it - the row is still open work,
-           -- so it clears the date along with the other pending
-           -- statuses below.
+           -- This used to ratchet to today on every transition to
+           -- 'New', which reset the age of any row that cycled
+           -- Suppress -> New.
+           --
+           -- 'Hold' no longer stamps it either. Hold release keys off
+           -- SUPPRESS_DATE (set to +2 business days when the hold is
+           -- applied), not off OPEN_DATE - see SP_EXPIRE_SUPPRESS_DATES.
+           "OPEN_DATE"     = COALESCE(
+                                 "OPEN_DATE",
+                                 CASE
+                                     WHEN :P_STATUS_NAME = 'New'
+                                         THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                 END
+                             ),
+           -- CLOSE_DATE is a plain function of the status: the two
+           -- CLOSED statuses ('Accept', 'Override') stamp today, and
+           -- EVERY other status clears it.
+           --
+           -- Deliberately has no "leave it alone" branch. The list of
+           -- pending statuses kept growing - Research and Hold were
+           -- each added late, and each was carrying a stale close date
+           -- until it was - so the rule is inverted: anything not
+           -- explicitly closed is open, including statuses added after
+           -- this was written.
            "CLOSE_DATE"    = CASE
-                                 WHEN :P_STATUS_NAME = 'Accept'
+                                 WHEN :P_STATUS_NAME IN ('Accept', 'Override')
                                      THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
-                                 -- Transitions to 'New' / 'Suppress' /
-                                 -- 'Challenge' put the row back into
-                                 -- an unresolved / pending state, so
-                                 -- the historical close date is no
-                                 -- longer valid and gets cleared.
-                                 -- Hold and Research join them: a held
-                                 -- or researched row is pending work,
-                                 -- not closed.
-                                 WHEN :P_STATUS_NAME IN ('New', 'Suppress', 'Challenge', 'Hold', 'Research')
-                                     THEN NULL
-                                 ELSE "CLOSE_DATE"
+                                 ELSE NULL
                              END,
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'

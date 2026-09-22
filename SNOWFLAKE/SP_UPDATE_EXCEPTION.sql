@@ -15,6 +15,7 @@ CREATE OR REPLACE PROCEDURE SP_UPDATE_EXCEPTION(
 )
 RETURNS VARCHAR
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 BEGIN
@@ -30,14 +31,17 @@ BEGIN
            "CREATED_BY"        = :P_CREATED_BY,
            "ID_BB_GLOBAL"      = COALESCE(:P_ID_BB_GLOBAL, "ID_BB_GLOBAL"),
            "STATUS_ID"         = COALESCE(:P_STATUS_ID, "STATUS_ID"),
-           -- OPEN_DATE ratchets only when the row's new STATUS_ID is 1
-           -- (New). Any other transition — or a no-op status update —
-           -- preserves the last-New date.
-           "OPEN_DATE"         = CASE
-                                     WHEN COALESCE(:P_STATUS_ID, "STATUS_ID") = 1
-                                         THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
-                                     ELSE "OPEN_DATE"
-                                 END
+           -- OPEN_DATE is write-once: it records the day the exception
+           -- was FIRST surfaced, so an existing value is never
+           -- overwritten. Today is stamped only when the row's new
+           -- STATUS_ID is 1 (New) and there is nothing there yet.
+           "OPEN_DATE"         = COALESCE(
+                                     "OPEN_DATE",
+                                     CASE
+                                         WHEN COALESCE(:P_STATUS_ID, "STATUS_ID") = 1
+                                             THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
+                                     END
+                                 )
      WHERE "ASSET_ID" = :P_ASSET_ID
        AND "RULE_ID"  = :P_RULE_ID;
     RETURN 'OK';

@@ -12,6 +12,7 @@ CREATE OR REPLACE PROCEDURE SP_INHERIT_EXCEPTION_STATUSES(
 )
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
@@ -47,14 +48,19 @@ BEGIN
                                      THEN h."ASSIGN_TO_ID"
                                  ELSE e."ASSIGN_TO_ID"
                              END,
-           -- OPEN_DATE moves to today only when this inherit flips the
-           -- row TO 'New' (STATUS_ID = 1). Inheriting Accept / Override
-           -- / Suppress leaves the last-New date alone.
-           "OPEN_DATE"     = CASE
-                                 WHEN h."STATUS_ID" = 1
-                                     THEN TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()))
-                                 ELSE e."OPEN_DATE"
-                             END,
+           -- OPEN_DATE is INHERITED, never re-stamped. It records when
+           -- an exception was first surfaced, so it has to survive the
+           -- archive -> insert -> inherit cycle that runs on every
+           -- batch.
+           --
+           -- This used to set today whenever it inherited 'New', which
+           -- is why every row showed the latest run date: InsertExceptions
+           -- already stamps today on each freshly inserted New row, and
+           -- this then confirmed it rather than restoring the original.
+           -- COALESCE prefers the archived value and falls back to
+           -- whatever the insert stamped, so a genuinely first-seen row
+           -- still gets today.
+           "OPEN_DATE"     = COALESCE(h."OPEN_DATE", e."OPEN_DATE"),
            -- CLOSE_DATE carries over from the last EXCEPTION_HIST row
            -- for the same (RULE_ID, ASSET_ID) so the day the row was
            -- originally closed survives the archive → insert → inherit
@@ -74,9 +80,9 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -97,7 +103,9 @@ BEGIN
                 AND NOT EQUAL_NULL(e."CLOSE_DATE", h."CLOSE_DATE"))
             OR (h."ASSIGN_TO_ID" IS NOT NULL
                 AND h."ASSIGN_TO_ID" <> COALESCE(:unassigned_id, -1)
-                AND NOT EQUAL_NULL(e."ASSIGN_TO_ID", h."ASSIGN_TO_ID")))
+                AND NOT EQUAL_NULL(e."ASSIGN_TO_ID", h."ASSIGN_TO_ID"))
+            OR (h."OPEN_DATE" IS NOT NULL
+                AND NOT EQUAL_NULL(e."OPEN_DATE", h."OPEN_DATE")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2

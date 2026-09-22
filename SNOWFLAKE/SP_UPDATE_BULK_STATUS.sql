@@ -141,40 +141,37 @@ BEGIN
                                  ELSE NULL
                              END,
            -- OPEN_DATE ratchets only when this bulk update flips the
-           -- row TO 'New'. Comments-only updates (status_id NULL) and
-           -- transitions to any other status leave the last-New date
-           -- intact.
-           -- 'Hold' stamps it too: SP_EXPIRE_SUPPRESS_DATES counts the
-           -- 2 business days forward from OPEN_DATE, so it has to mean
-           -- "the day this hold started". Without it a row held today
-           -- but opened weeks ago releases on the very next sweep.
-           "OPEN_DATE"     = CASE
-                                 WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('NEW', 'HOLD')
-                                     THEN TO_DATE(:now_ts)
-                                 ELSE "OPEN_DATE"
-                             END,
-           -- CLOSE_DATE stamps today when this bulk update flips the
-           -- row TO 'Accept' or 'Research'. Comments-only updates and
-           -- transitions to any other status preserve the previous
-           -- CLOSE_DATE (parity with SP_UPDATE_EXCEPTION_STATUS).
+           -- row TO 'New' AND it has no date yet. OPEN_DATE is
+           -- write-once: it records the day an exception was FIRST
+           -- surfaced, so an existing value is never overwritten, and a
+           -- comments-only update (status_id NULL) never touches it.
+           --
+           -- 'Hold' no longer stamps it: hold release keys off
+           -- SUPPRESS_DATE, not OPEN_DATE - see
+           -- SP_EXPIRE_SUPPRESS_DATES. Parity with
+           -- SP_UPDATE_EXCEPTION_STATUS.
+           "OPEN_DATE"     = COALESCE(
+                                 "OPEN_DATE",
+                                 CASE
+                                     WHEN :status_id IS NOT NULL
+                                          AND UPPER(:P_STATUS) = 'NEW'
+                                         THEN TO_DATE(:now_ts)
+                                 END
+                             ),
+           -- CLOSE_DATE is a plain function of the status: the two
+           -- CLOSED statuses ('Accept', 'Override') stamp today, every
+           -- other status clears it. Parity with
+           -- SP_UPDATE_EXCEPTION_STATUS.
+           --
+           -- The status_id IS NULL branch stays: a comments-only bulk
+           -- update is not a status change and must leave CLOSE_DATE
+           -- exactly as it found it.
            "CLOSE_DATE"    = CASE
-                                 WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) = 'ACCEPT'
+                                 WHEN :status_id IS NULL
+                                     THEN "CLOSE_DATE"
+                                 WHEN UPPER(:P_STATUS) IN ('ACCEPT', 'OVERRIDE')
                                      THEN TO_DATE(:now_ts)
-                                 -- Transitions to 'New' / 'Suppress' /
-                                 -- 'Challenge' put the row back into
-                                 -- an unresolved / pending state, so
-                                 -- the historical close date is no
-                                 -- longer valid and gets cleared.
-                                 -- Hold joins them: a held row is
-                                 -- pending, not closed.
-                                 -- Research joins them: researching an
-                                 -- exception is open work, not a close.
-                                 WHEN :status_id IS NOT NULL
-                                      AND UPPER(:P_STATUS) IN ('NEW', 'SUPPRESS', 'CHALLENGE', 'HOLD', 'RESEARCH')
-                                     THEN NULL
-                                 ELSE "CLOSE_DATE"
+                                 ELSE NULL
                              END,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'

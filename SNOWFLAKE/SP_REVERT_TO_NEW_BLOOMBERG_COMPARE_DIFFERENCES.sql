@@ -1,6 +1,6 @@
 -- Bloomberg-catalog-scoped revert workflow. For every EXCEPTION row in
 -- the 'Bloomberg Compare Differences' catalog that is not currently
--- 'New', flip it back to New (with OPEN_DATE = today) when EITHER of
+-- 'New', flip it back to New when EITHER of
 -- the two RESULT_DATA JSON values has drifted since the previous run:
 --   * ALADDIN_VALUE differs from the last archived hist row's value, OR
 --   * BBG_VALUE     differs from the last archived hist row's value.
@@ -22,6 +22,7 @@
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES()
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
@@ -39,7 +40,12 @@ BEGIN
     -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = 1,
-           "OPEN_DATE"     = :today,
+           -- OPEN_DATE is write-once and is NOT ratcheted by a drift
+           -- revert, matching pass 2 below. A value moving is a change
+           -- to an exception that was already surfaced, not a fresh
+           -- discovery, so the original open date is preserved to keep
+           -- the aging metric honest. COALESCE only fills a gap.
+           "OPEN_DATE"     = COALESCE(e."OPEN_DATE", :today),
            "SUPPRESS_DATE" = NULL,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
