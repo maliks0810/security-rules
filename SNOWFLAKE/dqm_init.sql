@@ -703,9 +703,37 @@ AS
 $$
 DECLARE
     affected NUMBER := 0;
+    -- "Unassigned" is a real DM_USER row, so an inherited assignee of
+    -- Unassigned carries no information and must NOT override whatever
+    -- InsertExceptions just stamped from the rule default. COALESCE to
+    -- -1 so a schema missing that row degrades to "nothing equals it",
+    -- which still carries real assignees forward rather than silently
+    -- disabling the inheritance.
+    unassigned_id NUMBER := NULL;
 BEGIN
+    SELECT "ID" INTO :unassigned_id
+    FROM "DM_USER"
+    WHERE "USER" = 'Unassigned'
+    LIMIT 1;
+
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = h."STATUS_ID",
+           -- ASSIGN_TO_ID carries forward from the last archived run
+           -- whenever that run had a REAL owner, so an exception stays
+           -- with whoever was working it across the intraday batch and
+           -- the overnight roll.
+           --
+           -- NULL or Unassigned on the hist side means nobody owned it,
+           -- and the live row keeps what InsertExceptions stamped from
+           -- RULE.ASSIGN_TO_ID (falling back to Unassigned). So the rule
+           -- default applies exactly when the previous run had no owner
+           -- and never overrides a human assignment.
+           "ASSIGN_TO_ID"  = CASE
+                                 WHEN h."ASSIGN_TO_ID" IS NOT NULL
+                                      AND h."ASSIGN_TO_ID" <> COALESCE(:unassigned_id, -1)
+                                     THEN h."ASSIGN_TO_ID"
+                                 ELSE e."ASSIGN_TO_ID"
+                             END,
            -- OPEN_DATE moves to today only when this inherit flips the
            -- row TO 'New' (STATUS_ID = 1). Inheriting Accept / Override
            -- / Suppress leaves the last-New date alone.
@@ -733,9 +761,9 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -753,7 +781,10 @@ BEGIN
             OR (h."COMMENTS" IS NOT NULL
                 AND NOT EQUAL_NULL(e."COMMENTS", h."COMMENTS"))
             OR (h."CLOSE_DATE" IS NOT NULL
-                AND NOT EQUAL_NULL(e."CLOSE_DATE", h."CLOSE_DATE")))
+                AND NOT EQUAL_NULL(e."CLOSE_DATE", h."CLOSE_DATE"))
+            OR (h."ASSIGN_TO_ID" IS NOT NULL
+                AND h."ASSIGN_TO_ID" <> COALESCE(:unassigned_id, -1)
+                AND NOT EQUAL_NULL(e."ASSIGN_TO_ID", h."ASSIGN_TO_ID")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2

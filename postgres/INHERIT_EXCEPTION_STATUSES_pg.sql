@@ -36,7 +36,8 @@ LANGUAGE sql
 AS $$
     WITH last_hist AS (
         SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
-               "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE"
+               "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
+               "ASSIGN_TO_ID"
           FROM public."EXCEPTION_HIST"
          WHERE "STATUS_ID" IS NOT NULL
          ORDER BY "RULE_ID", "ASSET_ID",
@@ -86,6 +87,30 @@ AS $$
                -- NULL / unset on the hist side leaves the live row's
                -- comment alone via COALESCE.
                "COMMENTS"      = COALESCE(h."COMMENTS", e."COMMENTS"),
+               -- ASSIGN_TO_ID carries forward from the last archived run
+               -- whenever that run had a REAL owner, so an exception
+               -- stays with whoever was working it across the intraday
+               -- batch and the overnight roll.
+               --
+               -- NULL or Unassigned on the hist side means nobody owned
+               -- it, and the live row keeps what InsertExceptions
+               -- stamped from RULE.ASSIGN_TO_ID (falling back to
+               -- Unassigned). So the rule default applies exactly when
+               -- the previous run had no owner, and never overrides a
+               -- human assignment.
+               --
+               -- COALESCE to -1 so a schema missing the Unassigned row
+               -- degrades to "nothing equals it" - real assignees still
+               -- carry forward rather than the inheritance silently
+               -- switching off.
+               "ASSIGN_TO_ID"  = CASE
+                                     WHEN h."ASSIGN_TO_ID" IS NOT NULL
+                                          AND h."ASSIGN_TO_ID" <> COALESCE(
+                                              (SELECT "ID" FROM public."DM_USER"
+                                                WHERE "USER" = 'Unassigned' LIMIT 1), -1)
+                                         THEN h."ASSIGN_TO_ID"
+                                     ELSE e."ASSIGN_TO_ID"
+                                 END,
                "MODIFIED_DATE" = (NOW() AT TIME ZONE 'UTC'),
                "MODIFIED_BY"   = 'system'
           FROM last_hist h
@@ -96,7 +121,12 @@ AS $$
                 OR (h."COMMENTS" IS NOT NULL
                     AND e."COMMENTS" IS DISTINCT FROM h."COMMENTS")
                 OR (h."CLOSE_DATE" IS NOT NULL
-                    AND e."CLOSE_DATE" IS DISTINCT FROM h."CLOSE_DATE"))
+                    AND e."CLOSE_DATE" IS DISTINCT FROM h."CLOSE_DATE")
+                OR (h."ASSIGN_TO_ID" IS NOT NULL
+                    AND h."ASSIGN_TO_ID" <> COALESCE(
+                        (SELECT "ID" FROM public."DM_USER"
+                          WHERE "USER" = 'Unassigned' LIMIT 1), -1)
+                    AND e."ASSIGN_TO_ID" IS DISTINCT FROM h."ASSIGN_TO_ID"))
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int FROM updated;
