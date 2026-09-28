@@ -173,6 +173,15 @@ definitions:
       suppress_date:
         type: string
     type: object
+  models.ExceptionRun:
+    properties:
+      batch_id:
+        type: integer
+      exception_date:
+        type: string
+      exception_time:
+        type: string
+    type: object
   models.ExecuteRulesRequest:
     properties:
       is_refresh:
@@ -686,9 +695,24 @@ paths:
   /v1/api/getExceptionHistDates:
     get:
       description: |-
-        Returns ISO date strings for the last 60 days that have any
-        EXCEPTION_HIST activity, most recent first. Powers the
-        "DQM Date" dropdown options.
+        Returns ISO date strings, most recent first: the latest live
+        EXCEPTION date plus every EXCEPTION_HIST date. Optional
+        rule_group / rule_catalog / rule_name limit both tables to
+        that scope, so only days with exceptions for it are returned.
+        Powers the "Exceptions Date" dropdown options.
+      parameters:
+      - description: RULE_GROUP.NAME filter
+        in: query
+        name: rule_group
+        type: string
+      - description: RULE_CATALOG.NAME filter
+        in: query
+        name: rule_catalog
+        type: string
+      - description: RULE.RULE_NAME filter
+        in: query
+        name: rule_name
+        type: string
       produces:
       - application/json
       responses:
@@ -704,7 +728,45 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Distinct EXCEPTION_DATEs available in EXCEPTION_HIST
+      summary: Distinct EXCEPTION_DATEs available in EXCEPTION and EXCEPTION_HIST
+      tags:
+      - exceptions
+  /v1/api/getExceptionRuns:
+    get:
+      description: |-
+        One entry per run, most recent first: the live EXCEPTION run
+        (batch_id null) plus each EXCEPTION_HIST batch, each with the
+        latest EXCEPTION_TIME among its rows. Powers the "Exceptions
+        Date" dropdown once a scope is picked on the LHS tree.
+      parameters:
+      - description: RULE_GROUP.NAME filter
+        in: query
+        name: rule_group
+        type: string
+      - description: RULE_CATALOG.NAME filter
+        in: query
+        name: rule_catalog
+        type: string
+      - description: RULE.RULE_NAME filter
+        in: query
+        name: rule_name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.ExceptionRun'
+            type: array
+        "500":
+          description: failed to query exception runs
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Rule runs available for a rule group / catalog / rule
       tags:
       - exceptions
   /v1/api/getExceptionState:
@@ -844,14 +906,20 @@ paths:
       description: |-
         Same shape as /getExceptions but reads from EXCEPTION_HIST
         and only returns rows belonging to that day's LATEST BATCH_ID
-        within the caller's rule/catalog/group scope. Powers the "DQM
-        Date" back-in-time selector on the sidebar.
+        within the caller's rule/catalog/group scope, or from batch_id
+        when given. Powers the "DQM Date" back-in-time selector on
+        the sidebar.
       parameters:
       - description: ISO YYYY-MM-DD
         in: query
         name: exception_date
         required: true
         type: string
+      - description: EXCEPTION_HIST.BATCH_ID to read instead of the latest batch that
+          day
+        in: query
+        name: batch_id
+        type: integer
       - description: Asset ID filter
         in: query
         name: asset_id
@@ -902,7 +970,7 @@ paths:
               $ref: '#/definitions/models.Exception'
             type: array
         "400":
-          description: exception_date is required
+          description: exception_date is required / batch_id must be an integer
           schema:
             additionalProperties:
               type: string

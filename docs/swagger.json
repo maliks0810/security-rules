@@ -501,14 +501,34 @@
         },
         "/v1/api/getExceptionHistDates": {
             "get": {
-                "description": "Returns ISO date strings for the last 60 days that have any\nEXCEPTION_HIST activity, most recent first. Powers the\n\"DQM Date\" dropdown options.",
+                "description": "Returns ISO date strings, most recent first: the latest live\nEXCEPTION date plus every EXCEPTION_HIST date. Optional\nrule_group / rule_catalog / rule_name limit both tables to\nthat scope, so only days with exceptions for it are returned.\nPowers the \"Exceptions Date\" dropdown options.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "exceptions"
                 ],
-                "summary": "Distinct EXCEPTION_DATEs available in EXCEPTION_HIST",
+                "summary": "Distinct EXCEPTION_DATEs available in EXCEPTION and EXCEPTION_HIST",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME filter",
+                        "name": "rule_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -521,6 +541,58 @@
                     },
                     "500": {
                         "description": "failed to query exception history dates",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/api/getExceptionRuns": {
+            "get": {
+                "description": "One entry per run, most recent first: the live EXCEPTION run\n(batch_id null) plus each EXCEPTION_HIST batch, each with the\nlatest EXCEPTION_TIME among its rows. Powers the \"Exceptions\nDate\" dropdown once a scope is picked on the LHS tree.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exceptions"
+                ],
+                "summary": "Rule runs available for a rule group / catalog / rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "RULE_GROUP.NAME filter",
+                        "name": "rule_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE_CATALOG.NAME filter",
+                        "name": "rule_catalog",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RULE.RULE_NAME filter",
+                        "name": "rule_name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.ExceptionRun"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "failed to query exception runs",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -729,7 +801,7 @@
         },
         "/v1/api/getExceptionsHist": {
             "get": {
-                "description": "Same shape as /getExceptions but reads from EXCEPTION_HIST\nand only returns rows belonging to that day's LATEST BATCH_ID\nwithin the caller's rule/catalog/group scope. Powers the \"DQM\nDate\" back-in-time selector on the sidebar.",
+                "description": "Same shape as /getExceptions but reads from EXCEPTION_HIST\nand only returns rows belonging to that day's LATEST BATCH_ID\nwithin the caller's rule/catalog/group scope, or from batch_id\nwhen given. Powers the \"DQM Date\" back-in-time selector on\nthe sidebar.",
                 "produces": [
                     "application/json"
                 ],
@@ -744,6 +816,12 @@
                         "name": "exception_date",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "EXCEPTION_HIST.BATCH_ID to read instead of the latest batch that day",
+                        "name": "batch_id",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -817,7 +895,7 @@
                         }
                     },
                     "400": {
-                        "description": "exception_date is required",
+                        "description": "exception_date is required / batch_id must be an integer",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2141,6 +2219,20 @@
                     "type": "integer"
                 },
                 "suppress_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ExceptionRun": {
+            "type": "object",
+            "properties": {
+                "batch_id": {
+                    "type": "integer"
+                },
+                "exception_date": {
+                    "type": "string"
+                },
+                "exception_time": {
                     "type": "string"
                 }
             }

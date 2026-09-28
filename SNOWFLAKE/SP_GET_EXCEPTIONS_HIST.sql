@@ -3,6 +3,10 @@
 -- the caller's rule/catalog/group scope. Column shape mirrors
 -- SP_GET_EXCEPTIONS exactly so callers can reuse the same scan/parse.
 
+-- The 11-argument version is replaced, not overloaded, so existing
+-- CALLs cannot resolve to the old body.
+DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS_HIST(DATE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR);
+
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_EXCEPTION_DATE    DATE,
     P_ASSET_ID          VARCHAR DEFAULT NULL,
@@ -14,7 +18,10 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
     P_EXCEPTION_STATE   VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
-    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
+    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
+    -- Pins one archived run. NULL keeps the default: the latest BATCH_ID
+    -- that day within the rule/catalog/group scope.
+    P_BATCH_ID          NUMBER  DEFAULT NULL
 )
 RETURNS TABLE (
     "EXCEPTION_ID"      NUMBER,
@@ -101,7 +108,7 @@ BEGIN
         LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
         LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
-          AND e."BATCH_ID" = (SELECT mb FROM max_batch)
+          AND e."BATCH_ID" = COALESCE(:P_BATCH_ID, (SELECT mb FROM max_batch))
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)

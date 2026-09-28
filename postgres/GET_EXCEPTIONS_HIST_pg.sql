@@ -5,6 +5,7 @@
 -- SP_GET_EXCEPTIONS exactly so callers can reuse the same scan/parse.
 
 DROP FUNCTION IF EXISTS public."SP_GET_EXCEPTIONS_HIST"(date, varchar, text, text, text, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public."SP_GET_EXCEPTIONS_HIST"(date, varchar, text, text, text, text, text, text, text, text, text, bigint);
 
 CREATE OR REPLACE FUNCTION public."SP_GET_EXCEPTIONS_HIST"(
     p_exception_date    date,
@@ -17,7 +18,10 @@ CREATE OR REPLACE FUNCTION public."SP_GET_EXCEPTIONS_HIST"(
     p_rule_group        text DEFAULT NULL,
     p_exception_state   text DEFAULT NULL,
     p_assign_to         text DEFAULT NULL,
-    p_rule_name_pattern text DEFAULT NULL
+    p_rule_name_pattern text DEFAULT NULL,
+    -- Pins one archived run. NULL keeps the default: the latest BATCH_ID
+    -- that day within the rule/catalog/group scope.
+    p_batch_id          bigint DEFAULT NULL
 )
 RETURNS TABLE(
     "EXCEPTION_ID"      bigint,
@@ -102,7 +106,7 @@ AS $$
     LEFT JOIN public."EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
     LEFT JOIN public."DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
     WHERE e."EXCEPTION_DATE" = p_exception_date
-      AND e."BATCH_ID" = (SELECT mb FROM max_batch)
+      AND e."BATCH_ID" = COALESCE(p_batch_id, (SELECT mb FROM max_batch))
       AND (p_asset_id          IS NULL OR e."ASSET_ID"  = p_asset_id)
       AND (p_exception_type    IS NULL OR et."NAME"     = p_exception_type)
       AND (p_severity          IS NULL OR est."NAME"    = p_severity)

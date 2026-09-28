@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,11 +78,13 @@ func GetExceptions(ctx *fiber.Ctx) error {
 // @Summary      List history-table exceptions for a specific EXCEPTION_DATE
 // @Description  Same shape as /getExceptions but reads from EXCEPTION_HIST
 // @Description  and only returns rows belonging to that day's LATEST BATCH_ID
-// @Description  within the caller's rule/catalog/group scope. Powers the "DQM
-// @Description  Date" back-in-time selector on the sidebar.
+// @Description  within the caller's rule/catalog/group scope, or from batch_id
+// @Description  when given. Powers the "DQM Date" back-in-time selector on
+// @Description  the sidebar.
 // @Tags         exceptions
 // @Produce      json
 // @Param        exception_date    query     string  true   "ISO YYYY-MM-DD"
+// @Param        batch_id          query     integer false  "EXCEPTION_HIST.BATCH_ID to read instead of the latest batch that day"
 // @Param        asset_id          query     string  false  "Asset ID filter"
 // @Param        exception_type    query     string  false  "EXCEPTION_TYPE.NAME filter"
 // @Param        severity          query     string  false  "EXCEPTION_SEVERITY_TYPE.NAME filter"
@@ -93,13 +96,21 @@ func GetExceptions(ctx *fiber.Ctx) error {
 // @Param        assign_to         query     string  false  "DM_USER.USER filter"
 // @Param        rule_name_pattern query     string  false  "SQL ILIKE pattern against RULE.RULE_NAME"
 // @Success      200               {array}   models.Exception
-// @Failure      400               {object}  map[string]string  "exception_date is required"
+// @Failure      400               {object}  map[string]string  "exception_date is required / batch_id must be an integer"
 // @Failure      500               {object}  map[string]string  "failed to query exception history"
 // @Router       /v1/api/getExceptionsHist [get]
 func GetExceptionsHist(ctx *fiber.Ctx) error {
 	exceptionDate := ctx.Query("exception_date")
 	if exceptionDate == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "exception_date is required"})
+	}
+	var batchID *int64
+	if raw := ctx.Query("batch_id"); raw != "" {
+		b, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "batch_id must be an integer"})
+		}
+		batchID = &b
 	}
 	assetID := ctx.Query("asset_id")
 	exceptionType := ctx.Query("exception_type")
@@ -112,25 +123,52 @@ func GetExceptionsHist(ctx *fiber.Ctx) error {
 	assignTo := ctx.Query("assign_to")
 	ruleNamePattern := ctx.Query("rule_name_pattern")
 
-	exceptions, err := services.GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
+	exceptions, err := services.GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, batchID)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception history"})
 	}
 	return ctx.Status(fiber.StatusOK).JSON(exceptions)
 }
 
-// GetExceptionHistDates godoc
-// @Summary      Distinct EXCEPTION_DATEs available in EXCEPTION_HIST
-// @Description  Returns ISO date strings for the last 60 days that have any
-// @Description  EXCEPTION_HIST activity, most recent first. Powers the
-// @Description  "DQM Date" dropdown options.
+// GetExceptionRuns godoc
+// @Summary      Rule runs available for a rule group / catalog / rule
+// @Description  One entry per run, most recent first: the live EXCEPTION run
+// @Description  (batch_id null) plus each EXCEPTION_HIST batch, each with the
+// @Description  latest EXCEPTION_TIME among its rows. Powers the "Exceptions
+// @Description  Date" dropdown once a scope is picked on the LHS tree.
 // @Tags         exceptions
 // @Produce      json
+// @Param        rule_group    query     string  false  "RULE_GROUP.NAME filter"
+// @Param        rule_catalog  query     string  false  "RULE_CATALOG.NAME filter"
+// @Param        rule_name     query     string  false  "RULE.RULE_NAME filter"
+// @Success      200  {array}   models.ExceptionRun
+// @Failure      500  {object}  map[string]string  "failed to query exception runs"
+// @Router       /v1/api/getExceptionRuns [get]
+func GetExceptionRuns(ctx *fiber.Ctx) error {
+	runs, err := services.GetExceptionRuns(ctx.Query("rule_group"), ctx.Query("rule_catalog"), ctx.Query("rule_name"))
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception runs"})
+	}
+	return ctx.Status(fiber.StatusOK).JSON(runs)
+}
+
+// GetExceptionHistDates godoc
+// @Summary      Distinct EXCEPTION_DATEs available in EXCEPTION and EXCEPTION_HIST
+// @Description  Returns ISO date strings, most recent first: the latest live
+// @Description  EXCEPTION date plus every EXCEPTION_HIST date. Optional
+// @Description  rule_group / rule_catalog / rule_name limit both tables to
+// @Description  that scope, so only days with exceptions for it are returned.
+// @Description  Powers the "Exceptions Date" dropdown options.
+// @Tags         exceptions
+// @Produce      json
+// @Param        rule_group    query     string  false  "RULE_GROUP.NAME filter"
+// @Param        rule_catalog  query     string  false  "RULE_CATALOG.NAME filter"
+// @Param        rule_name     query     string  false  "RULE.RULE_NAME filter"
 // @Success      200  {array}   string
 // @Failure      500  {object}  map[string]string  "failed to query exception history dates"
 // @Router       /v1/api/getExceptionHistDates [get]
 func GetExceptionHistDates(ctx *fiber.Ctx) error {
-	dates, err := services.GetExceptionHistDates()
+	dates, err := services.GetExceptionHistDates(ctx.Query("rule_group"), ctx.Query("rule_catalog"), ctx.Query("rule_name"))
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to query exception history dates"})
 	}

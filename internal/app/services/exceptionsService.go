@@ -58,12 +58,16 @@ func GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ru
 	return repositories.GetExceptions(aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, exceptionDate, securityGroup)
 }
 
-func GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
-	return repositories.GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern)
+func GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string, batchID *int64) ([]models.Exception, error) {
+	return repositories.GetExceptionsHist(exceptionDate, aladdinID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern, batchID)
 }
 
-func GetExceptionHistDates() ([]string, error) {
-	return repositories.GetExceptionHistDates()
+func GetExceptionRuns(ruleGroup, ruleCatalog, ruleName string) ([]models.ExceptionRun, error) {
+	return repositories.GetExceptionRuns(ruleGroup, ruleCatalog, ruleName)
+}
+
+func GetExceptionHistDates(ruleGroup, ruleCatalog, ruleName string) ([]string, error) {
+	return repositories.GetExceptionHistDates(ruleGroup, ruleCatalog, ruleName)
 }
 
 func InsertExceptions(exceptions []models.Exception) error {

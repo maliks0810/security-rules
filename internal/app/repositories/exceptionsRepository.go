@@ -674,9 +674,10 @@ func scanExceptionRows(rows *sql.Rows) ([]models.Exception, error) {
 
 // GetExceptionsHist calls SP_GET_EXCEPTIONS_HIST for a specific
 // EXCEPTION_DATE and returns the rows from that day's LATEST BATCH_ID
-// within the caller's rule/catalog/group scope. Column shape mirrors
-// SP_GET_EXCEPTIONS so scanExceptionRows handles both.
-func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string) ([]models.Exception, error) {
+// within the caller's rule/catalog/group scope, or from batchID when it
+// is non-nil. Column shape mirrors SP_GET_EXCEPTIONS so
+// scanExceptionRows handles both.
+func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority, ruleCatalog, ruleName, ruleGroup, exceptionState, assignTo, ruleNamePattern string, batchID *int64) ([]models.Exception, error) {
 	if exceptionDate == "" {
 		return nil, sql.ErrNoRows
 	}
@@ -697,16 +698,21 @@ func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority
 	exceptionStateArg := nilIfEmpty(exceptionState)
 	assignToArg := nilIfEmpty(assignTo)
 	ruleNamePatternArg := nilIfEmpty(ruleNamePattern)
+	// nil lets the procedure fall back to the latest batch in scope.
+	var batchArg any
+	if batchID != nil {
+		batchArg = *batchID
+	}
 
 	var rows *sql.Rows
 	var err error
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptionsHist - using SNOWFLAKE database environment")
 		rows, err = snowflake.Query(
-			"CALL SP_GET_EXCEPTIONS_HIST(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"CALL SP_GET_EXCEPTIONS_HIST(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			dateArg, assetArg, typeArg, severityArg, priorityArg,
 			ruleCatalogArg, ruleNameArg, ruleGroupArg,
-			exceptionStateArg, assignToArg, ruleNamePatternArg,
+			exceptionStateArg, assignToArg, ruleNamePatternArg, batchArg,
 		)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptionsHist - using POSTGRES database environment")
@@ -714,10 +720,10 @@ func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority
 			return nil, sql.ErrConnDone
 		}
 		rows, err = postgres.DB.Query(
-			`SELECT * FROM public."SP_GET_EXCEPTIONS_HIST"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			`SELECT * FROM public."SP_GET_EXCEPTIONS_HIST"($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 			dateArg, assetArg, typeArg, severityArg, priorityArg,
 			ruleCatalogArg, ruleNameArg, ruleGroupArg,
-			exceptionStateArg, assignToArg, ruleNamePatternArg,
+			exceptionStateArg, assignToArg, ruleNamePatternArg, batchArg,
 		)
 	}
 	if err != nil {
@@ -727,21 +733,88 @@ func GetExceptionsHist(exceptionDate, assetID, exceptionType, severity, priority
 	return scanExceptionRows(rows)
 }
 
-// GetExceptionHistDates returns the distinct EXCEPTION_DATEs present in
-// EXCEPTION_HIST within the last 60 days (UTC), most recent first, as
-// ISO YYYY-MM-DD strings. Powers the "DQM Date" dropdown.
-func GetExceptionHistDates() ([]string, error) {
+// GetExceptionRuns calls SP_GET_EXCEPTION_RUNS: one entry per rule run
+// (the live EXCEPTION run plus each EXCEPTION_HIST batch) in the given
+// rule group / catalog / rule scope, most recent first. Empty or "All"
+// leaves a level unfiltered.
+func GetExceptionRuns(ruleGroup, ruleCatalog, ruleName string) ([]models.ExceptionRun, error) {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	ruleGroupArg := nilIfEmpty(ruleGroup)
+	ruleCatalogArg := nilIfEmpty(ruleCatalog)
+	ruleNameArg := nilIfEmpty(ruleName)
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("exceptionsRepository: GetExceptionRuns - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_RUNS(?, ?, ?)", ruleGroupArg, ruleCatalogArg, ruleNameArg)
+	} else {
+		log.Logger.Info("exceptionsRepository: GetExceptionRuns - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_RUNS"($1, $2, $3)`, ruleGroupArg, ruleCatalogArg, ruleNameArg)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := []models.ExceptionRun{}
+	for rows.Next() {
+		var (
+			exceptionDate sql.NullTime
+			batchID       sql.NullInt64
+			exceptionTime sql.NullTime
+		)
+		if err := rows.Scan(&exceptionDate, &batchID, &exceptionTime); err != nil {
+			return nil, err
+		}
+		if !exceptionDate.Valid {
+			continue
+		}
+		run := models.ExceptionRun{
+			ExceptionDate: exceptionDate.Time.Format("2006-01-02"),
+			ExceptionTime: sqlutil.NullTime(exceptionTime),
+		}
+		if batchID.Valid {
+			b := batchID.Int64
+			run.BatchID = &b
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+// GetExceptionHistDates returns the live MAX(EXCEPTION.EXCEPTION_DATE)
+// plus every distinct EXCEPTION_HIST.EXCEPTION_DATE, most recent first,
+// as ISO YYYY-MM-DD strings. Powers the "Exceptions Date" dropdown.
+// ruleGroup / ruleCatalog / ruleName limit both tables to that LHS tree
+// scope; empty or "All" leaves a level unfiltered.
+func GetExceptionHistDates(ruleGroup, ruleCatalog, ruleName string) ([]string, error) {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	ruleGroupArg := nilIfEmpty(ruleGroup)
+	ruleCatalogArg := nilIfEmpty(ruleCatalog)
+	ruleNameArg := nilIfEmpty(ruleName)
 	var rows *sql.Rows
 	var err error
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("exceptionsRepository: GetExceptionHistDates - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_HIST_DATES()")
+		rows, err = snowflake.Query("CALL SP_GET_EXCEPTION_HIST_DATES(?, ?, ?)", ruleGroupArg, ruleCatalogArg, ruleNameArg)
 	} else {
 		log.Logger.Info("exceptionsRepository: GetExceptionHistDates - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_HIST_DATES"()`)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_EXCEPTION_HIST_DATES"($1, $2, $3)`, ruleGroupArg, ruleCatalogArg, ruleNameArg)
 	}
 	if err != nil {
 		return nil, err

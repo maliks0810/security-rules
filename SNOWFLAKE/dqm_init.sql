@@ -2432,7 +2432,19 @@ $$;
 -- CURRENT_DATE / UTC math: the labels are driven entirely by what's
 -- actually in the two tables, so the frontend doesn't drift from
 -- server state when local vs UTC disagree.
-CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_HIST_DATES()
+--
+-- P_RULE_GROUP / P_RULE_CATALOG / P_RULE_NAME scope both halves to the
+-- rule group, catalog or rule picked on the LHS tree, so the dropdown
+-- only offers days on which that scope actually has exceptions. NULL or
+-- 'All' means no filter on that level. The zero-argument version is
+-- dropped rather than overloaded so CALL ...() stays unambiguous.
+DROP PROCEDURE IF EXISTS SP_GET_EXCEPTION_HIST_DATES();
+
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_HIST_DATES(
+    P_RULE_GROUP   VARCHAR DEFAULT NULL,
+    P_RULE_CATALOG VARCHAR DEFAULT NULL,
+    P_RULE_NAME    VARCHAR DEFAULT NULL
+)
 RETURNS TABLE("EXCEPTION_DATE" DATE)
 LANGUAGE SQL
 AS
@@ -2443,16 +2455,93 @@ BEGIN
     res := (
         SELECT d AS "EXCEPTION_DATE"
         FROM (
-            SELECT MAX("EXCEPTION_DATE") AS d
-              FROM "EXCEPTION"
-             WHERE "EXCEPTION_DATE" IS NOT NULL
+            SELECT MAX(e."EXCEPTION_DATE") AS d
+              FROM "EXCEPTION" e
+              LEFT JOIN "RULE"         r  ON r."RULE_ID"          = e."RULE_ID"
+              LEFT JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+              LEFT JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+             WHERE e."EXCEPTION_DATE" IS NOT NULL
+               AND (:P_RULE_GROUP   IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"      = :P_RULE_GROUP)
+               AND (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
+               AND (:P_RULE_NAME    IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME"  = :P_RULE_NAME)
             UNION
-            SELECT DISTINCT "EXCEPTION_DATE" AS d
-              FROM "EXCEPTION_HIST"
-             WHERE "EXCEPTION_DATE" IS NOT NULL
+            SELECT DISTINCT h."EXCEPTION_DATE" AS d
+              FROM "EXCEPTION_HIST" h
+              LEFT JOIN "RULE"         r  ON r."RULE_ID"          = h."RULE_ID"
+              LEFT JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+              LEFT JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+             WHERE h."EXCEPTION_DATE" IS NOT NULL
+               AND (:P_RULE_GROUP   IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"      = :P_RULE_GROUP)
+               AND (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME"      = :P_RULE_CATALOG)
+               AND (:P_RULE_NAME    IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME"  = :P_RULE_NAME)
         ) x
         WHERE d IS NOT NULL
         ORDER BY d DESC
+    );
+    RETURN TABLE(res);
+END;
+$$;
+
+-- GET_EXCEPTION_RUNS --------------------------------------------------------
+-- One row per rule run the "Exceptions Date" dropdown can offer for a
+-- rule group / catalog / rule picked on the LHS tree, most recent first:
+--   * the live run: EXCEPTION rows on the live date (MAX(EXCEPTION_DATE)
+--     across the whole table, which is what the grid's current view
+--     reads), BATCH_ID NULL. Absent when the scope has no live rows.
+--   * one row per (EXCEPTION_DATE, BATCH_ID) in EXCEPTION_HIST.
+-- EXCEPTION_TIME is the latest EXCEPTION_TIME among the run's rows, so
+-- the dropdown can tell apart several runs on the same day.
+--
+-- NULL or 'All' leaves a scope level unfiltered (same convention as
+-- SP_GET_EXCEPTIONS_HIST).
+
+CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_RUNS(
+    P_RULE_GROUP   VARCHAR DEFAULT NULL,
+    P_RULE_CATALOG VARCHAR DEFAULT NULL,
+    P_RULE_NAME    VARCHAR DEFAULT NULL
+)
+RETURNS TABLE(
+    "EXCEPTION_DATE" DATE,
+    "BATCH_ID"       NUMBER,
+    "EXCEPTION_TIME" TIMESTAMP_NTZ
+)
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (
+        WITH live_date AS (
+            SELECT MAX("EXCEPTION_DATE") AS d FROM "EXCEPTION"
+        )
+        SELECT e."EXCEPTION_DATE"      AS "EXCEPTION_DATE",
+               NULL::NUMBER            AS "BATCH_ID",
+               MAX(e."EXCEPTION_TIME") AS "EXCEPTION_TIME"
+          FROM "EXCEPTION" e
+          LEFT JOIN "RULE"         r  ON r."RULE_ID"          = e."RULE_ID"
+          LEFT JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+          LEFT JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+         WHERE e."EXCEPTION_DATE" = (SELECT d FROM live_date)
+           AND (:P_RULE_GROUP   IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"     = :P_RULE_GROUP)
+           AND (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME"     = :P_RULE_CATALOG)
+           AND (:P_RULE_NAME    IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+         GROUP BY e."EXCEPTION_DATE"
+        UNION ALL
+        SELECT h."EXCEPTION_DATE"      AS "EXCEPTION_DATE",
+               h."BATCH_ID"            AS "BATCH_ID",
+               MAX(h."EXCEPTION_TIME") AS "EXCEPTION_TIME"
+          FROM "EXCEPTION_HIST" h
+          LEFT JOIN "RULE"         r  ON r."RULE_ID"          = h."RULE_ID"
+          LEFT JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+          LEFT JOIN "RULE_GROUP"   rg ON rg."RULE_GROUP_ID"   = rc."RULE_GROUP_ID"
+         WHERE h."EXCEPTION_DATE" IS NOT NULL
+           AND h."BATCH_ID"       IS NOT NULL
+           AND (:P_RULE_GROUP   IS NULL OR :P_RULE_GROUP   = 'All' OR rg."NAME"     = :P_RULE_GROUP)
+           AND (:P_RULE_CATALOG IS NULL OR :P_RULE_CATALOG = 'All' OR rc."NAME"     = :P_RULE_CATALOG)
+           AND (:P_RULE_NAME    IS NULL OR :P_RULE_NAME    = 'All' OR r."RULE_NAME" = :P_RULE_NAME)
+         GROUP BY h."EXCEPTION_DATE", h."BATCH_ID"
+        ORDER BY "EXCEPTION_DATE" DESC, "BATCH_ID" DESC NULLS FIRST
     );
     RETURN TABLE(res);
 END;
@@ -2463,6 +2552,10 @@ $$;
 -- given P_EXCEPTION_DATE and only the LATEST BATCH_ID within the caller's
 -- rule/catalog/group scope, so the grid shows the last archived snapshot
 -- for that day.
+-- The 11-argument version is replaced, not overloaded, so existing
+-- CALLs cannot resolve to the old body.
+DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS_HIST(DATE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR);
+
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_EXCEPTION_DATE    DATE,
     P_ASSET_ID          VARCHAR DEFAULT NULL,
@@ -2474,7 +2567,10 @@ CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_RULE_GROUP        VARCHAR DEFAULT NULL,
     P_EXCEPTION_STATE   VARCHAR DEFAULT NULL,
     P_ASSIGN_TO         VARCHAR DEFAULT NULL,
-    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL
+    P_RULE_NAME_PATTERN VARCHAR DEFAULT NULL,
+    -- Pins one archived run. NULL keeps the default: the latest BATCH_ID
+    -- that day within the rule/catalog/group scope.
+    P_BATCH_ID          NUMBER  DEFAULT NULL
 )
 RETURNS TABLE (
     "EXCEPTION_ID"      NUMBER,
@@ -2561,7 +2657,7 @@ BEGIN
         LEFT JOIN "EXCEPTION_STATUS"        est_s ON est_s."EXCEPTION_STATUS_ID"     = e."STATUS_ID"
         LEFT JOIN "DM_USER"                 du    ON du."ID" = COALESCE(e."ASSIGN_TO_ID", r."ASSIGN_TO_ID")
         WHERE e."EXCEPTION_DATE" = :P_EXCEPTION_DATE
-          AND e."BATCH_ID" = (SELECT mb FROM max_batch)
+          AND e."BATCH_ID" = COALESCE(:P_BATCH_ID, (SELECT mb FROM max_batch))
           AND (:P_ASSET_ID          IS NULL OR e."ASSET_ID" = :P_ASSET_ID)
           AND (:P_EXCEPTION_TYPE    IS NULL OR et."NAME"    = :P_EXCEPTION_TYPE)
           AND (:P_SEVERITY          IS NULL OR est."NAME"   = :P_SEVERITY)
