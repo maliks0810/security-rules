@@ -9,10 +9,8 @@
 -- only offers days on which that scope actually has exceptions. NULL or
 -- 'All' means no filter on that level (same convention as
 -- SP_GET_EXCEPTIONS_HIST).
-
--- The zero-argument version is replaced, not overloaded: leaving it in
--- place would make CALL SP_GET_EXCEPTION_HIST_DATES() ambiguous.
-DROP PROCEDURE IF EXISTS SP_GET_EXCEPTION_HIST_DATES();
+--
+-- The old zero-argument version is dropped in 200_UPDATE_ADHOC.sql.
 
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_HIST_DATES(
     P_RULE_GROUP   VARCHAR DEFAULT NULL,

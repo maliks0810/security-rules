@@ -2436,10 +2436,7 @@ $$;
 -- P_RULE_GROUP / P_RULE_CATALOG / P_RULE_NAME scope both halves to the
 -- rule group, catalog or rule picked on the LHS tree, so the dropdown
 -- only offers days on which that scope actually has exceptions. NULL or
--- 'All' means no filter on that level. The zero-argument version is
--- dropped rather than overloaded so CALL ...() stays unambiguous.
-DROP PROCEDURE IF EXISTS SP_GET_EXCEPTION_HIST_DATES();
-
+-- 'All' means no filter on that level.
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTION_HIST_DATES(
     P_RULE_GROUP   VARCHAR DEFAULT NULL,
     P_RULE_CATALOG VARCHAR DEFAULT NULL,
@@ -2552,9 +2549,6 @@ $$;
 -- given P_EXCEPTION_DATE and only the LATEST BATCH_ID within the caller's
 -- rule/catalog/group scope, so the grid shows the last archived snapshot
 -- for that day.
--- The 11-argument version is replaced, not overloaded, so existing
--- CALLs cannot resolve to the old body.
-DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS_HIST(DATE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR);
 
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_EXCEPTION_DATE    DATE,

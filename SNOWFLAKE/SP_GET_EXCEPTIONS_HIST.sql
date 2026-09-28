@@ -2,10 +2,8 @@
 -- and returns the rows that belong to the LATEST BATCH_ID that day within
 -- the caller's rule/catalog/group scope. Column shape mirrors
 -- SP_GET_EXCEPTIONS exactly so callers can reuse the same scan/parse.
-
--- The 11-argument version is replaced, not overloaded, so existing
--- CALLs cannot resolve to the old body.
-DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS_HIST(DATE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR);
+--
+-- The old 11-argument version is dropped in 200_UPDATE_ADHOC.sql.
 
 CREATE OR REPLACE PROCEDURE SP_GET_EXCEPTIONS_HIST(
     P_EXCEPTION_DATE    DATE,

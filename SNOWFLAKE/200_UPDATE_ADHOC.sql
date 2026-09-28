@@ -55,6 +55,23 @@ DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS(
     VARCHAR, VARCHAR, VARCHAR, VARCHAR, DATE
 );
 
+-- SP_GET_EXCEPTION_HIST_DATES: 0 args -> 3.
+-- P_RULE_GROUP / P_RULE_CATALOG / P_RULE_NAME were added so the
+-- Exceptions Date dropdown only offers days on which the LHS tree
+-- selection has data. The old definition ignores the scope. It must go
+-- rather than sit beside the new one: with every new parameter
+-- defaulted, CALL SP_GET_EXCEPTION_HIST_DATES() would otherwise be
+-- ambiguous between the two.
+DROP PROCEDURE IF EXISTS SP_GET_EXCEPTION_HIST_DATES();
+
+-- SP_GET_EXCEPTIONS_HIST: 11 args -> 12.
+-- P_BATCH_ID was added so the dropdown can open one specific archived
+-- run of a day. The old definition can only return the latest batch.
+DROP PROCEDURE IF EXISTS SP_GET_EXCEPTIONS_HIST(
+    DATE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR,
+    VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR
+);
+
 -- Backfill: EXCEPTION.ASSIGN_TO_ID is never NULL.
 --
 -- "Unassigned" is a real DM_USER row rather than an absent value, so
