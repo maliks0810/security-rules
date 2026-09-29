@@ -190,6 +190,46 @@ func InheritExceptionStatuses(ruleName, ruleType string) (int, error) {
 	return n, nil
 }
 
+// DropClosedExceptions calls SP_DROP_CLOSED_EXCEPTIONS(P_RULE_NAME,
+// P_RULE_TYPE), which deletes today's EXCEPTION rows in scope whose
+// status is Accept or Override and whose CLOSE_DATE is more than one
+// business day ago. Intended to be called at the end of ExecuteRules,
+// after inheritance and the revert-to-New step. Returns the row count
+// dropped.
+func DropClosedExceptions(ruleName, ruleType string) (int, error) {
+	nilIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	var n int
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("rulesRepository: DropClosedExceptions - using SNOWFLAKE database environment")
+		rows, err := snowflake.Query("CALL SP_DROP_CLOSED_EXCEPTIONS(?, ?)", nilIfEmpty(ruleName), nilIfEmpty(ruleType))
+		if err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			_ = rows.Scan(&n)
+		}
+		return n, nil
+	}
+	log.Logger.Info("rulesRepository: DropClosedExceptions - using POSTGRES database environment")
+	if postgres.DB == nil {
+		return 0, sql.ErrConnDone
+	}
+	err := postgres.DB.QueryRow(
+		`SELECT public."SP_DROP_CLOSED_EXCEPTIONS"($1, $2)`,
+		nilIfEmpty(ruleName), nilIfEmpty(ruleType),
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // isSafeRevertProcName validates that spName is an identifier we can
 // safely interpolate into the CALL / SELECT statement below without
 // escaping. RULE_CATALOG.REVERT_TO_NEW_CRITERIA is a server-side

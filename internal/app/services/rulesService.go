@@ -234,9 +234,26 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		}
 	}
 
+	// Accept / Override rows more than one business day past their
+	// CLOSE_DATE are closed work, so they are dropped rather than
+	// written. Must run last: inheritance is what gives a fresh row its
+	// closed status, and the revert step has to get the chance to flip
+	// it back to New first - a reverted row is kept and shows up again.
+	// Best-effort like the steps above: a failure leaves those rows
+	// visible, which is the pre-existing behaviour.
+	dropped := 0
+	if n, derr := repositories.DropClosedExceptions(req.RuleName, req.RuleType); derr != nil {
+		log.Logger.Warn(fmt.Sprintf(
+			"rulesService: ExecuteRules - DropClosedExceptions failed, continuing: %v", derr,
+		))
+	} else {
+		dropped = n
+	}
+	written := len(produced) - dropped
+
 	log.Logger.Info(fmt.Sprintf(
-		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, reverted %d",
-		req.RuleName, req.RuleType, archived, len(produced), inherited, reverted,
+		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, reverted %d, dropped closed %d",
+		req.RuleName, req.RuleType, archived, len(produced), inherited, reverted, dropped,
 	))
 
 	events.Publish(events.Event{
@@ -244,11 +261,11 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		Payload: map[string]any{
 			"rule_name": req.RuleName,
 			"rule_type": req.RuleType,
-			"count":     len(produced),
+			"count":     written,
 			"time":      time.Now().UTC().Format(time.RFC3339),
 		},
 	})
-	return len(produced), nil
+	return written, nil
 }
 
 // ExecuteSecurityRules is a copy of ExecuteRules. It currently mirrors the
