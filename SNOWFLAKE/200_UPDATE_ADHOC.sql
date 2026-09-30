@@ -194,3 +194,26 @@ UPDATE "EXCEPTION" e
 -- live row looked like on the day it was archived. Going forward the
 -- correct date is carried into the archive by the normal archive ->
 -- insert -> inherit cycle, so hist self-corrects from the next run on.
+
+-- DM_USER.FLAG_EMAIL_ON_RULE_FAILURE: new column, everyone opted in.
+--
+-- 'Y' = email this user when a rule run fails. Needed here as well as in
+-- CREATE_DM_USER.sql because that file opens with DROP TABLE and so only
+-- ever builds a fresh schema - it cannot be run against a deployment
+-- that already holds users.
+--
+-- ADD COLUMN carries no DEFAULT: Snowflake will not attach a literal
+-- default to a column on an existing table, so the value is seeded by
+-- the UPDATE below. CREATE_DM_USER.sql deliberately omits the DEFAULT
+-- too, so a fresh schema and an upgraded one end up with the same
+-- column definition rather than quietly differing.
+ALTER TABLE "DM_USER"
+  ADD COLUMN IF NOT EXISTS "FLAG_EMAIL_ON_RULE_FAILURE" VARCHAR(1);
+
+-- Guarded on IS NULL rather than unconditional. On the first run that
+-- is every row, which is the requested "Y for all rows"; on any later
+-- run it matches nothing, so an operator who has since set 'N' for a
+-- user does not have that choice overwritten by a re-deploy.
+UPDATE "DM_USER"
+   SET "FLAG_EMAIL_ON_RULE_FAILURE" = 'Y'
+ WHERE "FLAG_EMAIL_ON_RULE_FAILURE" IS NULL;

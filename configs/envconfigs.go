@@ -33,6 +33,13 @@ type envConfigs struct {
 	PostgresPassword            string `mapstructure:"POSTGRES_PASSWORD"`
 	PostgresDatabase            string `mapstructure:"POSTGRES_DATABASE"`
 	EnableSwagger               bool   `mapstructure:"ENABLE_SWAGGER"`
+	// EmailUrl is the full endpoint of the Velocity notification
+	// service that SendExceptionsEmail POSTs to. Environment-specific
+	// (the dev host is not the prod host), so it is bound with no
+	// default: an env file that omits it leaves this empty and
+	// SendExceptionsEmail skips sending rather than posting to a
+	// guessed URL.
+	EmailUrl string `mapstructure:"EMAIL_URL"`
 	// LogLevel gates how noisy the Snowflake query logs are:
 	//   INFO  → every snowflake.Query call is logged with its SQL
 	//   DEBUG → only RULE_CATALOG_SOURCE calls (via
@@ -118,6 +125,10 @@ func loadEnvironmentVariables() (configs *envConfigs) {
 	viper.BindEnv("POSTGRES_USER")
 	viper.BindEnv("POSTGRES_PASSWORD")
 	viper.BindEnv("POSTGRES_DATABASE")
+
+	// Velocity notification endpoint used for rule-failure email. No
+	// default on purpose - see EmailUrl on the struct.
+	viper.BindEnv("EMAIL_URL")
 
 	// Swagger UI exposure. Defaults to true so dev/local always get docs;
 	// set ENABLE_SWAGGER=false in an env file (typically prod) to make

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"securityrules/security-rules/internal/app/events"
 	"securityrules/security-rules/internal/app/models"
 	"securityrules/security-rules/internal/app/repositories"
+	"securityrules/security-rules/internal/utils"
 	"securityrules/security-rules/internal/utils/log"
 )
 
@@ -255,6 +257,32 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 		"rulesService: ExecuteRules - rule_name=%q rule_type=%q: archived %d, inserted %d, inherited %d, reverted %d, dropped closed %d",
 		req.RuleName, req.RuleType, archived, len(produced), inherited, reverted, dropped,
 	))
+
+	// Notify the operators authorized on the rule groups this scope
+	// touched. Only for a GROUP / CATALOG / RULE run: an unscoped
+	// ("All" or empty) run spans every group, so it would mail
+	// everyone in every access list at once.
+	//
+	// Catalog IDs come from the already-resolved scope rather than
+	// being re-derived from (rule_name, rule_type), so all three scope
+	// types reach the recipient lookup identically.
+	//
+	// Best-effort, like the inherit / revert / drop steps above: a
+	// notification service that is down or misconfigured must not turn
+	// a successful rule run into a 500, so the error is logged and the
+	// run still reports its count.
+	switch strings.ToUpper(strings.TrimSpace(req.RuleType)) {
+	case "GROUP", "CATALOG", "RULE":
+		catalogIDs := make([]int, 0, len(catalogs))
+		for _, c := range catalogs {
+			catalogIDs = append(catalogIDs, c.RuleCatalogID)
+		}
+		if eerr := utils.SendExceptionsEmail(context.Background(), req.RuleName, req.RuleType, catalogIDs); eerr != nil {
+			log.Logger.Warn(fmt.Sprintf(
+				"rulesService: ExecuteRules - SendExceptionsEmail failed, continuing: %v", eerr,
+			))
+		}
+	}
 
 	events.Publish(events.Event{
 		Type: "rules.executed",
