@@ -185,7 +185,7 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 	if projectName != "" {
 		b.WriteString(`<p>Data Quality exceptions were generated for the project `)
 		b.WriteString(html.EscapeString(projectName))
-		b.WriteString(` in the HTML grid</p>`)
+		b.WriteString(`</p>`)
 	}
 	b.WriteString(`<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">`)
 	b.WriteString(`<thead><tr>`)
