@@ -81,19 +81,30 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		return fmt.Errorf("unable to load per-catalog exception counts: %w", err)
 	}
 
-	// Subject reads "DQM: <Rule Group>" where the group name comes from
-	// RULE_GROUP (the same row RULE_GROUP_AUTHORIZATION's ACCESS_LIST
-	// resolved the recipients through). Distinct + comma-joined so a
-	// scope that happened to span multiple groups still produces a
-	// single legible line — in practice a CATALOG or RULE scope always
-	// resolves to one group, and GROUP scope is one by definition.
-	// Fallback to the caller's rule_name when counts came back empty
-	// so the operator still sees what triggered the mail.
+	// Subject reads "DQM <env>: <Rule Group>" where the group name
+	// comes from RULE_GROUP (the same row RULE_GROUP_AUTHORIZATION's
+	// ACCESS_LIST resolved the recipients through). Distinct +
+	// comma-joined so a scope that happened to span multiple groups
+	// still produces a single legible line — in practice a CATALOG or
+	// RULE scope always resolves to one group, and GROUP scope is one
+	// by definition. Fallback to the caller's rule_name when counts
+	// came back empty so the operator still sees what triggered the
+	// mail.
+	//
+	// Environment prefix comes from GOLANG_ENVIRONMENT (dev / qa /
+	// sandbox / local → "DQM qa: X"). Production is the default and
+	// keeps the bare "DQM: X" so recipients don't see a stray "prod"
+	// label on the mail that matters most.
 	subjectGroup := distinctGroupNames(counts)
 	if subjectGroup == "" {
 		subjectGroup = ruleName
 	}
-	subject := "DQM: " + subjectGroup
+	prefix := "DQM"
+	env := strings.TrimSpace(string(configs.EnvConfigs.GolangEnvironment))
+	if env != "" && !strings.EqualFold(env, "production") {
+		prefix = "DQM " + env
+	}
+	subject := prefix + ": " + subjectGroup
 
 	body := emailRequest{
 		Topic:              subject,
@@ -194,7 +205,23 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 			b.WriteString(`</tr>`)
 		}
 	}
-	b.WriteString(`</tbody></table></div>`)
+	b.WriteString(`</tbody></table>`)
+
+	// Production only: add a "click to open in TIME portal" footer.
+	// The URL below is the prod host, so pointing at it from a dev /
+	// qa / sandbox mail would send the recipient to the wrong place —
+	// safer to just omit the link everywhere else. Rendered as a plain
+	// <a href> so the recipient's mail client opens it in the default
+	// browser on click.
+	if strings.EqualFold(
+		strings.TrimSpace(string(configs.EnvConfigs.GolangEnvironment)),
+		"production",
+	) {
+		b.WriteString(`<p>Please click on the following link to see the exceptions in the TIME portal: `)
+		b.WriteString(`<a href="http://time.pd.tcw.com">http://time.pd.tcw.com</a></p>`)
+	}
+
+	b.WriteString(`</div>`)
 	return b.String()
 }
 
