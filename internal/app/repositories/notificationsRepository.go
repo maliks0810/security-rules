@@ -13,6 +13,124 @@ import (
 	sqlutil "securityrules/security-rules/internal/utils/sql"
 )
 
+// CatalogExceptionCount is one row of the summary that
+// SendExceptionsEmail renders into the notification's HTML table:
+// a rule catalog, the RULE_GROUP that owns it, and how many live
+// EXCEPTION rows it currently holds.
+type CatalogExceptionCount struct {
+	GroupName      string
+	CatalogName    string
+	ExceptionCount int
+}
+
+// GetExceptionCountsByCatalog returns one row per input catalog id
+// (LEFT JOINed against EXCEPTION so a catalog with zero live rows
+// still appears at 0), enriched with its owning RULE_GROUP name.
+// Ordered by (group name, catalog name) so the notification's table
+// reads predictably across sends.
+//
+// Under the Security-Master-family groups (Security Master, Security
+// Master Benchmark, TOD SOD) the count is narrowed to STATUS_ID rows
+// whose EXCEPTION_STATUS.NAME is one of New / Hold / Challenge /
+// Override — the four statuses those groups treat as open work.
+// Accept / Suppress / Research / Complete rows are excluded there
+// because they are resolved and shouldn't inflate the "there's work"
+// figure the recipient acts on. Every other group counts all
+// statuses, matching the pre-narrowing behaviour.
+//
+// Same pattern as GetRuleFailureEmailRecipients above: the id list is
+// inlined (ints from the DB, nothing injectable) so one SQL string
+// works on both Snowflake and Postgres despite their different
+// placeholder syntaxes.
+func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount, error) {
+	if len(ruleCatalogIDs) == 0 {
+		return nil, nil
+	}
+	parts := make([]string, 0, len(ruleCatalogIDs))
+	for _, id := range ruleCatalogIDs {
+		parts = append(parts, strconv.Itoa(id))
+	}
+	idList := strings.Join(parts, ",")
+
+	var rows *sql.Rows
+	var err error
+	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
+		log.Logger.Info("notificationsRepository: GetExceptionCountsByCatalog - using SNOWFLAKE database environment")
+		rows, err = snowflake.Query(fmt.Sprintf(`
+			SELECT COALESCE(rg."NAME", '')        AS "GROUP_NAME",
+			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
+			       SUM(CASE
+			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
+			               WHEN rg."NAME" IN ('Security Master', 'Security Master Benchmark', 'TOD SOD')
+			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN ('NEW','HOLD','CHALLENGE','OVERRIDE') THEN 0
+			               ELSE 1
+			           END)                       AS "EXCEPTION_COUNT"
+			  FROM "RULE_CATALOG" rc
+			  LEFT JOIN "RULE_GROUP" rg
+			         ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+			  LEFT JOIN "RULE" r
+			         ON r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+			  LEFT JOIN "EXCEPTION" e
+			         ON e."RULE_ID" = r."RULE_ID"
+			  LEFT JOIN "EXCEPTION_STATUS" es
+			         ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
+			 WHERE rc."RULE_CATALOG_ID" IN (%s)
+			 GROUP BY rg."NAME", rc."NAME"
+			 ORDER BY rg."NAME", rc."NAME"`, idList))
+	} else {
+		log.Logger.Info("notificationsRepository: GetExceptionCountsByCatalog - using POSTGRES database environment")
+		if postgres.DB == nil {
+			return nil, sql.ErrConnDone
+		}
+		rows, err = postgres.DB.Query(fmt.Sprintf(`
+			SELECT COALESCE(rg."NAME", '')        AS "GROUP_NAME",
+			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
+			       SUM(CASE
+			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
+			               WHEN rg."NAME" IN ('Security Master', 'Security Master Benchmark', 'TOD SOD')
+			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN ('NEW','HOLD','CHALLENGE','OVERRIDE') THEN 0
+			               ELSE 1
+			           END)                       AS "EXCEPTION_COUNT"
+			  FROM public."RULE_CATALOG" rc
+			  LEFT JOIN public."RULE_GROUP" rg
+			         ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
+			  LEFT JOIN public."RULE" r
+			         ON r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+			  LEFT JOIN public."EXCEPTION" e
+			         ON e."RULE_ID" = r."RULE_ID"
+			  LEFT JOIN public."EXCEPTION_STATUS" es
+			         ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
+			 WHERE rc."RULE_CATALOG_ID" IN (%s)
+			 GROUP BY rg."NAME", rc."NAME"
+			 ORDER BY rg."NAME", rc."NAME"`, idList))
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CatalogExceptionCount
+	for rows.Next() {
+		var (
+			group   sql.NullString
+			catalog sql.NullString
+			count   sql.NullInt64
+		)
+		if err := rows.Scan(&group, &catalog, &count); err != nil {
+			return nil, err
+		}
+		out = append(out, CatalogExceptionCount{
+			GroupName:      sqlutil.NullStr(group),
+			CatalogName:    sqlutil.NullStr(catalog),
+			ExceptionCount: int(count.Int64),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GetRuleFailureEmailRecipients resolves the email addresses to notify
 // for a set of rule catalogs.
 //
@@ -41,11 +159,10 @@ func GetRuleFailureEmailRecipients(ruleCatalogIDs []int) ([]string, error) {
 	if len(ruleCatalogIDs) == 0 {
 		return nil, nil
 	}
-	// Inlined as a literal list rather than bound placeholders: these
-	// are ints parsed from the DB, so there is nothing injectable, and
-	// it keeps one SQL string that works on both engines despite their
-	// different placeholder syntax ($1 vs ?). Same reasoning as
-	// joinExceptionIDs in exceptionsRepository.go.
+	// SP_GET_RULE_GROUP_EMAIL_LIST takes the id list as a
+	// comma-separated string and does the SPLIT_TO_TABLE /
+	// unnest(string_to_array) inside; matches how the bulk-status /
+	// bulk-assign SPs already receive their id / rule-name lists.
 	parts := make([]string, 0, len(ruleCatalogIDs))
 	for _, id := range ruleCatalogIDs {
 		parts = append(parts, strconv.Itoa(id))
@@ -56,41 +173,13 @@ func GetRuleFailureEmailRecipients(ruleCatalogIDs []int) ([]string, error) {
 	var err error
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("notificationsRepository: GetRuleFailureEmailRecipients - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query(fmt.Sprintf(`
-			SELECT DISTINCT du."EMAIL"
-			  FROM "RULE_GROUP_AUTHORIZATION" rga
-			  JOIN "DM_USER" du
-			    ON ',' || REPLACE(UPPER(rga."ACCESS_LIST"), ' ', '') || ','
-			       LIKE '%%,' || UPPER(du."EMAIL") || ',%%'
-			 WHERE rga."RULE_GROUP_ID" IN (
-			           SELECT rc."RULE_GROUP_ID"
-			             FROM "RULE_CATALOG" rc
-			            WHERE rc."RULE_CATALOG_ID" IN (%s)
-			              AND rc."RULE_GROUP_ID" IS NOT NULL
-			       )
-			   AND du."EMAIL" IS NOT NULL
-			   AND du."EMAIL" <> ''
-			   AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y'`, idList))
+		rows, err = snowflake.Query(`CALL SP_GET_RULE_GROUP_EMAIL_LIST(?)`, idList)
 	} else {
 		log.Logger.Info("notificationsRepository: GetRuleFailureEmailRecipients - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(fmt.Sprintf(`
-			SELECT DISTINCT du."EMAIL"
-			  FROM public."RULE_GROUP_AUTHORIZATION" rga
-			  JOIN public."DM_USER" du
-			    ON ',' || REPLACE(UPPER(rga."ACCESS_LIST"), ' ', '') || ','
-			       LIKE '%%,' || UPPER(du."EMAIL") || ',%%'
-			 WHERE rga."RULE_GROUP_ID" IN (
-			           SELECT rc."RULE_GROUP_ID"
-			             FROM public."RULE_CATALOG" rc
-			            WHERE rc."RULE_CATALOG_ID" IN (%s)
-			              AND rc."RULE_GROUP_ID" IS NOT NULL
-			       )
-			   AND du."EMAIL" IS NOT NULL
-			   AND du."EMAIL" <> ''
-			   AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y'`, idList))
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_GROUP_EMAIL_LIST"($1)`, idList)
 	}
 	if err != nil {
 		return nil, err

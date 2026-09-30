@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 
 	"securityrules/security-rules/configs"
@@ -71,6 +72,15 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		return nil
 	}
 
+	// One row per catalog in the resolved scope, LEFT JOINed against
+	// EXCEPTION so a catalog with zero live rows still lists at 0.
+	// Ordered by (group name, catalog name) so successive sends read
+	// predictably.
+	counts, err := repositories.GetExceptionCountsByCatalog(ruleCatalogIDs)
+	if err != nil {
+		return fmt.Errorf("unable to load per-catalog exception counts: %w", err)
+	}
+
 	body := emailRequest{
 		Topic:              "DQM : Security Master ",
 		Title:              "",
@@ -79,7 +89,7 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		To:                 recipients,
 		Cc:                 nil,
 		Bcc:                nil,
-		Content:            "Testing ?",
+		Content:            buildExceptionsEmailContent(counts),
 		ContentProperties:  nil,
 		IncludeSubscribers: false,
 		Subject:            "DQM : Security Master ",
@@ -115,4 +125,55 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		ruleName, ruleType, len(recipients),
 	))
 	return nil
+}
+
+// buildExceptionsEmailContent renders the per-catalog summary as an
+// HTML fragment: one <table> with three columns — Project Name,
+// Catalog Name, Number of Exceptions. Header cells reuse the
+// Exceptions grid header palette (#003e7e navy on white text,
+// 13px / weight 450, 6px 10px padding, 1px #9ca3af borders) so the
+// email reads as an extension of the app the operator already knows.
+// Styles are inline for maximum email-client compatibility — nothing
+// out there reliably honors <style> blocks.
+//
+// Group / catalog names are html.EscapeString'd; they come from
+// operator-managed rows (RULE_GROUP.NAME, RULE_CATALOG.NAME) and
+// could carry &, <, > that would otherwise break the layout or
+// injection-vector into the recipient's mail client.
+func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) string {
+	const (
+		thStyle = `background:#003e7e;color:#ffffff;font-weight:450;` +
+			`padding:6px 10px;border:1px solid #9ca3af;text-align:left;`
+		tdStyle      = `padding:6px 10px;border:1px solid #9ca3af;`
+		tdCountStyle = `padding:6px 10px;border:1px solid #9ca3af;text-align:right;`
+	)
+	var b strings.Builder
+	b.WriteString(`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111827;">`)
+	b.WriteString(`<p>The following Data Quality Monitor rules have just run. Live exception counts per catalog:</p>`)
+	b.WriteString(`<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">`)
+	b.WriteString(`<thead><tr>`)
+	b.WriteString(`<th style="` + thStyle + `">Project Name</th>`)
+	b.WriteString(`<th style="` + thStyle + `">Catalog Name</th>`)
+	b.WriteString(`<th style="` + thStyle + `">Number of Exceptions</th>`)
+	b.WriteString(`</tr></thead>`)
+	b.WriteString(`<tbody>`)
+	if len(rows) == 0 {
+		b.WriteString(`<tr><td colspan="3" style="` + tdStyle + `">No catalogs in scope.</td></tr>`)
+	} else {
+		for _, r := range rows {
+			b.WriteString(`<tr>`)
+			b.WriteString(`<td style="` + tdStyle + `">` + html.EscapeString(r.GroupName) + `</td>`)
+			b.WriteString(`<td style="` + tdStyle + `">` + html.EscapeString(r.CatalogName) + `</td>`)
+			b.WriteString(`<td style="` + tdCountStyle + `">` + strconvItoa(r.ExceptionCount) + `</td>`)
+			b.WriteString(`</tr>`)
+		}
+	}
+	b.WriteString(`</tbody></table></div>`)
+	return b.String()
+}
+
+// strconvItoa is a local alias so this file doesn't need to add a
+// strconv import just for one Itoa — keeps the import block tight.
+func strconvItoa(n int) string {
+	return fmt.Sprintf("%d", n)
 }
