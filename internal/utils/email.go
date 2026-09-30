@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"sort"
 	"strings"
 
 	"securityrules/security-rules/configs"
@@ -179,6 +180,19 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 	// preamble is dropped and the table alone carries the "No catalogs
 	// in scope." row.
 	projectName := distinctGroupNames(rows)
+
+	// Sort by ExceptionCount DESC so the catalog with the most work
+	// bubbles to the top of the table — that's what the recipient
+	// wants to act on first. Copy the slice so we don't mutate the
+	// caller's ordering (SP already returns it group / catalog
+	// ordered). Ties keep the SP's alphabetical order via a stable
+	// sort.
+	sortedRows := make([]repositories.CatalogExceptionCount, len(rows))
+	copy(sortedRows, rows)
+	sort.SliceStable(sortedRows, func(i, j int) bool {
+		return sortedRows[i].ExceptionCount > sortedRows[j].ExceptionCount
+	})
+	rows = sortedRows
 
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111827;">`)
