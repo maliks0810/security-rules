@@ -232,7 +232,7 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 		"production",
 	) {
 		b.WriteString(`<p>Please click on the following link to see the exceptions in the TIME portal: `)
-		b.WriteString(`<a href="http://time.pd.tcw.com">http://time.pd.tcw.com</a></p>`)
+		b.WriteString(`<a href="http://time.pd.tcw.com/de/dqm">http://time.pd.tcw.com/de/dqm</a></p>`)
 	}
 
 	b.WriteString(`</div>`)
