@@ -267,21 +267,38 @@ func ExecuteRules(req models.ExecuteRulesRequest) (int, error) {
 	// being re-derived from (rule_name, rule_type), so all three scope
 	// types reach the recipient lookup identically.
 	//
-	// Best-effort, like the inherit / revert / drop steps above: a
-	// notification service that is down or misconfigured must not turn
-	// a successful rule run into a 500, so the error is logged and the
-	// run still reports its count.
+	// Best-effort, like the inherit / revert / drop steps above:
+	//
+	//   * Returned error → logged, swallowed. A notification service
+	//     that is down or misconfigured must not turn a successful
+	//     rule run into a 500.
+	//   * Panic (unexpected nil deref, etc.) → recovered so it can't
+	//     bubble out of ExecuteRules.
+	//   * Hung upstream → hard 30s timeout so a stalled Velocity
+	//     endpoint can't block the /executeRules response after the
+	//     DB work has already committed.
 	switch strings.ToUpper(strings.TrimSpace(req.RuleType)) {
 	case "GROUP", "CATALOG", "RULE":
 		catalogIDs := make([]int, 0, len(catalogs))
 		for _, c := range catalogs {
 			catalogIDs = append(catalogIDs, c.RuleCatalogID)
 		}
-		if eerr := utils.SendExceptionsEmail(context.Background(), req.RuleName, req.RuleType, catalogIDs); eerr != nil {
-			log.Logger.Warn(fmt.Sprintf(
-				"rulesService: ExecuteRules - SendExceptionsEmail failed, continuing: %v", eerr,
-			))
-		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Logger.Warn(fmt.Sprintf(
+						"rulesService: ExecuteRules - SendExceptionsEmail panicked, continuing: %v", r,
+					))
+				}
+			}()
+			emailCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if eerr := utils.SendExceptionsEmail(emailCtx, req.RuleName, req.RuleType, catalogIDs); eerr != nil {
+				log.Logger.Warn(fmt.Sprintf(
+					"rulesService: ExecuteRules - SendExceptionsEmail failed, continuing: %v", eerr,
+				))
+			}
+		}()
 	}
 
 	events.Publish(events.Event{
