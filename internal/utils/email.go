@@ -81,18 +81,32 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		return fmt.Errorf("unable to load per-catalog exception counts: %w", err)
 	}
 
+	// Subject reads "DQM: <Rule Group>" where the group name comes from
+	// RULE_GROUP (the same row RULE_GROUP_AUTHORIZATION's ACCESS_LIST
+	// resolved the recipients through). Distinct + comma-joined so a
+	// scope that happened to span multiple groups still produces a
+	// single legible line — in practice a CATALOG or RULE scope always
+	// resolves to one group, and GROUP scope is one by definition.
+	// Fallback to the caller's rule_name when counts came back empty
+	// so the operator still sees what triggered the mail.
+	subjectGroup := distinctGroupNames(counts)
+	if subjectGroup == "" {
+		subjectGroup = ruleName
+	}
+	subject := "DQM: " + subjectGroup
+
 	body := emailRequest{
-		Topic:              "DQM : Security Master ",
+		Topic:              subject,
 		Title:              "",
 		Name:               "",
-		From:               "airflow3-prod3@tcw.com",
+		From:               "donnotreply@tcw.com",
 		To:                 recipients,
 		Cc:                 nil,
 		Bcc:                nil,
 		Content:            buildExceptionsEmailContent(counts),
 		ContentProperties:  nil,
 		IncludeSubscribers: false,
-		Subject:            "DQM : Security Master ",
+		Subject:            subject,
 		Attachments:        nil,
 	}
 
@@ -147,9 +161,21 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 		tdStyle      = `padding:6px 10px;border:1px solid #9ca3af;`
 		tdCountStyle = `padding:6px 10px;border:1px solid #9ca3af;text-align:right;`
 	)
+	// Preamble names the RULE_GROUP the summary is for — same value the
+	// table's "Project Name" column shows. Distinct + comma-joined so a
+	// scope spanning multiple groups (rare) still reads cleanly. When
+	// the summary came back empty there is no group to name, so the
+	// preamble is dropped and the table alone carries the "No catalogs
+	// in scope." row.
+	projectName := distinctGroupNames(rows)
+
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111827;">`)
-	b.WriteString(`<p>The following Data Quality Monitor rules have just run. Live exception counts per catalog:</p>`)
+	if projectName != "" {
+		b.WriteString(`<p>Data Quality exceptions were generated for the project `)
+		b.WriteString(html.EscapeString(projectName))
+		b.WriteString(` in the HTML grid</p>`)
+	}
 	b.WriteString(`<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">`)
 	b.WriteString(`<thead><tr>`)
 	b.WriteString(`<th style="` + thStyle + `">Project Name</th>`)
@@ -176,4 +202,27 @@ func buildExceptionsEmailContent(rows []repositories.CatalogExceptionCount) stri
 // strconv import just for one Itoa — keeps the import block tight.
 func strconvItoa(n int) string {
 	return fmt.Sprintf("%d", n)
+}
+
+// distinctGroupNames pulls the unique RULE_GROUP names out of the
+// per-catalog summary (in first-seen order — the query already sorts
+// by group name, so that's alphabetical) and joins them with ", ".
+// Blank names are dropped. Empty input returns "". Used by the email
+// subject / topic so the recipient sees which project the run was
+// for.
+func distinctGroupNames(rows []repositories.CatalogExceptionCount) string {
+	seen := make(map[string]struct{}, len(rows))
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		g := strings.TrimSpace(r.GroupName)
+		if g == "" {
+			continue
+		}
+		if _, dup := seen[g]; dup {
+			continue
+		}
+		seen[g] = struct{}{}
+		names = append(names, g)
+	}
+	return strings.Join(names, ", ")
 }
