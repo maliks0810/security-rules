@@ -1,4 +1,5 @@
 DROP FUNCTION IF EXISTS public."SP_GET_RULE_GROUP_EMAIL_LIST"(text);
+DROP FUNCTION IF EXISTS public."SP_GET_RULE_GROUP_EMAIL_LIST"(text, text);
 
 -- Resolves the distinct DM_USER emails to notify for a set of rule
 -- catalogs. Chain: p_rule_catalog_ids -> RULE_CATALOG.RULE_GROUP_ID
@@ -10,6 +11,14 @@ DROP FUNCTION IF EXISTS public."SP_GET_RULE_GROUP_EMAIL_LIST"(text);
 -- rest of the bulk SPs). Non-numeric / empty tokens are dropped so a
 -- trailing comma or a stray malformed value does not fail the batch.
 --
+-- p_role_filter, when non-null and non-empty, further restricts the
+-- recipients to DM_USER rows whose ROLE equals the filter value
+-- (case-insensitive). The caller sets this to 'IT_SUPPORT' outside
+-- production so dev / qa / sandbox runs only mail the engineers who
+-- maintain the pipeline, instead of every operator subscribed to the
+-- group. Production passes NULL / empty and the role filter is
+-- skipped.
+--
 -- ACCESS_LIST is a free-form comma-separated email list: fence both
 -- sides with ',' and match ',<email>,' to stop 'joe@x.com' matching
 -- inside 'joesmith@x.com'. Same pattern as
@@ -18,7 +27,8 @@ DROP FUNCTION IF EXISTS public."SP_GET_RULE_GROUP_EMAIL_LIST"(text);
 -- Empty result is a normal outcome (no authorization row, nobody
 -- opted in) and not an error.
 CREATE OR REPLACE FUNCTION public."SP_GET_RULE_GROUP_EMAIL_LIST"(
-    p_rule_catalog_ids text
+    p_rule_catalog_ids text,
+    p_role_filter      text DEFAULT NULL
 )
 RETURNS TABLE("EMAIL" varchar)
 LANGUAGE sql
@@ -42,5 +52,8 @@ AS $$
      WHERE rga."RULE_GROUP_ID" IN (SELECT "RULE_GROUP_ID" FROM groups)
        AND du."EMAIL" IS NOT NULL
        AND du."EMAIL" <> ''
-       AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y';
+       AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y'
+       AND (p_role_filter IS NULL
+            OR p_role_filter = ''
+            OR UPPER(COALESCE(du."ROLE", '')) = UPPER(p_role_filter));
 $$;

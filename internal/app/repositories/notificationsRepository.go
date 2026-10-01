@@ -155,7 +155,7 @@ func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount,
 // the same group, or a person listed in two groups' access lists, must
 // not produce a repeated recipient. An empty result is a normal outcome
 // (no authorization row, nobody opted in) and not an error.
-func GetRuleFailureEmailRecipients(ruleCatalogIDs []int) ([]string, error) {
+func GetRuleFailureEmailRecipients(ruleCatalogIDs []int, roleFilter string) ([]string, error) {
 	if len(ruleCatalogIDs) == 0 {
 		return nil, nil
 	}
@@ -163,23 +163,36 @@ func GetRuleFailureEmailRecipients(ruleCatalogIDs []int) ([]string, error) {
 	// comma-separated string and does the SPLIT_TO_TABLE /
 	// unnest(string_to_array) inside; matches how the bulk-status /
 	// bulk-assign SPs already receive their id / rule-name lists.
+	// roleFilter, when non-empty, additionally restricts the SP's
+	// recipient set to DM_USER rows whose ROLE equals it
+	// (case-insensitive). Empty means no role restriction — the
+	// production branch of the caller.
 	parts := make([]string, 0, len(ruleCatalogIDs))
 	for _, id := range ruleCatalogIDs {
 		parts = append(parts, strconv.Itoa(id))
 	}
 	idList := strings.Join(parts, ",")
+	// nilIfEmpty keeps the SP's NULL / '' branch — matches the pattern
+	// ArchiveExceptions / InheritExceptionStatuses use for their
+	// optional scope params.
+	roleArg := func() any {
+		if strings.TrimSpace(roleFilter) == "" {
+			return nil
+		}
+		return roleFilter
+	}()
 
 	var rows *sql.Rows
 	var err error
 	if strings.EqualFold(configs.EnvConfigs.Database, "SNOWFLAKE") {
 		log.Logger.Info("notificationsRepository: GetRuleFailureEmailRecipients - using SNOWFLAKE database environment")
-		rows, err = snowflake.Query(`CALL SP_GET_RULE_GROUP_EMAIL_LIST(?)`, idList)
+		rows, err = snowflake.Query(`CALL SP_GET_RULE_GROUP_EMAIL_LIST(?, ?)`, idList, roleArg)
 	} else {
 		log.Logger.Info("notificationsRepository: GetRuleFailureEmailRecipients - using POSTGRES database environment")
 		if postgres.DB == nil {
 			return nil, sql.ErrConnDone
 		}
-		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_GROUP_EMAIL_LIST"($1)`, idList)
+		rows, err = postgres.DB.Query(`SELECT * FROM public."SP_GET_RULE_GROUP_EMAIL_LIST"($1, $2)`, idList, roleArg)
 	}
 	if err != nil {
 		return nil, err

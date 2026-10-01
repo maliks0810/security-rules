@@ -8,6 +8,14 @@
 -- Non-numeric / empty tokens are dropped so a trailing comma or a
 -- stray malformed value does not fail the batch.
 --
+-- P_ROLE_FILTER, when non-null and non-empty, further restricts the
+-- recipients to DM_USER rows whose ROLE equals the filter value
+-- (case-insensitive). The caller sets this to 'IT_SUPPORT' outside
+-- production so dev / qa / sandbox runs only mail the engineers who
+-- maintain the pipeline, instead of every operator subscribed to the
+-- group. Production passes NULL / empty and the role filter is
+-- skipped.
+--
 -- ACCESS_LIST is a free-form comma-separated email list: fence both
 -- sides with ',' and match ',<email>,' so 'joe@x.com' does not match
 -- inside 'joesmith@x.com'. Same pattern as
@@ -17,7 +25,8 @@
 -- opted in) and not an error.
 
 CREATE OR REPLACE PROCEDURE SP_GET_RULE_GROUP_EMAIL_LIST(
-    P_RULE_CATALOG_IDS VARCHAR
+    P_RULE_CATALOG_IDS VARCHAR,
+    P_ROLE_FILTER      VARCHAR DEFAULT NULL
 )
 RETURNS TABLE("EMAIL" VARCHAR)
 LANGUAGE SQL
@@ -47,6 +56,9 @@ BEGIN
            AND du."EMAIL" IS NOT NULL
            AND du."EMAIL" <> ''
            AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y'
+           AND (:P_ROLE_FILTER IS NULL
+                OR :P_ROLE_FILTER = ''
+                OR UPPER(COALESCE(du."ROLE", '')) = UPPER(:P_ROLE_FILTER))
     );
     RETURN TABLE(res);
 END;

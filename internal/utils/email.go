@@ -61,7 +61,18 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		return nil
 	}
 
-	recipients, err := repositories.GetRuleFailureEmailRecipients(ruleCatalogIDs)
+	// Outside production, only mail users whose ROLE is 'IT_SUPPORT' —
+	// the engineers who maintain the pipeline — rather than every
+	// operator on the group's access list. Production keeps the broad
+	// business audience (empty filter = no role restriction).
+	roleFilter := ""
+	if !strings.EqualFold(
+		strings.TrimSpace(string(configs.EnvConfigs.GolangEnvironment)),
+		"production",
+	) {
+		roleFilter = "IT_SUPPORT"
+	}
+	recipients, err := repositories.GetRuleFailureEmailRecipients(ruleCatalogIDs, roleFilter)
 	if err != nil {
 		return fmt.Errorf("unable to resolve email recipients: %w", err)
 	}

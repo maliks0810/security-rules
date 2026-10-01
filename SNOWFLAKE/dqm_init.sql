@@ -2086,9 +2086,13 @@ $$;
 -- -> RULE_GROUP_AUTHORIZATION.ACCESS_LIST -> DM_USER rows whose EMAIL
 -- appears in that list AND whose FLAG_EMAIL_ON_RULE_FAILURE = 'Y'.
 -- P_RULE_CATALOG_IDS is a comma-separated list of ids; non-numeric /
--- empty tokens are dropped.
+-- empty tokens are dropped. P_ROLE_FILTER, when non-null and
+-- non-empty, further restricts to DM_USER rows whose ROLE equals the
+-- filter value (case-insensitive) — the caller passes 'IT_SUPPORT'
+-- outside production.
 CREATE OR REPLACE PROCEDURE SP_GET_RULE_GROUP_EMAIL_LIST(
-    P_RULE_CATALOG_IDS VARCHAR
+    P_RULE_CATALOG_IDS VARCHAR,
+    P_ROLE_FILTER      VARCHAR DEFAULT NULL
 )
 RETURNS TABLE("EMAIL" VARCHAR)
 LANGUAGE SQL
@@ -2118,6 +2122,9 @@ BEGIN
            AND du."EMAIL" IS NOT NULL
            AND du."EMAIL" <> ''
            AND UPPER(COALESCE(du."FLAG_EMAIL_ON_RULE_FAILURE", 'N')) = 'Y'
+           AND (:P_ROLE_FILTER IS NULL
+                OR :P_ROLE_FILTER = ''
+                OR UPPER(COALESCE(du."ROLE", '')) = UPPER(:P_ROLE_FILTER))
     );
     RETURN TABLE(res);
 END;
