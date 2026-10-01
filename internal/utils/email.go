@@ -93,6 +93,23 @@ func SendExceptionsEmail(ctx context.Context, ruleName string, ruleType string, 
 		return fmt.Errorf("unable to load per-catalog exception counts: %w", err)
 	}
 
+	// Nothing to notify about if every catalog in scope came back at
+	// zero (or no catalogs at all). An "everything's clean" mail reads
+	// as noise after a few sends and trains recipients to ignore the
+	// stream, so skip delivery entirely in that case. Catches both
+	// the empty-rows path and the all-zeros path in one check.
+	totalExceptions := 0
+	for _, r := range counts {
+		totalExceptions += r.ExceptionCount
+	}
+	if totalExceptions == 0 {
+		log.Logger.Info(fmt.Sprintf(
+			"utils: SendExceptionsEmail - rule_name=%q rule_type=%q: zero exceptions across every catalog, skipping notification",
+			ruleName, ruleType,
+		))
+		return nil
+	}
+
 	// Subject reads "DQM <env>: <Rule Group>" where the group name
 	// comes from RULE_GROUP (the same row RULE_GROUP_AUTHORIZATION's
 	// ACCESS_LIST resolved the recipients through). Distinct +
