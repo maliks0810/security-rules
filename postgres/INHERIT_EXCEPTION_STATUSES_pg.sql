@@ -37,7 +37,7 @@ AS $$
     WITH last_hist AS (
         SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
                "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE",
-               "ASSIGN_TO_ID", "OPEN_DATE"
+               "ASSIGN_TO_ID", "OPEN_DATE", "SUPPRESS_DATE"
           FROM public."EXCEPTION_HIST"
          WHERE "STATUS_ID" IS NOT NULL
          ORDER BY "RULE_ID", "ASSET_ID",
@@ -77,6 +77,19 @@ AS $$
                -- stamped, so a genuinely first-seen row still gets
                -- today.
                "OPEN_DATE"     = COALESCE(h."OPEN_DATE", e."OPEN_DATE"),
+               -- SUPPRESS_DATE carries over with the status that depends
+               -- on it. A 'Suppress' row holds the date the operator
+               -- picked and a 'Hold' row holds T+2 business days, both
+               -- set when the status was applied and neither recomputed
+               -- afterwards - so without this the status came back from
+               -- the archive while the date it is measured against came
+               -- back NULL, leaving a held row stuck forever (release is
+               -- decided solely by SUPPRESS_DATE in
+               -- SP_EXPIRE_SUPPRESS_DATES, which requires it NOT NULL).
+               --
+               -- Carried, never recomputed: re-deriving T+2 from each
+               -- run date would push the release out again on every run.
+               "SUPPRESS_DATE" = COALESCE(h."SUPPRESS_DATE", e."SUPPRESS_DATE"),
                -- CLOSE_DATE carries over from the last EXCEPTION_HIST
                -- row for the same (RULE_ID, ASSET_ID) so the day the
                -- row was originally closed survives the archive →
@@ -134,7 +147,9 @@ AS $$
                           WHERE "USER" = 'Unassigned' LIMIT 1), -1)
                     AND e."ASSIGN_TO_ID" IS DISTINCT FROM h."ASSIGN_TO_ID")
                 OR (h."OPEN_DATE" IS NOT NULL
-                    AND e."OPEN_DATE" IS DISTINCT FROM h."OPEN_DATE"))
+                    AND e."OPEN_DATE" IS DISTINCT FROM h."OPEN_DATE")
+                OR (h."SUPPRESS_DATE" IS NOT NULL
+                    AND e."SUPPRESS_DATE" IS DISTINCT FROM h."SUPPRESS_DATE"))
         RETURNING 1
     )
     SELECT COALESCE(COUNT(*), 0)::int FROM updated;

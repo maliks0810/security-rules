@@ -217,3 +217,59 @@ ALTER TABLE "DM_USER"
 UPDATE "DM_USER"
    SET "FLAG_EMAIL_ON_RULE_FAILURE" = 'Y'
  WHERE "FLAG_EMAIL_ON_RULE_FAILURE" IS NULL;
+
+-- Backfill: restore SUPPRESS_DATE on rows whose status needs one.
+--
+-- SP_INHERIT_EXCEPTION_STATUSES carried STATUS_ID, COMMENTS, OPEN_DATE,
+-- CLOSE_DATE and ASSIGN_TO_ID forward across the archive -> insert ->
+-- inherit cycle, but not SUPPRESS_DATE. So every /executeRules run
+-- restored a row's 'Hold' or 'Suppress' status while leaving NULL in the
+-- one column that status is measured against.
+--
+-- For 'Hold' that was not merely cosmetic. Release is decided solely by
+-- SUPPRESS_DATE in SP_EXPIRE_SUPPRESS_DATES, whose predicate requires
+-- SUPPRESS_DATE IS NOT NULL, so a nulled row could never expire - it sat
+-- in Hold indefinitely. (The proc also used to have a second pass that
+-- counted 2 business days forward from OPEN_DATE, which masked this;
+-- that pass was removed when OPEN_DATE became write-once, since its
+-- premise no longer held.)
+--
+-- The date IS recoverable: the archive kept it. This takes the most
+-- recent EXCEPTION_HIST row for the (RULE_ID, ASSET_ID) that actually
+-- carries a SUPPRESS_DATE - not simply the latest row, which may be one
+-- of the nulled generations.
+--
+-- Scoped to rows that are currently NULL and hold a status that needs a
+-- date, so a deliberately dateless row of any other status is left
+-- alone. Idempotent: after one run those rows are no longer NULL, so a
+-- re-run matches nothing.
+--
+-- A recovered date already in the past is the correct outcome, not a
+-- problem: that hold should have expired days ago, and the next
+-- SP_EXPIRE_SUPPRESS_DATES sweep will release it.
+UPDATE "EXCEPTION" e
+   SET "SUPPRESS_DATE" = h.last_suppress,
+       "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
+       "MODIFIED_BY"   = 'system'
+  FROM (
+      SELECT "RULE_ID", "ASSET_ID", "SUPPRESS_DATE" AS last_suppress
+        FROM (
+            SELECT "RULE_ID", "ASSET_ID", "SUPPRESS_DATE",
+                   ROW_NUMBER() OVER (
+                       PARTITION BY "RULE_ID", "ASSET_ID"
+                       ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
+                                "BATCH_ID"       DESC NULLS LAST
+                   ) AS rn
+              FROM "EXCEPTION_HIST"
+             WHERE "SUPPRESS_DATE" IS NOT NULL
+        )
+       WHERE rn = 1
+  ) h
+ WHERE e."RULE_ID"       = h."RULE_ID"
+   AND e."ASSET_ID"      = h."ASSET_ID"
+   AND e."SUPPRESS_DATE" IS NULL
+   AND e."STATUS_ID" IN (
+           SELECT "EXCEPTION_STATUS_ID"
+             FROM "EXCEPTION_STATUS"
+            WHERE "NAME" IN ('Hold', 'Suppress')
+       );

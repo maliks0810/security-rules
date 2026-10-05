@@ -61,6 +61,24 @@ BEGIN
            -- whatever the insert stamped, so a genuinely first-seen row
            -- still gets today.
            "OPEN_DATE"     = COALESCE(h."OPEN_DATE", e."OPEN_DATE"),
+           -- SUPPRESS_DATE carries over with the status that depends on
+           -- it. A 'Suppress' row holds the date the operator picked and
+           -- a 'Hold' row holds T+2 business days, both set when the
+           -- status was applied and neither recomputed afterwards - so
+           -- without this the status came back from the archive while
+           -- the date it is measured against came back NULL.
+           --
+           -- That left a held row permanently stuck: release is decided
+           -- solely by SUPPRESS_DATE in SP_EXPIRE_SUPPRESS_DATES, whose
+           -- predicate requires SUPPRESS_DATE IS NOT NULL, so a row
+           -- nulled here could never expire.
+           --
+           -- Carried, never recomputed. Re-deriving T+2 from each run
+           -- date would push the release out again on every run and a
+           -- hold on a daily-run catalog would never end; inheriting the
+           -- original means a Friday hold still releases on Wednesday
+           -- however many runs happen in between.
+           "SUPPRESS_DATE" = COALESCE(h."SUPPRESS_DATE", e."SUPPRESS_DATE"),
            -- CLOSE_DATE carries over from the last EXCEPTION_HIST row
            -- for the same (RULE_ID, ASSET_ID) so the day the row was
            -- originally closed survives the archive → insert → inherit
@@ -80,9 +98,9 @@ BEGIN
            "MODIFIED_DATE" = CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ,
            "MODIFIED_BY"   = 'system'
       FROM (
-          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE"
+          SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE", "SUPPRESS_DATE"
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE",
+                SELECT "RULE_ID", "ASSET_ID", "STATUS_ID", "COMMENTS", "CLOSE_DATE", "ASSIGN_TO_ID", "OPEN_DATE", "SUPPRESS_DATE",
                        ROW_NUMBER() OVER (
                            PARTITION BY "RULE_ID", "ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
@@ -105,7 +123,9 @@ BEGIN
                 AND h."ASSIGN_TO_ID" <> COALESCE(:unassigned_id, -1)
                 AND NOT EQUAL_NULL(e."ASSIGN_TO_ID", h."ASSIGN_TO_ID"))
             OR (h."OPEN_DATE" IS NOT NULL
-                AND NOT EQUAL_NULL(e."OPEN_DATE", h."OPEN_DATE")))
+                AND NOT EQUAL_NULL(e."OPEN_DATE", h."OPEN_DATE"))
+            OR (h."SUPPRESS_DATE" IS NOT NULL
+                AND NOT EQUAL_NULL(e."SUPPRESS_DATE", h."SUPPRESS_DATE")))
        AND e."EXCEPTION_ID" IN (
            SELECT e2."EXCEPTION_ID"
              FROM "EXCEPTION" e2
