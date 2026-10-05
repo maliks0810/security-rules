@@ -30,7 +30,13 @@ BEGIN
         "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
         "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
         "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-        "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+        -- CLOSE_DATE was missing from this list. EXCEPTION_HIST.CLOSE_DATE
+        -- exists, so the column silently archived as NULL on every run,
+        -- and SP_INHERIT_EXCEPTION_STATUSES then had nothing to carry
+        -- back - its COALESCE(h."CLOSE_DATE", e."CLOSE_DATE") resolved
+        -- NULL over the freshly inserted NULL. A closed row therefore
+        -- lost its close date on every /executeRules run.
+        "SUPPRESS_DATE", "OPEN_DATE", "CLOSE_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
         "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
     )
     SELECT
@@ -43,7 +49,7 @@ BEGIN
         ) + 1 AS "BATCH_ID",
         e."ID_BB_GLOBAL", e."STATE_ID", e."STATUS_ID", e."COMMENTS",
         e."EXCEPTION_TIME", e."ISSUE_DESCRIPTION", e."RESULT_DATA",
-        e."SUPPRESS_DATE", e."OPEN_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
+        e."SUPPRESS_DATE", e."OPEN_DATE", e."CLOSE_DATE", e."ASSIGN_TO_ID", e."RESULT_TYPE_ID",
         e."CREATED_DATE", e."CREATED_BY", e."MODIFIED_DATE", e."MODIFIED_BY"
     FROM "EXCEPTION" e
     WHERE e."EXCEPTION_DATE" < :exc_today;

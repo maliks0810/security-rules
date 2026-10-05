@@ -67,14 +67,17 @@ BEGIN
             "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", "BATCH_ID",
             "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
             "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-            "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+            -- CLOSE_DATE was missing here, so it archived as NULL on
+            -- every run and SP_INHERIT_EXCEPTION_STATUSES had nothing to
+            -- carry back - a closed row lost its close date each run.
+            "SUPPRESS_DATE", "OPEN_DATE", "CLOSE_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
             "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
         )
         SELECT
             "EXCEPTION_ID", "RULE_ID", "ASSET_ID", "EXCEPTION_DATE", next_batch,
             "ID_BB_GLOBAL", "STATE_ID", "STATUS_ID", "COMMENTS",
             "EXCEPTION_TIME", "ISSUE_DESCRIPTION", "RESULT_DATA",
-            "SUPPRESS_DATE", "OPEN_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
+            "SUPPRESS_DATE", "OPEN_DATE", "CLOSE_DATE", "ASSIGN_TO_ID", "RESULT_TYPE_ID",
             "CREATED_DATE", "CREATED_BY", "MODIFIED_DATE", "MODIFIED_BY"
         FROM moved
         RETURNING 1
