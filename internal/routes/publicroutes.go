@@ -41,14 +41,24 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getRulesForGroup", handlers.GetRulesForGroup)
 	route.Get("/refreshRulesByGroup", handlers.RefreshRulesByGroup)
 	route.Get("/getExceptionCountsByGroup", handlers.GetExceptionCountsByGroup)
-	// POST only. This endpoint mutates state (archive-then-insert), and
-	// load balancers / ingresses retry idempotent GETs on backend
-	// delays, which caused doubled EXCEPTION inserts in QA when the
-	// first slow request triggered an automatic retry mid-run. The GET
-	// variant existed only so already-deployed clients kept working
-	// during the frontend rollout; that rollout is done - the frontend
-	// sends POST - so the retry-prone entry point is gone.
+	// Accept both POST and GET. POST is the preferred entry point —
+	// this endpoint mutates state (archive-then-insert), and load
+	// balancers / ingresses retry idempotent GETs on backend delays,
+	// which caused doubled EXCEPTION inserts in QA when the first slow
+	// request triggered an automatic retry mid-run.
+	//
+	// GET stays registered for out-of-repo callers. The Airflow batch
+	// may still invoke it, and nothing in this repo can prove otherwise
+	// — the frontend sends POST, but a scheduler we do not own is not
+	// observable from here. Unregistering it was briefly tried and
+	// reverted: breaking a nightly batch is a worse outcome than the
+	// retry hazard, which only bites on a slow run behind a retrying
+	// proxy.
+	//
+	// Retire the GET once the Airflow DAG is confirmed to POST, not
+	// before.
 	route.Post("/executeRules", handlers.ExecuteRules)
+	route.Get("/executeRules", handlers.ExecuteRules)
 	route.Get("/executeSecurityRules", handlers.ExecuteSecurityRules)
 	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
 	route.Get("/events", handlers.StreamEvents)
