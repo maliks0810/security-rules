@@ -41,27 +41,24 @@ func PublicRoutes(app *fiber.App) {
 	route.Get("/getRulesForGroup", handlers.GetRulesForGroup)
 	route.Get("/refreshRulesByGroup", handlers.RefreshRulesByGroup)
 	route.Get("/getExceptionCountsByGroup", handlers.GetExceptionCountsByGroup)
-	// Accept both POST and GET. POST is the preferred entry point —
-	// this endpoint mutates state (archive-then-insert), and load
-	// balancers / ingresses retry idempotent GETs on backend delays,
-	// which caused doubled EXCEPTION inserts in QA when the first slow
-	// request triggered an automatic retry mid-run. GET stays registered
-	// so already-deployed clients that still fire a GET keep working
-	// during the frontend rollout; new clients should POST.
+	// POST only. This endpoint mutates state (archive-then-insert), and
+	// load balancers / ingresses retry idempotent GETs on backend
+	// delays, which caused doubled EXCEPTION inserts in QA when the
+	// first slow request triggered an automatic retry mid-run. The GET
+	// variant existed only so already-deployed clients kept working
+	// during the frontend rollout; that rollout is done - the frontend
+	// sends POST - so the retry-prone entry point is gone.
 	route.Post("/executeRules", handlers.ExecuteRules)
-	route.Get("/executeRules", handlers.ExecuteRules)
 	route.Get("/executeSecurityRules", handlers.ExecuteSecurityRules)
 	route.Get("/updateAssignTo", handlers.UpdateAssignTo)
 	route.Get("/events", handlers.StreamEvents)
 
-	// TEMPORARY: /junk truncates EXCEPTION and EXCEPTION_HIST on
-	// Snowflake so we can wipe test data between runs. Remove once
-	// the QA workflow no longer needs it.
-	route.Post("/junk", handlers.Junk)
-
-	// TEMPORARY: /executeSN runs any SQL the caller sends against the
-	// live Snowflake connection (DDL, CALL, SELECT, …) and returns
-	// row output. Snowflake only — Postgres path 500s so local dev
-	// can't be nuked by accident. Remove once no longer needed.
-	route.Post("/executeSN", handlers.ExecuteSN)
+	// /junk (TRUNCATE EXCEPTION + EXCEPTION_HIST) and /executeSN (run
+	// arbitrary caller-supplied SQL on the live Snowflake connection)
+	// used to be registered here. Both were unauthenticated, like every
+	// route in this group, which made /executeSN a remote shell on the
+	// warehouse for anyone who could reach the service. Removed rather
+	// than guarded: a QA convenience is not worth that exposure, and the
+	// same work can be done through a Snowflake worksheet by someone
+	// holding their own credentials.
 }

@@ -1,6 +1,6 @@
 basePath: /de/securities/rules
 definitions:
-  handlers.clearUserPreferencesBody:
+  internal_app_handlers.clearUserPreferencesBody:
     properties:
       rule_catalog:
         type: string
@@ -9,16 +9,7 @@ definitions:
       user:
         type: string
     type: object
-  handlers.executeSNBody:
-    properties:
-      sn_sql:
-        description: |-
-          Raw SQL to run against Snowflake. Anything the driver accepts:
-          DDL (CREATE / DROP / ALTER), DML, CALL <procedure>, SELECT.
-        example: CALL SP_ARCHIVE_STALE_DATES()
-        type: string
-    type: object
-  handlers.updateBulkAssignBody:
+  internal_app_handlers.updateBulkAssignBody:
     properties:
       assign_to:
         type: string
@@ -33,7 +24,7 @@ definitions:
           type: string
         type: array
     type: object
-  handlers.updateBulkStatusBody:
+  internal_app_handlers.updateBulkStatusBody:
     properties:
       comments:
         type: string
@@ -46,28 +37,28 @@ definitions:
       suppress_date:
         type: string
     type: object
-  handlers.updateExceptionAssignToBody:
+  internal_app_handlers.updateExceptionAssignToBody:
     properties:
       assign_to:
         type: string
       exception_id:
         type: integer
     type: object
-  handlers.updateExceptionCommentsBody:
+  internal_app_handlers.updateExceptionCommentsBody:
     properties:
       comments:
         type: string
       exception_id:
         type: integer
     type: object
-  handlers.updateExceptionSuppressDateBody:
+  internal_app_handlers.updateExceptionSuppressDateBody:
     properties:
       exception_id:
         type: integer
       suppress_date:
         type: string
     type: object
-  handlers.updateUserPreferencesBody:
+  internal_app_handlers.updateUserPreferencesBody:
     properties:
       column_order:
         type: string
@@ -78,7 +69,7 @@ definitions:
       user:
         type: string
     type: object
-  models.Asset:
+  securityrules_security-rules_internal_app_models.Asset:
     properties:
       all_complete:
         type: boolean
@@ -107,7 +98,7 @@ definitions:
       type:
         type: string
     type: object
-  models.DMUser:
+  securityrules_security-rules_internal_app_models.DMUser:
     properties:
       email:
         type: string
@@ -116,7 +107,7 @@ definitions:
       user:
         type: string
     type: object
-  models.Exception:
+  securityrules_security-rules_internal_app_models.Exception:
     properties:
       asset_id:
         type: string
@@ -173,7 +164,7 @@ definitions:
       suppress_date:
         type: string
     type: object
-  models.ExceptionRun:
+  securityrules_security-rules_internal_app_models.ExceptionRun:
     properties:
       batch_id:
         type: integer
@@ -182,7 +173,7 @@ definitions:
       exception_time:
         type: string
     type: object
-  models.ExecuteRulesRequest:
+  securityrules_security-rules_internal_app_models.ExecuteRulesRequest:
     properties:
       is_refresh:
         description: |-
@@ -216,7 +207,7 @@ definitions:
         example: GROUP
         type: string
     type: object
-  models.ExecuteRulesResponse:
+  securityrules_security-rules_internal_app_models.ExecuteRulesResponse:
     properties:
       exception_count:
         description: |-
@@ -243,14 +234,14 @@ definitions:
         example: 200
         type: integer
     type: object
-  models.GroupCount:
+  securityrules_security-rules_internal_app_models.GroupCount:
     properties:
       count:
         type: integer
       rule_group:
         type: string
     type: object
-  models.Rule:
+  securityrules_security-rules_internal_app_models.Rule:
     properties:
       environment:
         type: string
@@ -270,7 +261,7 @@ definitions:
       rule_command:
         type: string
     type: object
-  models.RuleForGroup:
+  securityrules_security-rules_internal_app_models.RuleForGroup:
     properties:
       catalog_name:
         type: string
@@ -279,7 +270,7 @@ definitions:
       rule_name:
         type: string
     type: object
-  models.RuleGroup:
+  securityrules_security-rules_internal_app_models.RuleGroup:
     properties:
       flag_assign_to_visible:
         type: boolean
@@ -292,7 +283,7 @@ definitions:
       name:
         type: string
     type: object
-  models.RuleName:
+  securityrules_security-rules_internal_app_models.RuleName:
     properties:
       rule_description:
         type: string
@@ -328,7 +319,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.clearUserPreferencesBody'
+          $ref: '#/definitions/internal_app_handlers.clearUserPreferencesBody'
       produces:
       - application/json
       responses:
@@ -396,70 +387,29 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/models.ExecuteRulesRequest'
+          $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesRequest'
       produces:
       - application/json
       responses:
         "200":
           description: rules executed; exception_count = rows inserted
           schema:
-            $ref: '#/definitions/models.ExecuteRulesResponse'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse'
         "400":
           description: invalid request body
           schema:
-            $ref: '#/definitions/models.ExecuteRulesResponse'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse'
         "404":
           description: requested rule / catalog / group not found
           schema:
-            $ref: '#/definitions/models.ExecuteRulesResponse'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse'
         "500":
           description: failed to execute rules
           schema:
-            $ref: '#/definitions/models.ExecuteRulesResponse'
+            $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse'
       summary: Execute rules (archive-then-insert)
       tags:
       - rules
-  /v1/api/executeSN:
-    post:
-      consumes:
-      - application/json
-      description: QA / debugging helper. Executes the caller-supplied `sn_sql` verbatim
-        on the live Snowflake connection and returns any row set produced (as an array
-        of column→string maps; nulls come back as JSON null). Postgres is intentionally
-        not implemented — returns 500 with "not implemented" so this endpoint can't
-        accidentally run SQL against local dev data. Result set is capped at 1000
-        rows to keep an unbounded SELECT from streaming the whole warehouse. Will
-        be removed once no longer needed.
-      parameters:
-      - description: SQL to run on Snowflake
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.executeSNBody'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: row_count + rows (may be empty for DDL)
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: invalid request body / empty sql
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: execution failed or not implemented for this database
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 'TEMPORARY: run arbitrary SQL on Snowflake'
-      tags:
-      - maintenance
   /v1/api/executeSecurityRules:
     get:
       description: 'Same orchestration as /executeRules but routed through services.ExecuteSecurityRules
@@ -549,7 +499,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Asset'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Asset'
             type: array
         "500":
           description: failed to query assets
@@ -611,7 +561,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.DMUser'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.DMUser'
             type: array
         "500":
           description: failed to query users
@@ -675,7 +625,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.GroupCount'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.GroupCount'
             type: array
         "400":
           description: exception_date is required
@@ -758,7 +708,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.ExceptionRun'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.ExceptionRun'
             type: array
         "500":
           description: failed to query exception runs
@@ -890,7 +840,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Exception'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Exception'
             type: array
         "500":
           description: failed to query exceptions
@@ -967,7 +917,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Exception'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Exception'
             type: array
         "400":
           description: exception_date is required / batch_id must be an integer
@@ -1050,7 +1000,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.RuleGroup'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.RuleGroup'
             type: array
         "500":
           description: failed to query rule groups
@@ -1082,7 +1032,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.RuleGroup'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.RuleGroup'
             type: array
         "400":
           description: user is required
@@ -1118,7 +1068,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.RuleName'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.RuleName'
             type: array
         "400":
           description: rule_catalog query parameter is required
@@ -1157,7 +1107,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Rule'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.Rule'
             type: array
         "500":
           description: failed to query rules
@@ -1190,7 +1140,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.RuleForGroup'
+              $ref: '#/definitions/securityrules_security-rules_internal_app_models.RuleForGroup'
             type: array
         "400":
           description: rule_group query parameter is required
@@ -1315,31 +1265,6 @@ paths:
       summary: Service welcome message
       tags:
       - info
-  /v1/api/junk:
-    post:
-      description: QA reset helper. Runs TRUNCATE TABLE against EXCEPTION and EXCEPTION_HIST
-        on Snowflake so a test run can start from an empty state. Postgres is intentionally
-        not implemented — returns 500 with "not implemented" if the deployed database
-        is Postgres so this can't accidentally wipe local dev data. Will be removed
-        once the QA reset workflow no longer needs it.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: tables truncated
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: truncate failed or not implemented for this database
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 'TEMPORARY: truncate EXCEPTION and EXCEPTION_HIST (Snowflake only)'
-      tags:
-      - maintenance
   /v1/api/refreshRulesByGroup:
     get:
       description: |-
@@ -1496,7 +1421,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateBulkAssignBody'
+          $ref: '#/definitions/internal_app_handlers.updateBulkAssignBody'
       produces:
       - application/json
       responses:
@@ -1541,7 +1466,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateBulkStatusBody'
+          $ref: '#/definitions/internal_app_handlers.updateBulkStatusBody'
       produces:
       - application/json
       responses:
@@ -1580,7 +1505,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateExceptionAssignToBody'
+          $ref: '#/definitions/internal_app_handlers.updateExceptionAssignToBody'
       produces:
       - application/json
       responses:
@@ -1616,7 +1541,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateExceptionCommentsBody'
+          $ref: '#/definitions/internal_app_handlers.updateExceptionCommentsBody'
       produces:
       - application/json
       responses:
@@ -1707,7 +1632,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateExceptionSuppressDateBody'
+          $ref: '#/definitions/internal_app_handlers.updateExceptionSuppressDateBody'
       produces:
       - application/json
       responses:
@@ -1751,7 +1676,7 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/handlers.updateUserPreferencesBody'
+          $ref: '#/definitions/internal_app_handlers.updateUserPreferencesBody'
       produces:
       - application/json
       responses:

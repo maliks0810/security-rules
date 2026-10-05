@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.clearUserPreferencesBody"
+                            "$ref": "#/definitions/internal_app_handlers.clearUserPreferencesBody"
                         }
                     }
                 ],
@@ -110,7 +110,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.ExecuteRulesRequest"
+                            "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesRequest"
                         }
                     }
                 ],
@@ -118,78 +118,25 @@ const docTemplate = `{
                     "200": {
                         "description": "rules executed; exception_count = rows inserted",
                         "schema": {
-                            "$ref": "#/definitions/models.ExecuteRulesResponse"
+                            "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse"
                         }
                     },
                     "400": {
                         "description": "invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/models.ExecuteRulesResponse"
+                            "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse"
                         }
                     },
                     "404": {
                         "description": "requested rule / catalog / group not found",
                         "schema": {
-                            "$ref": "#/definitions/models.ExecuteRulesResponse"
+                            "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse"
                         }
                     },
                     "500": {
                         "description": "failed to execute rules",
                         "schema": {
-                            "$ref": "#/definitions/models.ExecuteRulesResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/api/executeSN": {
-            "post": {
-                "description": "QA / debugging helper. Executes the caller-supplied ` + "`" + `sn_sql` + "`" + ` verbatim on the live Snowflake connection and returns any row set produced (as an array of column→string maps; nulls come back as JSON null). Postgres is intentionally not implemented — returns 500 with \"not implemented\" so this endpoint can't accidentally run SQL against local dev data. Result set is capped at 1000 rows to keep an unbounded SELECT from streaming the whole warehouse. Will be removed once no longer needed.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "maintenance"
-                ],
-                "summary": "TEMPORARY: run arbitrary SQL on Snowflake",
-                "parameters": [
-                    {
-                        "description": "SQL to run on Snowflake",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.executeSNBody"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "row_count + rows (may be empty for DDL)",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "invalid request body / empty sql",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "execution failed or not implemented for this database",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExecuteRulesResponse"
                         }
                     }
                 }
@@ -322,7 +269,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Asset"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Asset"
                             }
                         }
                     },
@@ -404,7 +351,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.DMUser"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.DMUser"
                             }
                         }
                     },
@@ -481,7 +428,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.GroupCount"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.GroupCount"
                             }
                         }
                     },
@@ -594,7 +541,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.ExceptionRun"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.ExceptionRun"
                             }
                         }
                     },
@@ -790,7 +737,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Exception"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Exception"
                             }
                         }
                     },
@@ -897,7 +844,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Exception"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Exception"
                             }
                         }
                     },
@@ -1020,7 +967,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.RuleGroup"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleGroup"
                             }
                         }
                     },
@@ -1061,7 +1008,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.RuleGroup"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleGroup"
                             }
                         }
                     },
@@ -1111,7 +1058,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.RuleName"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleName"
                             }
                         }
                     },
@@ -1166,7 +1113,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Rule"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.Rule"
                             }
                         }
                     },
@@ -1207,7 +1154,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.RuleForGroup"
+                                "$ref": "#/definitions/securityrules_security-rules_internal_app_models.RuleForGroup"
                             }
                         }
                     },
@@ -1374,38 +1321,6 @@ const docTemplate = `{
                         "description": "Welcome to Go microservices using Fiber",
                         "schema": {
                             "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/api/junk": {
-            "post": {
-                "description": "QA reset helper. Runs TRUNCATE TABLE against EXCEPTION and EXCEPTION_HIST on Snowflake so a test run can start from an empty state. Postgres is intentionally not implemented — returns 500 with \"not implemented\" if the deployed database is Postgres so this can't accidentally wipe local dev data. Will be removed once the QA reset workflow no longer needs it.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "maintenance"
-                ],
-                "summary": "TEMPORARY: truncate EXCEPTION and EXCEPTION_HIST (Snowflake only)",
-                "responses": {
-                    "200": {
-                        "description": "tables truncated",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "truncate failed or not implemented for this database",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
                         }
                     }
                 }
@@ -1588,7 +1503,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateBulkAssignBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateBulkAssignBody"
                         }
                     }
                 ],
@@ -1643,7 +1558,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateBulkStatusBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateBulkStatusBody"
                         }
                     }
                 ],
@@ -1698,7 +1613,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateExceptionAssignToBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateExceptionAssignToBody"
                         }
                     }
                 ],
@@ -1753,7 +1668,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateExceptionCommentsBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateExceptionCommentsBody"
                         }
                     }
                 ],
@@ -1877,7 +1792,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateExceptionSuppressDateBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateExceptionSuppressDateBody"
                         }
                     }
                 ],
@@ -1932,7 +1847,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.updateUserPreferencesBody"
+                            "$ref": "#/definitions/internal_app_handlers.updateUserPreferencesBody"
                         }
                     }
                 ],
@@ -1969,7 +1884,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handlers.clearUserPreferencesBody": {
+        "internal_app_handlers.clearUserPreferencesBody": {
             "type": "object",
             "properties": {
                 "rule_catalog": {
@@ -1983,17 +1898,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.executeSNBody": {
-            "type": "object",
-            "properties": {
-                "sn_sql": {
-                    "description": "Raw SQL to run against Snowflake. Anything the driver accepts:\nDDL (CREATE / DROP / ALTER), DML, CALL \u003cprocedure\u003e, SELECT.",
-                    "type": "string",
-                    "example": "CALL SP_ARCHIVE_STALE_DATES()"
-                }
-            }
-        },
-        "handlers.updateBulkAssignBody": {
+        "internal_app_handlers.updateBulkAssignBody": {
             "type": "object",
             "properties": {
                 "assign_to": {
@@ -2016,7 +1921,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.updateBulkStatusBody": {
+        "internal_app_handlers.updateBulkStatusBody": {
             "type": "object",
             "properties": {
                 "comments": {
@@ -2036,7 +1941,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.updateExceptionAssignToBody": {
+        "internal_app_handlers.updateExceptionAssignToBody": {
             "type": "object",
             "properties": {
                 "assign_to": {
@@ -2047,7 +1952,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.updateExceptionCommentsBody": {
+        "internal_app_handlers.updateExceptionCommentsBody": {
             "type": "object",
             "properties": {
                 "comments": {
@@ -2058,7 +1963,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.updateExceptionSuppressDateBody": {
+        "internal_app_handlers.updateExceptionSuppressDateBody": {
             "type": "object",
             "properties": {
                 "exception_id": {
@@ -2069,7 +1974,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.updateUserPreferencesBody": {
+        "internal_app_handlers.updateUserPreferencesBody": {
             "type": "object",
             "properties": {
                 "column_order": {
@@ -2086,7 +1991,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Asset": {
+        "securityrules_security-rules_internal_app_models.Asset": {
             "type": "object",
             "properties": {
                 "all_complete": {
@@ -2130,7 +2035,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.DMUser": {
+        "securityrules_security-rules_internal_app_models.DMUser": {
             "type": "object",
             "properties": {
                 "email": {
@@ -2144,7 +2049,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Exception": {
+        "securityrules_security-rules_internal_app_models.Exception": {
             "type": "object",
             "properties": {
                 "asset_id": {
@@ -2230,7 +2135,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ExceptionRun": {
+        "securityrules_security-rules_internal_app_models.ExceptionRun": {
             "type": "object",
             "properties": {
                 "batch_id": {
@@ -2244,7 +2149,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ExecuteRulesRequest": {
+        "securityrules_security-rules_internal_app_models.ExecuteRulesRequest": {
             "type": "object",
             "properties": {
                 "is_refresh": {
@@ -2280,7 +2185,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ExecuteRulesResponse": {
+        "securityrules_security-rules_internal_app_models.ExecuteRulesResponse": {
             "type": "object",
             "properties": {
                 "exception_count": {
@@ -2300,7 +2205,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.GroupCount": {
+        "securityrules_security-rules_internal_app_models.GroupCount": {
             "type": "object",
             "properties": {
                 "count": {
@@ -2311,7 +2216,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Rule": {
+        "securityrules_security-rules_internal_app_models.Rule": {
             "type": "object",
             "properties": {
                 "environment": {
@@ -2332,7 +2237,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.RuleForGroup": {
+        "securityrules_security-rules_internal_app_models.RuleForGroup": {
             "type": "object",
             "properties": {
                 "catalog_name": {
@@ -2346,7 +2251,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.RuleGroup": {
+        "securityrules_security-rules_internal_app_models.RuleGroup": {
             "type": "object",
             "properties": {
                 "flag_assign_to_visible": {
@@ -2366,7 +2271,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.RuleName": {
+        "securityrules_security-rules_internal_app_models.RuleName": {
             "type": "object",
             "properties": {
                 "rule_description": {
