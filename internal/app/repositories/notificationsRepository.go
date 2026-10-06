@@ -29,19 +29,32 @@ type CatalogExceptionCount struct {
 // Ordered by (group name, catalog name) so the notification's table
 // reads predictably across sends.
 //
-// Under the Security-Master-family groups (Security Master, Security
-// Master Benchmark, TOD SOD) the count is narrowed to STATUS_ID rows
-// whose EXCEPTION_STATUS.NAME is one of New / Hold / Challenge /
-// Override — the four statuses those groups treat as open work.
-// Accept / Suppress / Research / Complete rows are excluded there
-// because they are resolved and shouldn't inflate the "there's work"
-// figure the recipient acts on. Every other group counts all
-// statuses, matching the pre-narrowing behaviour.
+// The count is narrowed to rows whose EXCEPTION_STATUS.NAME is one of
+// New / Hold / Challenge / Override — the statuses that represent open
+// work. Accept / Suppress / Research rows are resolved and must not
+// inflate the "there's work to do" figure the recipient acts on.
+//
+// Applies to EVERY group. This used to be gated on the
+// Security-Master-family groups, with all other groups counting every
+// status, which is why the email disagreed with the Number of
+// Exceptions grid for some catalogs: Pricing and Valuation, Cash
+// Control, Investment Operations and Trading Agreements were reporting
+// resolved rows as outstanding work.
 //
 // Same pattern as GetRuleFailureEmailRecipients above: the id list is
 // inlined (ints from the DB, nothing injectable) so one SQL string
 // works on both Snowflake and Postgres despite their different
 // placeholder syntaxes.
+// openStatusList is the EXCEPTION_STATUS.NAME set the notification
+// counts as outstanding work, as a ready-to-inline SQL literal list.
+// Declared once and interpolated into both engine branches below so the
+// two cannot drift apart - the previous duplicated predicate was the
+// kind of thing that gets fixed on one side only.
+//
+// Upper-cased because the comparison upper-cases the column; keep them
+// in step if a status is ever added.
+const openStatusList = "'NEW','HOLD','CHALLENGE','OVERRIDE'"
+
 func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount, error) {
 	if len(ruleCatalogIDs) == 0 {
 		return nil, nil
@@ -61,9 +74,8 @@ func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount,
 			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
 			       SUM(CASE
 			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
-			               WHEN rg."NAME" IN ('Security Master', 'Security Master Benchmark', 'TOD SOD')
-			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN ('NEW','HOLD','CHALLENGE','OVERRIDE') THEN 0
-			               ELSE 1
+			               WHEN UPPER(COALESCE(es."NAME", '')) IN (`+openStatusList+`) THEN 1
+			               ELSE 0
 			           END)                       AS "EXCEPTION_COUNT"
 			  FROM "RULE_CATALOG" rc
 			  LEFT JOIN "RULE_GROUP" rg
@@ -87,9 +99,8 @@ func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount,
 			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
 			       SUM(CASE
 			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
-			               WHEN rg."NAME" IN ('Security Master', 'Security Master Benchmark', 'TOD SOD')
-			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN ('NEW','HOLD','CHALLENGE','OVERRIDE') THEN 0
-			               ELSE 1
+			               WHEN UPPER(COALESCE(es."NAME", '')) IN (`+openStatusList+`) THEN 1
+			               ELSE 0
 			           END)                       AS "EXCEPTION_COUNT"
 			  FROM public."RULE_CATALOG" rc
 			  LEFT JOIN public."RULE_GROUP" rg
