@@ -29,31 +29,58 @@ type CatalogExceptionCount struct {
 // Ordered by (group name, catalog name) so the notification's table
 // reads predictably across sends.
 //
-// The count is narrowed to rows whose EXCEPTION_STATUS.NAME is one of
-// New / Hold / Challenge / Override — the statuses that represent open
-// work. Accept / Suppress / Research rows are resolved and must not
-// inflate the "there's work to do" figure the recipient acts on.
+// Under the Security-Master-family groups (Security Master, Security
+// Master Benchmark, TOD SOD) the count is narrowed to rows whose
+// EXCEPTION_STATUS.NAME is one of New / Hold / Challenge / Override —
+// the statuses those groups treat as open work. Accept / Suppress /
+// Research are resolved there and would inflate the "there's work to
+// do" figure the recipient acts on.
 //
-// Applies to EVERY group. This used to be gated on the
-// Security-Master-family groups, with all other groups counting every
-// status, which is why the email disagreed with the Number of
-// Exceptions grid for some catalogs: Pricing and Valuation, Cash
-// Control, Investment Operations and Trading Agreements were reporting
-// resolved rows as outstanding work.
+// Every other group counts EVERY status, deliberately. Those groups do
+// not run the same triage lifecycle, so their total is the number the
+// recipients expect. This was briefly made uniform across all groups
+// and reverted: it is the intended behaviour, not an oversight.
+//
+// Two filters keep this counting the same population the Number of
+// Exceptions grid reads, because the email disagreed with the grid for
+// a Security Master catalog:
+//
+//   * r."IS_ACTIVE" = 1 — SP_GET_RULES_FOR_GROUP, which builds the
+//     grid's ruleName -> catalog lookup, returns active rules only. An
+//     exception belonging to a DEACTIVATED rule was counted against its
+//     catalog here while the grid, unable to resolve its catalog,
+//     bucketed it under "Unknown". Only the catalog holding the
+//     deactivated rule read high, which is why a single catalog was off.
+//
+//   * EXCEPTION_DATE = the table's MAX — UDF_GET_EXCEPTIONS and
+//     SP_GET_EXCEPTIONS scope to one EXCEPTION_DATE, and the grid
+//     defaults to the latest. This counted every row in EXCEPTION
+//     whatever its date, so any pre-today rows that SP_ARCHIVE_STALE_DATES
+//     (cron-driven, not part of ExecuteRules) had not yet swept were
+//     counted too. MAX rather than today's date so the two agree even
+//     when a run lands either side of UTC midnight.
+//
+// Both are JOIN conditions, not WHERE predicates, deliberately: moving
+// either into WHERE would turn the outer joins inner and drop catalogs
+// that have no active rules or no rows today, when they must still
+// appear at 0.
 //
 // Same pattern as GetRuleFailureEmailRecipients above: the id list is
 // inlined (ints from the DB, nothing injectable) so one SQL string
 // works on both Snowflake and Postgres despite their different
 // placeholder syntaxes.
-// openStatusList is the EXCEPTION_STATUS.NAME set the notification
-// counts as outstanding work, as a ready-to-inline SQL literal list.
-// Declared once and interpolated into both engine branches below so the
-// two cannot drift apart - the previous duplicated predicate was the
-// kind of thing that gets fixed on one side only.
+// openStatusList is the EXCEPTION_STATUS.NAME set treated as
+// outstanding work under the Security-Master family, and smFamilyList
+// is that family. Both are ready-to-inline SQL literal lists, declared
+// once and interpolated into the Snowflake and Postgres branches below
+// so the two cannot drift apart - the predicate used to be duplicated,
+// which is the kind of thing that gets fixed on one side only.
 //
-// Upper-cased because the comparison upper-cases the column; keep them
-// in step if a status is ever added.
+// openStatusList is upper-cased because the comparison upper-cases the
+// column; keep them in step if a status is ever added. smFamilyList
+// mirrors SECURITY_MASTER_FAMILY_GROUPS in the frontend.
 const openStatusList = "'NEW','HOLD','CHALLENGE','OVERRIDE'"
+const smFamilyList = "'Security Master', 'Security Master Benchmark', 'TOD SOD'"
 
 func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount, error) {
 	if len(ruleCatalogIDs) == 0 {
@@ -74,16 +101,19 @@ func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount,
 			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
 			       SUM(CASE
 			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
-			               WHEN UPPER(COALESCE(es."NAME", '')) IN (`+openStatusList+`) THEN 1
-			               ELSE 0
+			               WHEN rg."NAME" IN (`+smFamilyList+`)
+			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN (`+openStatusList+`) THEN 0
+			               ELSE 1
 			           END)                       AS "EXCEPTION_COUNT"
 			  FROM "RULE_CATALOG" rc
 			  LEFT JOIN "RULE_GROUP" rg
 			         ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
 			  LEFT JOIN "RULE" r
 			         ON r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+			        AND r."IS_ACTIVE" = 1
 			  LEFT JOIN "EXCEPTION" e
 			         ON e."RULE_ID" = r."RULE_ID"
+			        AND e."EXCEPTION_DATE" = (SELECT MAX("EXCEPTION_DATE") FROM "EXCEPTION")
 			  LEFT JOIN "EXCEPTION_STATUS" es
 			         ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
 			 WHERE rc."RULE_CATALOG_ID" IN (%s)
@@ -99,16 +129,19 @@ func GetExceptionCountsByCatalog(ruleCatalogIDs []int) ([]CatalogExceptionCount,
 			       COALESCE(rc."NAME", '')        AS "CATALOG_NAME",
 			       SUM(CASE
 			               WHEN e."EXCEPTION_ID" IS NULL THEN 0
-			               WHEN UPPER(COALESCE(es."NAME", '')) IN (`+openStatusList+`) THEN 1
-			               ELSE 0
+			               WHEN rg."NAME" IN (`+smFamilyList+`)
+			                    AND UPPER(COALESCE(es."NAME", '')) NOT IN (`+openStatusList+`) THEN 0
+			               ELSE 1
 			           END)                       AS "EXCEPTION_COUNT"
 			  FROM public."RULE_CATALOG" rc
 			  LEFT JOIN public."RULE_GROUP" rg
 			         ON rg."RULE_GROUP_ID" = rc."RULE_GROUP_ID"
 			  LEFT JOIN public."RULE" r
 			         ON r."RULE_CATALOG_ID" = rc."RULE_CATALOG_ID"
+			        AND r."IS_ACTIVE" = 1
 			  LEFT JOIN public."EXCEPTION" e
 			         ON e."RULE_ID" = r."RULE_ID"
+			        AND e."EXCEPTION_DATE" = (SELECT MAX("EXCEPTION_DATE") FROM public."EXCEPTION")
 			  LEFT JOIN public."EXCEPTION_STATUS" es
 			         ON es."EXCEPTION_STATUS_ID" = e."STATUS_ID"
 			 WHERE rc."RULE_CATALOG_ID" IN (%s)
