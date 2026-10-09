@@ -9,6 +9,15 @@
 -- batches win when today has archives; falls through to yesterday's
 -- final batch on the first run of a fresh day.
 --
+-- Additionally, any 'Override' row whose ALADDIN_VALUE still differs
+-- from its BBG_VALUE reverts to New. An Override says "this mismatch is
+-- accepted"; while the two values still disagree the exception is still
+-- true, so it is reopened rather than left closed. Compared within the
+-- row - this is "the values disagree", not pass 1's "the values moved".
+--
+-- NULL-safe via EQUAL_NULL: two NULLs count as equal and do not
+-- revert; NULL against a value counts as different and does.
+--
 -- Additionally, any Suppress row whose SUPPRESS_DATE has passed
 -- (< today UTC) reverts to New regardless of value drift and its
 -- SUPPRESS_DATE is cleared. This duplicates SP_EXPIRE_SUPPRESS_DATES's
@@ -17,7 +26,7 @@
 -- REVERT_TO_NEW_CRITERIA).
 --
 -- Returns the total number of EXCEPTION rows reverted (drift + suppress
--- combined).
+-- + override-mismatch combined).
 
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES()
 RETURNS NUMBER
@@ -29,12 +38,19 @@ DECLARE
     today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
     now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     suppress_id       NUMBER        := NULL;
+    override_id       NUMBER        := NULL;
     drift_affected    NUMBER        := 0;
     suppress_affected NUMBER        := 0;
+    override_affected NUMBER        := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
     FROM "EXCEPTION_STATUS"
     WHERE "NAME" = 'Suppress'
+    LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID" INTO :override_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Override'
     LIMIT 1;
 
     -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
@@ -47,6 +63,13 @@ BEGIN
            -- the aging metric honest. COALESCE only fills a gap.
            "OPEN_DATE"     = COALESCE(e."OPEN_DATE", :today),
            "SUPPRESS_DATE" = NULL,
+           -- Reverting to New un-closes the row, so its CLOSE_DATE has
+           -- to go. CLOSE_DATE is populated iff the status is Accept or
+           -- Override; this pass can revert either, and leaving the date
+           -- behind would hand the grid a 'New' row carrying a close
+           -- date and leave SP_DROP_CLOSED_EXCEPTIONS a stale value to
+           -- measure against.
+           "CLOSE_DATE"    = NULL,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
       FROM (
@@ -95,6 +118,10 @@ BEGIN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
                "SUPPRESS_DATE" = NULL,
+               -- Suppress should not carry a CLOSE_DATE anyway; cleared
+               -- defensively so this pass cannot leave the "closed iff
+               -- Accept / Override" invariant broken either.
+               "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = :now_ts,
                "MODIFIED_BY"   = 'system'
          WHERE e."STATUS_ID"    = :suppress_id
@@ -109,6 +136,43 @@ BEGIN
         suppress_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected;
+    -- Pass 3: Override rows whose ALADDIN_VALUE still differs from their
+    -- BBG_VALUE. Independent of hist - the comparison is between the two
+    -- values on the row itself, so a row with no prior archive is
+    -- covered too.
+    --
+    -- Distinct from pass 1: that one asks "did either value move since
+    -- the last run", this one asks "do the two values disagree right
+    -- now". A row can be stable across runs (no drift) and still be a
+    -- genuine mismatch, which is exactly the case an Override was
+    -- hiding.
+    IF (:override_id IS NOT NULL) THEN
+        UPDATE "EXCEPTION" e
+           SET "STATUS_ID"     = 1,
+               -- Override always carries a CLOSE_DATE, so clearing it is
+               -- required here, not defensive: a New row must not look
+               -- closed.
+               "CLOSE_DATE"    = NULL,
+               "SUPPRESS_DATE" = NULL,
+               -- OPEN_DATE write-once, as in passes 1 and 2. Reopening
+               -- an exception is not a fresh discovery.
+               "OPEN_DATE"     = COALESCE(e."OPEN_DATE", :today),
+               "MODIFIED_DATE" = :now_ts,
+               "MODIFIED_BY"   = 'system'
+         WHERE e."STATUS_ID" = :override_id
+           AND NOT EQUAL_NULL(
+                   TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
+                   TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR
+               )
+           AND e."RULE_ID" IN (
+               SELECT r."RULE_ID"
+                 FROM "RULE" r
+                 JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+                WHERE rc."NAME" = 'Bloomberg Compare Differences'
+           );
+        override_affected := SQLROWCOUNT;
+    END IF;
+
+    RETURN drift_affected + suppress_affected + override_affected;
 END;
 $$;

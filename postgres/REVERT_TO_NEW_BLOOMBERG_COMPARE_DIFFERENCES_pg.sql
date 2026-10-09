@@ -28,13 +28,21 @@ DECLARE
     v_today             date      := (NOW() AT TIME ZONE 'UTC')::date;
     v_now_ts            timestamp := (NOW() AT TIME ZONE 'UTC');
     v_suppress_id       integer;
+    v_override_id       integer;
     v_drift_affected    integer   := 0;
     v_suppress_affected integer   := 0;
+    v_override_affected integer   := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID"
       INTO v_suppress_id
       FROM public."EXCEPTION_STATUS"
      WHERE "NAME" = 'Suppress'
+     LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID"
+      INTO v_override_id
+      FROM public."EXCEPTION_STATUS"
+     WHERE "NAME" = 'Override'
      LIMIT 1;
 
     -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
@@ -66,6 +74,12 @@ BEGIN
                -- preserved to keep the aging metric honest.
                "OPEN_DATE"     = COALESCE(e."OPEN_DATE", v_today),
                "SUPPRESS_DATE" = NULL,
+               -- Reverting to New un-closes the row, so its CLOSE_DATE
+               -- has to go. CLOSE_DATE is populated iff the status is
+               -- Accept or Override and this pass can revert either;
+               -- leaving it would hand the grid a 'New' row carrying a
+               -- close date.
+               "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = v_now_ts,
                "MODIFIED_BY"   = 'system'
           FROM prev
@@ -96,6 +110,9 @@ BEGIN
             UPDATE public."EXCEPTION" e
                SET "STATUS_ID"     = 1,
                    "SUPPRESS_DATE" = NULL,
+                   -- Cleared defensively so this pass cannot leave the
+                   -- "closed iff Accept / Override" invariant broken.
+                   "CLOSE_DATE"    = NULL,
                    "MODIFIED_DATE" = v_now_ts,
                    "MODIFIED_BY"   = 'system'
              WHERE e."STATUS_ID"    = v_suppress_id
@@ -107,6 +124,47 @@ BEGIN
         SELECT COALESCE(COUNT(*), 0)::int INTO v_suppress_affected FROM suppress_upd;
     END IF;
 
-    RETURN v_drift_affected + v_suppress_affected;
+    -- Pass 3: Override rows whose ALADDIN_VALUE still differs from their
+    -- BBG_VALUE. An Override says "this mismatch is accepted"; while the
+    -- two values still disagree the exception is still true, so it is
+    -- reopened. Independent of hist - the comparison is between the two
+    -- values on the row itself.
+    --
+    -- Distinct from pass 1: that asks "did either value move since the
+    -- last run", this asks "do the two values disagree right now". A row
+    -- can be stable across runs and still be a genuine mismatch, which
+    -- is the case an Override was hiding.
+    --
+    -- IS DISTINCT FROM is NULL-safe: two NULLs are not distinct and do
+    -- not revert; NULL against a value is distinct and does.
+    IF v_override_id IS NOT NULL THEN
+        WITH bloomberg_rules AS (
+            SELECT r."RULE_ID"
+              FROM public."RULE" r
+              JOIN public."RULE_CATALOG" rc
+                ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
+             WHERE rc."NAME" = 'Bloomberg Compare Differences'
+        ),
+        override_upd AS (
+            UPDATE public."EXCEPTION" e
+               SET "STATUS_ID"     = 1,
+                   -- Override always carries a CLOSE_DATE, so clearing
+                   -- it is required here, not defensive.
+                   "CLOSE_DATE"    = NULL,
+                   "SUPPRESS_DATE" = NULL,
+                   -- OPEN_DATE write-once, as in passes 1 and 2.
+                   "OPEN_DATE"     = COALESCE(e."OPEN_DATE", v_today),
+                   "MODIFIED_DATE" = v_now_ts,
+                   "MODIFIED_BY"   = 'system'
+             WHERE e."STATUS_ID" = v_override_id
+               AND (e."RESULT_DATA"->>'ALADDIN_VALUE')
+                   IS DISTINCT FROM (e."RESULT_DATA"->>'BBG_VALUE')
+               AND e."RULE_ID" IN (SELECT "RULE_ID" FROM bloomberg_rules)
+            RETURNING 1
+        )
+        SELECT COALESCE(COUNT(*), 0)::int INTO v_override_affected FROM override_upd;
+    END IF;
+
+    RETURN v_drift_affected + v_suppress_affected + v_override_affected;
 END;
 $$;
