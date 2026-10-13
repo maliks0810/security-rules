@@ -15,9 +15,12 @@ DROP TABLE IF EXISTS public."DIM_SECURITY";
 
 CREATE TABLE public."DIM_SECURITY"
 (
-    "ALADDIN_ID"     character varying(100)
-  , "SECURITY_GROUP" character varying(100)
-  , "SECURITY_TYPE"  character varying(100)
+    "ALADDIN_ID"           character varying(100)
+  , "SECURITY_GROUP"       character varying(100)
+  , "SECURITY_TYPE"        character varying(100)
+  , "COUNTRY_OF_RISK_CODE" character varying(100)
+  , "ID_BB_GLOBAL"         character varying(15)
+  , "ID_BB_COMPANY"        character varying(15)
 );
 
 -- Populated from the distinct ASSET_IDs across BOTH exception tables,

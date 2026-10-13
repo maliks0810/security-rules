@@ -195,6 +195,31 @@ UPDATE "EXCEPTION" e
 -- correct date is carried into the archive by the normal archive ->
 -- insert -> inherit cycle, so hist self-corrects from the next run on.
 
+-- DIM_SECURITY.COUNTRY_OF_RISK_CODE / ID_BB_GLOBAL / ID_BB_COMPANY:
+-- new columns.
+--
+-- Needed here as well as in DIM_SECURITY.sql because that file opens
+-- with CREATE OR REPLACE TABLE and so only ever builds a fresh table
+-- - running it against a deployment that already holds classification
+-- data would wipe it. ADD COLUMN IF NOT EXISTS keeps the existing
+-- rows and backfills each column to NULL, matching the per-object
+-- file's "no DEFAULT" shape.
+--
+-- SECURITY_CURRENT_VW is SELECT *, but Snowflake resolves a view's
+-- column list at CREATE time and caches it. Without the recreate
+-- below the view would keep its three-column shape even after the
+-- table grew, and SP_GET_SECURITY_GROUPS / anything else reading
+-- through the view would never see the new columns.
+ALTER TABLE "DIM_SECURITY"
+  ADD COLUMN IF NOT EXISTS "COUNTRY_OF_RISK_CODE" VARCHAR(100);
+ALTER TABLE "DIM_SECURITY"
+  ADD COLUMN IF NOT EXISTS "ID_BB_GLOBAL" VARCHAR(15);
+ALTER TABLE "DIM_SECURITY"
+  ADD COLUMN IF NOT EXISTS "ID_BB_COMPANY" VARCHAR(15);
+
+CREATE OR REPLACE VIEW "SECURITY_CURRENT_VW" AS
+SELECT * FROM "DIM_SECURITY";
+
 -- DM_USER.FLAG_EMAIL_ON_RULE_FAILURE: new column, everyone opted in.
 --
 -- 'Y' = email this user when a rule run fails. Needed here as well as in
