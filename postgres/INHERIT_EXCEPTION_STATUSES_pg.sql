@@ -60,9 +60,25 @@ AS $$
             OR (UPPER(p_rule_type) = 'RULE'
                   AND r."RULE_NAME" = p_rule_name)
     ),
+    override_status AS (
+        -- Override carve-out: if the last archived status was 'Override'
+        -- and the exception fires AGAIN this run, the override no
+        -- longer holds - the condition came back - so the row re-opens
+        -- as 'New' with CLOSE_DATE cleared instead of inheriting
+        -- Override forward. CTE here so the CASE in the UPDATE can
+        -- reference the resolved id without re-querying per row.
+        SELECT "EXCEPTION_STATUS_ID" AS id
+          FROM public."EXCEPTION_STATUS"
+         WHERE "NAME" = 'Override'
+         LIMIT 1
+    ),
     updated AS (
         UPDATE public."EXCEPTION" e
-           SET "STATUS_ID"     = h."STATUS_ID",
+           SET "STATUS_ID"     = CASE
+                                     WHEN h."STATUS_ID" = (SELECT id FROM override_status)
+                                         THEN 1
+                                     ELSE h."STATUS_ID"
+                                 END,
                -- OPEN_DATE is INHERITED, never re-stamped. It records
                -- when an exception was first surfaced, so it has to
                -- survive the archive -> insert -> inherit cycle that
@@ -98,7 +114,15 @@ AS $$
                -- SP_UPDATE_CLOSE_DATE backstops the case where hist
                -- has no CLOSE_DATE yet but the current status is
                -- Accept / Research.
-               "CLOSE_DATE"    = COALESCE(h."CLOSE_DATE", e."CLOSE_DATE"),
+               --
+               -- Override carve-out: when the row is being re-opened
+               -- above because hist carried Override, the close date
+               -- has to go with it - a New row must not carry one.
+               "CLOSE_DATE"    = CASE
+                                     WHEN h."STATUS_ID" = (SELECT id FROM override_status)
+                                         THEN NULL
+                                     ELSE COALESCE(h."CLOSE_DATE", e."CLOSE_DATE")
+                                 END,
                -- COMMENTS carry over from the last EXCEPTION_HIST row
                -- for the same (RULE_ID, ASSET_ID). Anything the
                -- operator typed while the row sat in Accept / Suppress

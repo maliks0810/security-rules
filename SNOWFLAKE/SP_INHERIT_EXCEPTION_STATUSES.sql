@@ -24,14 +24,32 @@ DECLARE
     -- which still carries real assignees forward rather than silently
     -- disabling the inheritance.
     unassigned_id NUMBER := NULL;
+    override_id   NUMBER := NULL;
 BEGIN
     SELECT "ID" INTO :unassigned_id
     FROM "DM_USER"
     WHERE "USER" = 'Unassigned'
     LIMIT 1;
 
+    -- Override carve-out: if the last archived status for a
+    -- (RULE_ID, ASSET_ID) was 'Override' and the exception has fired
+    -- AGAIN this run (i.e. there's a live row to inherit onto), the
+    -- override no longer holds - the condition came back - so the row
+    -- re-opens as 'New' with CLOSE_DATE cleared instead of inheriting
+    -- Override forward. Needs the status id up front so the CASE in
+    -- the UPDATE below can check against it.
+    SELECT "EXCEPTION_STATUS_ID" INTO :override_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Override'
+    LIMIT 1;
+
     UPDATE "EXCEPTION" e
-       SET "STATUS_ID"     = h."STATUS_ID",
+       SET "STATUS_ID"     = CASE
+                                 WHEN :override_id IS NOT NULL
+                                      AND h."STATUS_ID" = :override_id
+                                     THEN 1
+                                 ELSE h."STATUS_ID"
+                             END,
            -- ASSIGN_TO_ID carries forward from the last archived run
            -- whenever that run had a REAL owner, so an exception stays
            -- with whoever was working it across the intraday batch and
@@ -86,7 +104,16 @@ BEGIN
            -- alone (via COALESCE). Pass 2 of SP_UPDATE_CLOSE_DATE
            -- backstops the case where hist has no CLOSE_DATE yet but
            -- the current status is Accept / Research.
-           "CLOSE_DATE"    = COALESCE(h."CLOSE_DATE", e."CLOSE_DATE"),
+           --
+           -- Override carve-out: when the row is being re-opened above
+           -- because hist carried Override, the close date has to go
+           -- with it - a New row must not carry a close date.
+           "CLOSE_DATE"    = CASE
+                                 WHEN :override_id IS NOT NULL
+                                      AND h."STATUS_ID" = :override_id
+                                     THEN NULL
+                                 ELSE COALESCE(h."CLOSE_DATE", e."CLOSE_DATE")
+                             END,
            -- COMMENTS carry over from the last EXCEPTION_HIST row for
            -- the same (RULE_ID, ASSET_ID). Anything the operator typed
            -- while the row sat in Accept / Suppress / Override / … is
