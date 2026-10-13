@@ -1,13 +1,34 @@
 -- Country-Of-Risk-Null-For-Benchmark catalog-scoped revert workflow.
--- Copied verbatim from SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES
--- (same three passes: drift / suppress-expiry / override-mismatch),
--- with only the procedure name and the hard-coded catalog name
--- changed. RESULT_DATA field references (ALADDIN_VALUE / BBG_VALUE)
--- are kept as-is -- adjust them to the keys this catalog's SQL
--- actually emits if different.
+-- Modeled on SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES but the
+-- drift / override "values disagree" checks are replaced with a direct
+-- NULL check against SECURITY_CURRENT_VW.COUNTRY_OF_RISK_CODE for the
+-- row's ASSET_ID.
+--
+-- Three passes, mirroring the Bloomberg SP:
+--
+--   Pass 1 (condition-still-true): any non-New, non-Suppress,
+--   non-Override row in the catalog whose asset still shows
+--   COUNTRY_OF_RISK_CODE IS NULL is reverted to New. Suppress and
+--   Override are handled by passes 2 and 3 so each status is reverted
+--   through exactly one path.
+--
+--   Pass 2 (suppress-expiry): any Suppress row whose SUPPRESS_DATE
+--   has passed (< today UTC) reverts to New and the SUPPRESS_DATE is
+--   cleared. Independent of the null check - an expired suppression
+--   always re-evaluates.
+--
+--   Pass 3 (override): any Override row whose asset still shows
+--   COUNTRY_OF_RISK_CODE IS NULL reverts. CLOSE_DATE always carried
+--   by an Override row, so clearing it here is required not
+--   defensive.
+--
+-- "No SECURITY_CURRENT_VW row for the ASSET_ID" is treated as "not
+-- null" (EXISTS fails) and does NOT revert - that keeps the proc
+-- conservative: without a confirmed null we leave the operator's
+-- closure alone.
 --
 -- Returns the total number of EXCEPTION rows reverted
--- (drift + suppress + override-mismatch combined).
+-- (null-check + suppress-expiry + override combined).
 
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_COUNTRY_OF_RISK_NULL_FOR_BENCHMARK()
 RETURNS NUMBER
@@ -20,7 +41,7 @@ DECLARE
     now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     suppress_id       NUMBER        := NULL;
     override_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
+    null_affected     NUMBER        := 0;
     suppress_affected NUMBER        := 0;
     override_affected NUMBER        := 0;
 BEGIN
@@ -34,7 +55,8 @@ BEGIN
     WHERE "NAME" = 'Override'
     LIMIT 1;
 
-    -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
+    -- Pass 1: non-New, non-Suppress, non-Override rows where the
+    -- asset's COUNTRY_OF_RISK_CODE is still NULL.
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = 1,
            "OPEN_DATE"     = COALESCE(e."OPEN_DATE", :today),
@@ -42,44 +64,24 @@ BEGIN
            "CLOSE_DATE"    = NULL,
            "MODIFIED_DATE" = :now_ts,
            "MODIFIED_BY"   = 'system'
-      FROM (
-          SELECT h."RULE_ID",
-                 h."ASSET_ID",
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
-            FROM (
-                SELECT "RULE_ID", "ASSET_ID", "RESULT_DATA",
-                       ROW_NUMBER() OVER (
-                           PARTITION BY "RULE_ID", "ASSET_ID"
-                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
-                                    "BATCH_ID"       DESC NULLS LAST
-                       ) AS rn
-                  FROM "EXCEPTION_HIST"
-            ) h
-           WHERE h.rn = 1
-      ) prev
-     WHERE e."RULE_ID"  = prev."RULE_ID"
-       AND e."ASSET_ID" = prev."ASSET_ID"
-       AND e."STATUS_ID" <> 1
+     WHERE e."STATUS_ID" <> 1
+       AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID"
              FROM "RULE" r
              JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
             WHERE rc."NAME" = 'Country Of Risk Null For Benchmark'
        )
-       AND (
-           NOT EQUAL_NULL(
-               TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-               prev.hist_aladdin
-           )
-           OR NOT EQUAL_NULL(
-               TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR,
-               prev.hist_bbg
-           )
+       AND EXISTS (
+           SELECT 1
+             FROM TDC.SECURITY_CURRENT_VW scv
+            WHERE scv."ALADDIN_ID"           = e."ASSET_ID"
+              AND scv."COUNTRY_OF_RISK_CODE" IS NULL
        );
-    drift_affected := SQLROWCOUNT;
+    null_affected := SQLROWCOUNT;
 
-    -- Pass 2: Suppress rows whose SUPPRESS_DATE has passed.
+    -- Pass 2: expired Suppress sweep.
     IF (:suppress_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
@@ -99,7 +101,8 @@ BEGIN
         suppress_affected := SQLROWCOUNT;
     END IF;
 
-    -- Pass 3: Override rows whose ALADDIN_VALUE still differs from BBG_VALUE.
+    -- Pass 3: Override rows where the asset's COUNTRY_OF_RISK_CODE is
+    -- still NULL. Mirrors the Bloomberg SP's dedicated Override pass.
     IF (:override_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
@@ -109,19 +112,21 @@ BEGIN
                "MODIFIED_DATE" = :now_ts,
                "MODIFIED_BY"   = 'system'
          WHERE e."STATUS_ID" = :override_id
-           AND NOT EQUAL_NULL(
-                   TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-                   TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR
-               )
            AND e."RULE_ID" IN (
                SELECT r."RULE_ID"
                  FROM "RULE" r
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
                 WHERE rc."NAME" = 'Country Of Risk Null For Benchmark'
+           )
+           AND EXISTS (
+               SELECT 1
+                 FROM TDC.SECURITY_CURRENT_VW scv
+                WHERE scv."ALADDIN_ID"           = e."ASSET_ID"
+                  AND scv."COUNTRY_OF_RISK_CODE" IS NULL
            );
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected + override_affected;
+    RETURN null_affected + suppress_affected + override_affected;
 END;
 $$;

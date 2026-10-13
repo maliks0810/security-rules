@@ -1359,11 +1359,11 @@ END;
 $$;
 
 -- REVERT_TO_NEW_COUNTRY_OF_RISK_NULL_FOR_BENCHMARK ----------------------------
--- Copied verbatim from SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES
--- (three passes: drift / suppress-expiry / override-mismatch) with
--- only the procedure name and the hard-coded catalog name changed.
--- RESULT_DATA field references stay ALADDIN_VALUE / BBG_VALUE —
--- tune them to the keys this catalog's SQL actually emits.
+-- Three passes mirroring the Bloomberg SP. Pass 1 reverts non-New,
+-- non-Suppress, non-Override rows whose asset still shows
+-- COUNTRY_OF_RISK_CODE IS NULL in SECURITY_CURRENT_VW. Pass 2 reverts
+-- expired Suppress regardless of the null check. Pass 3 reverts
+-- Override rows whose asset still shows the column as NULL.
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_COUNTRY_OF_RISK_NULL_FOR_BENCHMARK()
 RETURNS NUMBER
 LANGUAGE SQL
@@ -1375,7 +1375,7 @@ DECLARE
     now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     suppress_id       NUMBER        := NULL;
     override_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
+    null_affected     NUMBER        := 0;
     suppress_affected NUMBER        := 0;
     override_affected NUMBER        := 0;
 BEGIN
@@ -1388,25 +1388,17 @@ BEGIN
        SET "STATUS_ID"=1, "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
            "SUPPRESS_DATE"=NULL, "CLOSE_DATE"=NULL,
            "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
-      FROM (
-          SELECT h."RULE_ID", h."ASSET_ID",
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
-            FROM (
-                SELECT "RULE_ID","ASSET_ID","RESULT_DATA",
-                       ROW_NUMBER() OVER (PARTITION BY "RULE_ID","ASSET_ID"
-                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
-                                    "BATCH_ID" DESC NULLS LAST) AS rn
-                  FROM "EXCEPTION_HIST") h WHERE h.rn=1) prev
-     WHERE e."RULE_ID"=prev."RULE_ID" AND e."ASSET_ID"=prev."ASSET_ID"
-       AND e."STATUS_ID"<>1
+     WHERE e."STATUS_ID"<>1
+       AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID" FROM "RULE" r
              JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
             WHERE rc."NAME"='Country Of Risk Null For Benchmark')
-       AND (NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR, prev.hist_aladdin)
-            OR NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR, prev.hist_bbg));
-    drift_affected := SQLROWCOUNT;
+       AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                    WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                      AND scv."COUNTRY_OF_RISK_CODE" IS NULL);
+    null_affected := SQLROWCOUNT;
 
     IF (:suppress_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
@@ -1426,20 +1418,22 @@ BEGIN
                "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
                "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
          WHERE e."STATUS_ID"=:override_id
-           AND NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-                              TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR)
            AND e."RULE_ID" IN (SELECT r."RULE_ID" FROM "RULE" r
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
-                WHERE rc."NAME"='Country Of Risk Null For Benchmark');
+                WHERE rc."NAME"='Country Of Risk Null For Benchmark')
+           AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                        WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                          AND scv."COUNTRY_OF_RISK_CODE" IS NULL);
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected + override_affected;
+    RETURN null_affected + suppress_affected + override_affected;
 END;
 $$;
 
 -- REVERT_TO_NEW_FIGI_NULL_CHECK_FOR_BENCHMARK ---------------------------------
--- Same shape as the Bloomberg SP, different catalog name.
+-- Same shape as the Country Of Risk SP; different catalog name and
+-- the null-checked column is SECURITY_CURRENT_VW.ID_BB_GLOBAL.
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_FIGI_NULL_CHECK_FOR_BENCHMARK()
 RETURNS NUMBER
 LANGUAGE SQL
@@ -1451,7 +1445,7 @@ DECLARE
     now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     suppress_id       NUMBER        := NULL;
     override_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
+    null_affected     NUMBER        := 0;
     suppress_affected NUMBER        := 0;
     override_affected NUMBER        := 0;
 BEGIN
@@ -1464,25 +1458,17 @@ BEGIN
        SET "STATUS_ID"=1, "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
            "SUPPRESS_DATE"=NULL, "CLOSE_DATE"=NULL,
            "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
-      FROM (
-          SELECT h."RULE_ID", h."ASSET_ID",
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
-            FROM (
-                SELECT "RULE_ID","ASSET_ID","RESULT_DATA",
-                       ROW_NUMBER() OVER (PARTITION BY "RULE_ID","ASSET_ID"
-                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
-                                    "BATCH_ID" DESC NULLS LAST) AS rn
-                  FROM "EXCEPTION_HIST") h WHERE h.rn=1) prev
-     WHERE e."RULE_ID"=prev."RULE_ID" AND e."ASSET_ID"=prev."ASSET_ID"
-       AND e."STATUS_ID"<>1
+     WHERE e."STATUS_ID"<>1
+       AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID" FROM "RULE" r
              JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
             WHERE rc."NAME"='FIGI Null Check For Benchmark')
-       AND (NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR, prev.hist_aladdin)
-            OR NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR, prev.hist_bbg));
-    drift_affected := SQLROWCOUNT;
+       AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                    WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                      AND scv."ID_BB_GLOBAL" IS NULL);
+    null_affected := SQLROWCOUNT;
 
     IF (:suppress_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
@@ -1502,20 +1488,22 @@ BEGIN
                "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
                "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
          WHERE e."STATUS_ID"=:override_id
-           AND NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-                              TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR)
            AND e."RULE_ID" IN (SELECT r."RULE_ID" FROM "RULE" r
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
-                WHERE rc."NAME"='FIGI Null Check For Benchmark');
+                WHERE rc."NAME"='FIGI Null Check For Benchmark')
+           AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                        WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                          AND scv."ID_BB_GLOBAL" IS NULL);
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected + override_affected;
+    RETURN null_affected + suppress_affected + override_affected;
 END;
 $$;
 
 -- REVERT_TO_NEW_IDBBCOMPANY_NULL_FOR_BENCHMARK --------------------------------
--- Same shape as the Bloomberg SP, different catalog name.
+-- Same shape as the Country Of Risk SP; different catalog name and
+-- the null-checked column is SECURITY_CURRENT_VW.ID_BB_COMPANY.
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_IDBBCOMPANY_NULL_FOR_BENCHMARK()
 RETURNS NUMBER
 LANGUAGE SQL
@@ -1527,7 +1515,7 @@ DECLARE
     now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
     suppress_id       NUMBER        := NULL;
     override_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
+    null_affected     NUMBER        := 0;
     suppress_affected NUMBER        := 0;
     override_affected NUMBER        := 0;
 BEGIN
@@ -1540,25 +1528,17 @@ BEGIN
        SET "STATUS_ID"=1, "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
            "SUPPRESS_DATE"=NULL, "CLOSE_DATE"=NULL,
            "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
-      FROM (
-          SELECT h."RULE_ID", h."ASSET_ID",
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
-                 TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
-            FROM (
-                SELECT "RULE_ID","ASSET_ID","RESULT_DATA",
-                       ROW_NUMBER() OVER (PARTITION BY "RULE_ID","ASSET_ID"
-                           ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
-                                    "BATCH_ID" DESC NULLS LAST) AS rn
-                  FROM "EXCEPTION_HIST") h WHERE h.rn=1) prev
-     WHERE e."RULE_ID"=prev."RULE_ID" AND e."ASSET_ID"=prev."ASSET_ID"
-       AND e."STATUS_ID"<>1
+     WHERE e."STATUS_ID"<>1
+       AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID" FROM "RULE" r
              JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
             WHERE rc."NAME"='ID BB Company Null For Benchmark')
-       AND (NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR, prev.hist_aladdin)
-            OR NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR, prev.hist_bbg));
-    drift_affected := SQLROWCOUNT;
+       AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                    WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                      AND scv."ID_BB_COMPANY" IS NULL);
+    null_affected := SQLROWCOUNT;
 
     IF (:suppress_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
@@ -1578,15 +1558,16 @@ BEGIN
                "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
                "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
          WHERE e."STATUS_ID"=:override_id
-           AND NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-                              TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR)
            AND e."RULE_ID" IN (SELECT r."RULE_ID" FROM "RULE" r
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
-                WHERE rc."NAME"='ID BB Company Null For Benchmark');
+                WHERE rc."NAME"='ID BB Company Null For Benchmark')
+           AND EXISTS (SELECT 1 FROM TDC.SECURITY_CURRENT_VW scv
+                        WHERE scv."ALADDIN_ID"=e."ASSET_ID"
+                          AND scv."ID_BB_COMPANY" IS NULL);
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected + override_affected;
+    RETURN null_affected + suppress_affected + override_affected;
 END;
 $$;
 

@@ -1,12 +1,15 @@
 DROP FUNCTION IF EXISTS public."SP_REVERT_TO_NEW_COUNTRY_OF_RISK_NULL_FOR_BENCHMARK"();
 
 -- Country-Of-Risk-Null-For-Benchmark catalog-scoped revert workflow.
--- Copied verbatim from SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES
--- (same three passes: drift / suppress-expiry / override-mismatch),
--- with only the function name and the hard-coded catalog name
--- changed. RESULT_DATA field references (ALADDIN_VALUE / BBG_VALUE)
--- are kept as-is -- adjust them to the keys this catalog's SQL
--- actually emits if different.
+-- Three passes mirroring the Bloomberg SP:
+--   Pass 1: non-New, non-Suppress, non-Override rows whose asset
+--           still shows COUNTRY_OF_RISK_CODE IS NULL in
+--           SECURITY_CURRENT_VW → revert.
+--   Pass 2: expired Suppress → revert, clear SUPPRESS_DATE.
+--   Pass 3: Override rows whose asset still shows COUNTRY_OF_RISK_CODE
+--           IS NULL → revert.
+-- No SECURITY_CURRENT_VW row for the ASSET_ID is treated as "not
+-- null" (EXISTS fails) and does NOT revert.
 CREATE OR REPLACE FUNCTION public."SP_REVERT_TO_NEW_COUNTRY_OF_RISK_NULL_FOR_BENCHMARK"()
 RETURNS integer
 LANGUAGE plpgsql
@@ -16,7 +19,7 @@ DECLARE
     v_now_ts            timestamp := (NOW() AT TIME ZONE 'UTC');
     v_suppress_id       integer;
     v_override_id       integer;
-    v_drift_affected    integer   := 0;
+    v_null_affected     integer   := 0;
     v_suppress_affected integer   := 0;
     v_override_affected integer   := 0;
 BEGIN
@@ -32,25 +35,14 @@ BEGIN
      WHERE "NAME" = 'Override'
      LIMIT 1;
 
-    WITH prev AS (
-        SELECT DISTINCT ON ("RULE_ID", "ASSET_ID")
-               "RULE_ID",
-               "ASSET_ID",
-               ("RESULT_DATA"->>'ALADDIN_VALUE') AS hist_aladdin,
-               ("RESULT_DATA"->>'BBG_VALUE')     AS hist_bbg
-          FROM public."EXCEPTION_HIST"
-         ORDER BY "RULE_ID", "ASSET_ID",
-                  "EXCEPTION_DATE" DESC,
-                  "BATCH_ID"       DESC NULLS LAST
-    ),
-    scoped_rules AS (
+    WITH scoped_rules AS (
         SELECT r."RULE_ID"
           FROM public."RULE" r
           JOIN public."RULE_CATALOG" rc
             ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
          WHERE rc."NAME" = 'Country Of Risk Null For Benchmark'
     ),
-    drift_upd AS (
+    null_upd AS (
         UPDATE public."EXCEPTION" e
            SET "STATUS_ID"     = 1,
                "OPEN_DATE"     = COALESCE(e."OPEN_DATE", v_today),
@@ -58,16 +50,19 @@ BEGIN
                "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = v_now_ts,
                "MODIFIED_BY"   = 'system'
-          FROM prev
-         WHERE e."RULE_ID"  = prev."RULE_ID"
-           AND e."ASSET_ID" = prev."ASSET_ID"
-           AND e."STATUS_ID" <> 1
+         WHERE e."STATUS_ID" <> 1
+           AND (v_suppress_id IS NULL OR e."STATUS_ID" <> v_suppress_id)
+           AND (v_override_id IS NULL OR e."STATUS_ID" <> v_override_id)
            AND e."RULE_ID" IN (SELECT "RULE_ID" FROM scoped_rules)
-           AND ( (e."RESULT_DATA"->>'ALADDIN_VALUE') IS DISTINCT FROM prev.hist_aladdin
-              OR (e."RESULT_DATA"->>'BBG_VALUE')     IS DISTINCT FROM prev.hist_bbg )
+           AND EXISTS (
+               SELECT 1
+                 FROM public."SECURITY_CURRENT_VW" scv
+                WHERE scv."ALADDIN_ID"           = e."ASSET_ID"
+                  AND scv."COUNTRY_OF_RISK_CODE" IS NULL
+           )
         RETURNING 1
     )
-    SELECT COALESCE(COUNT(*), 0)::int INTO v_drift_affected FROM drift_upd;
+    SELECT COALESCE(COUNT(*), 0)::int INTO v_null_affected FROM null_upd;
 
     IF v_suppress_id IS NOT NULL THEN
         WITH scoped_rules AS (
@@ -110,14 +105,18 @@ BEGIN
                    "MODIFIED_DATE" = v_now_ts,
                    "MODIFIED_BY"   = 'system'
              WHERE e."STATUS_ID" = v_override_id
-               AND (e."RESULT_DATA"->>'ALADDIN_VALUE')
-                   IS DISTINCT FROM (e."RESULT_DATA"->>'BBG_VALUE')
                AND e."RULE_ID" IN (SELECT "RULE_ID" FROM scoped_rules)
+               AND EXISTS (
+                   SELECT 1
+                     FROM public."SECURITY_CURRENT_VW" scv
+                    WHERE scv."ALADDIN_ID"           = e."ASSET_ID"
+                      AND scv."COUNTRY_OF_RISK_CODE" IS NULL
+               )
             RETURNING 1
         )
         SELECT COALESCE(COUNT(*), 0)::int INTO v_override_affected FROM override_upd;
     END IF;
 
-    RETURN v_drift_affected + v_suppress_affected + v_override_affected;
+    RETURN v_null_affected + v_suppress_affected + v_override_affected;
 END;
 $$;
