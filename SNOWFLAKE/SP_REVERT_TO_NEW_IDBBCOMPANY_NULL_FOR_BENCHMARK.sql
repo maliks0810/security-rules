@@ -10,17 +10,23 @@ EXECUTE AS CALLER
 AS
 $$
 DECLARE
-    today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
-    suppress_id       NUMBER        := NULL;
-    override_id       NUMBER        := NULL;
-    null_affected     NUMBER        := 0;
-    suppress_affected NUMBER        := 0;
-    override_affected NUMBER        := 0;
+    today            DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    now_ts           TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
+    suppress_id      NUMBER        := NULL;
+    hold_id          NUMBER        := NULL;
+    override_id      NUMBER        := NULL;
+    null_affected    NUMBER        := 0;
+    expired_affected NUMBER        := 0;
+    override_affected NUMBER       := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
     FROM "EXCEPTION_STATUS"
     WHERE "NAME" = 'Suppress'
+    LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID" INTO :hold_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Hold'
     LIMIT 1;
 
     SELECT "EXCEPTION_STATUS_ID" INTO :override_id
@@ -37,6 +43,7 @@ BEGIN
            "MODIFIED_BY"   = 'system'
      WHERE e."STATUS_ID" <> 1
        AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:hold_id     IS NULL OR e."STATUS_ID" <> :hold_id)
        AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID"
@@ -52,14 +59,18 @@ BEGIN
        );
     null_affected := SQLROWCOUNT;
 
-    IF (:suppress_id IS NOT NULL) THEN
+    IF (:suppress_id IS NOT NULL OR :hold_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
                "SUPPRESS_DATE" = NULL,
                "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = :now_ts,
                "MODIFIED_BY"   = 'system'
-         WHERE e."STATUS_ID"    = :suppress_id
+         WHERE (
+                 (:suppress_id IS NOT NULL AND e."STATUS_ID" = :suppress_id)
+                 OR
+                 (:hold_id     IS NOT NULL AND e."STATUS_ID" = :hold_id)
+               )
            AND e."SUPPRESS_DATE" IS NOT NULL
            AND e."SUPPRESS_DATE" < :today
            AND e."RULE_ID" IN (
@@ -68,7 +79,7 @@ BEGIN
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
                 WHERE rc."NAME" = 'ID BB Company Null For Benchmark'
            );
-        suppress_affected := SQLROWCOUNT;
+        expired_affected := SQLROWCOUNT;
     END IF;
 
     IF (:override_id IS NOT NULL) THEN
@@ -95,6 +106,6 @@ BEGIN
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN null_affected + suppress_affected + override_affected;
+    RETURN null_affected + expired_affected + override_affected;
 END;
 $$;

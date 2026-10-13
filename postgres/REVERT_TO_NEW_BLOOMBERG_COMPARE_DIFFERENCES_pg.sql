@@ -11,32 +11,41 @@ DROP FUNCTION IF EXISTS public."SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES"(
 -- batches win when today has archives; falls through to yesterday's
 -- final batch on the first run of a fresh day.
 --
--- Additionally, any Suppress row whose SUPPRESS_DATE has passed
--- (< today UTC) reverts to New regardless of value drift and its
--- SUPPRESS_DATE is cleared. This duplicates SP_EXPIRE_SUPPRESS_DATES's
--- global sweep but keeps the Bloomberg revert workflow self-contained
--- for callers that invoke this function directly (Rule Catalog's
--- REVERT_TO_NEW_CRITERIA).
+-- Additionally, any Suppress OR Hold row whose SUPPRESS_DATE has
+-- passed (< today UTC) reverts to New regardless of value drift and
+-- its SUPPRESS_DATE is cleared. Hold is treated the same as Suppress
+-- because applying a Hold sets SUPPRESS_DATE = T+2 - once the date
+-- is past the release semantics are identical. This duplicates
+-- SP_EXPIRE_SUPPRESS_DATES's global sweep but keeps the Bloomberg
+-- revert workflow self-contained for callers that invoke this
+-- function directly (Rule Catalog's REVERT_TO_NEW_CRITERIA).
 --
--- Returns the total number of EXCEPTION rows reverted (drift + suppress
--- combined).
+-- Returns the total number of EXCEPTION rows reverted
+-- (drift + expired-defer + override combined).
 CREATE OR REPLACE FUNCTION public."SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES"()
 RETURNS integer
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_today             date      := (NOW() AT TIME ZONE 'UTC')::date;
-    v_now_ts            timestamp := (NOW() AT TIME ZONE 'UTC');
-    v_suppress_id       integer;
-    v_override_id       integer;
-    v_drift_affected    integer   := 0;
-    v_suppress_affected integer   := 0;
-    v_override_affected integer   := 0;
+    v_today            date      := (NOW() AT TIME ZONE 'UTC')::date;
+    v_now_ts           timestamp := (NOW() AT TIME ZONE 'UTC');
+    v_suppress_id      integer;
+    v_hold_id          integer;
+    v_override_id      integer;
+    v_drift_affected   integer   := 0;
+    v_expired_affected integer   := 0;
+    v_override_affected integer  := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID"
       INTO v_suppress_id
       FROM public."EXCEPTION_STATUS"
      WHERE "NAME" = 'Suppress'
+     LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID"
+      INTO v_hold_id
+      FROM public."EXCEPTION_STATUS"
+     WHERE "NAME" = 'Hold'
      LIMIT 1;
 
     SELECT "EXCEPTION_STATUS_ID"
@@ -93,12 +102,15 @@ BEGIN
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_drift_affected FROM drift_upd;
 
-    -- Pass 2: Suppress rows whose SUPPRESS_DATE has passed. Independent
-    -- of hist so rows with no prior hist still get expired.
-    -- OPEN_DATE is intentionally NOT ratcheted here — a suppression
-    -- lapsing is not the same signal as a fresh discovery, so the
-    -- original open date is preserved to keep the aging metric honest.
-    IF v_suppress_id IS NOT NULL THEN
+    -- Pass 2: Suppress AND Hold rows whose SUPPRESS_DATE has passed.
+    -- Independent of hist so rows with no prior hist still get
+    -- expired. Hold is treated identically to Suppress because
+    -- applying a Hold stamps SUPPRESS_DATE to T+2 - once past, the
+    -- release semantics are the same.
+    -- OPEN_DATE is intentionally NOT ratcheted here — a lapsed defer
+    -- is not the same signal as a fresh discovery, so the original
+    -- open date is preserved to keep the aging metric honest.
+    IF v_suppress_id IS NOT NULL OR v_hold_id IS NOT NULL THEN
         WITH bloomberg_rules AS (
             SELECT r."RULE_ID"
               FROM public."RULE" r
@@ -106,7 +118,7 @@ BEGIN
                 ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
              WHERE rc."NAME" = 'Bloomberg Compare Differences'
         ),
-        suppress_upd AS (
+        expired_upd AS (
             UPDATE public."EXCEPTION" e
                SET "STATUS_ID"     = 1,
                    "SUPPRESS_DATE" = NULL,
@@ -115,13 +127,17 @@ BEGIN
                    "CLOSE_DATE"    = NULL,
                    "MODIFIED_DATE" = v_now_ts,
                    "MODIFIED_BY"   = 'system'
-             WHERE e."STATUS_ID"    = v_suppress_id
+             WHERE (
+                     (v_suppress_id IS NOT NULL AND e."STATUS_ID" = v_suppress_id)
+                     OR
+                     (v_hold_id     IS NOT NULL AND e."STATUS_ID" = v_hold_id)
+                   )
                AND e."SUPPRESS_DATE" IS NOT NULL
                AND e."SUPPRESS_DATE" < v_today
                AND e."RULE_ID" IN (SELECT "RULE_ID" FROM bloomberg_rules)
             RETURNING 1
         )
-        SELECT COALESCE(COUNT(*), 0)::int INTO v_suppress_affected FROM suppress_upd;
+        SELECT COALESCE(COUNT(*), 0)::int INTO v_expired_affected FROM expired_upd;
     END IF;
 
     -- Pass 3: Override rows whose ALADDIN_VALUE still differs from their
@@ -165,6 +181,6 @@ BEGIN
         SELECT COALESCE(COUNT(*), 0)::int INTO v_override_affected FROM override_upd;
     END IF;
 
-    RETURN v_drift_affected + v_suppress_affected + v_override_affected;
+    RETURN v_drift_affected + v_expired_affected + v_override_affected;
 END;
 $$;

@@ -9,18 +9,25 @@ RETURNS integer
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_today             date      := (NOW() AT TIME ZONE 'UTC')::date;
-    v_now_ts            timestamp := (NOW() AT TIME ZONE 'UTC');
-    v_suppress_id       integer;
-    v_override_id       integer;
-    v_null_affected     integer   := 0;
-    v_suppress_affected integer   := 0;
-    v_override_affected integer   := 0;
+    v_today            date      := (NOW() AT TIME ZONE 'UTC')::date;
+    v_now_ts           timestamp := (NOW() AT TIME ZONE 'UTC');
+    v_suppress_id      integer;
+    v_hold_id          integer;
+    v_override_id      integer;
+    v_null_affected    integer   := 0;
+    v_expired_affected integer   := 0;
+    v_override_affected integer  := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID"
       INTO v_suppress_id
       FROM public."EXCEPTION_STATUS"
      WHERE "NAME" = 'Suppress'
+     LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID"
+      INTO v_hold_id
+      FROM public."EXCEPTION_STATUS"
+     WHERE "NAME" = 'Hold'
      LIMIT 1;
 
     SELECT "EXCEPTION_STATUS_ID"
@@ -46,6 +53,7 @@ BEGIN
                "MODIFIED_BY"   = 'system'
          WHERE e."STATUS_ID" <> 1
            AND (v_suppress_id IS NULL OR e."STATUS_ID" <> v_suppress_id)
+           AND (v_hold_id     IS NULL OR e."STATUS_ID" <> v_hold_id)
            AND (v_override_id IS NULL OR e."STATUS_ID" <> v_override_id)
            AND e."RULE_ID" IN (SELECT "RULE_ID" FROM scoped_rules)
            AND EXISTS (
@@ -58,7 +66,7 @@ BEGIN
     )
     SELECT COALESCE(COUNT(*), 0)::int INTO v_null_affected FROM null_upd;
 
-    IF v_suppress_id IS NOT NULL THEN
+    IF v_suppress_id IS NOT NULL OR v_hold_id IS NOT NULL THEN
         WITH scoped_rules AS (
             SELECT r."RULE_ID"
               FROM public."RULE" r
@@ -66,20 +74,24 @@ BEGIN
                 ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
              WHERE rc."NAME" = 'ID BB Company Null For Benchmark'
         ),
-        suppress_upd AS (
+        expired_upd AS (
             UPDATE public."EXCEPTION" e
                SET "STATUS_ID"     = 1,
                    "SUPPRESS_DATE" = NULL,
                    "CLOSE_DATE"    = NULL,
                    "MODIFIED_DATE" = v_now_ts,
                    "MODIFIED_BY"   = 'system'
-             WHERE e."STATUS_ID"    = v_suppress_id
+             WHERE (
+                     (v_suppress_id IS NOT NULL AND e."STATUS_ID" = v_suppress_id)
+                     OR
+                     (v_hold_id     IS NOT NULL AND e."STATUS_ID" = v_hold_id)
+                   )
                AND e."SUPPRESS_DATE" IS NOT NULL
                AND e."SUPPRESS_DATE" < v_today
                AND e."RULE_ID" IN (SELECT "RULE_ID" FROM scoped_rules)
             RETURNING 1
         )
-        SELECT COALESCE(COUNT(*), 0)::int INTO v_suppress_affected FROM suppress_upd;
+        SELECT COALESCE(COUNT(*), 0)::int INTO v_expired_affected FROM expired_upd;
     END IF;
 
     IF v_override_id IS NOT NULL THEN
@@ -111,6 +123,6 @@ BEGIN
         SELECT COALESCE(COUNT(*), 0)::int INTO v_override_affected FROM override_upd;
     END IF;
 
-    RETURN v_null_affected + v_suppress_affected + v_override_affected;
+    RETURN v_null_affected + v_expired_affected + v_override_affected;
 END;
 $$;

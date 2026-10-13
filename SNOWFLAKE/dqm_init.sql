@@ -1273,88 +1273,88 @@ $$;
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES()
 RETURNS NUMBER
 LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 $$
 DECLARE
-    today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
-    suppress_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
-    suppress_affected NUMBER        := 0;
+    today            DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    now_ts           TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
+    suppress_id      NUMBER        := NULL;
+    hold_id          NUMBER        := NULL;
+    override_id      NUMBER        := NULL;
+    drift_affected   NUMBER        := 0;
+    expired_affected NUMBER        := 0;
+    override_affected NUMBER       := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
-    FROM "EXCEPTION_STATUS"
-    WHERE "NAME" = 'Suppress'
-    LIMIT 1;
+    FROM "EXCEPTION_STATUS" WHERE "NAME" = 'Suppress' LIMIT 1;
+    SELECT "EXCEPTION_STATUS_ID" INTO :hold_id
+    FROM "EXCEPTION_STATUS" WHERE "NAME" = 'Hold' LIMIT 1;
+    SELECT "EXCEPTION_STATUS_ID" INTO :override_id
+    FROM "EXCEPTION_STATUS" WHERE "NAME" = 'Override' LIMIT 1;
 
-    -- Pass 1: ALADDIN_VALUE / BBG_VALUE drift vs the latest hist row.
+    -- Pass 1: drift against latest hist row.
     UPDATE "EXCEPTION" e
-       SET "STATUS_ID"     = 1,
-           "OPEN_DATE"     = :today,
-           "SUPPRESS_DATE" = NULL,
-           "MODIFIED_DATE" = :now_ts,
-           "MODIFIED_BY"   = 'system'
+       SET "STATUS_ID"=1,
+           "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
+           "SUPPRESS_DATE"=NULL, "CLOSE_DATE"=NULL,
+           "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
       FROM (
-          SELECT h."RULE_ID",
-                 h."ASSET_ID",
+          SELECT h."RULE_ID", h."ASSET_ID",
                  TRY_PARSE_JSON(h."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR AS hist_aladdin,
                  TRY_PARSE_JSON(h."RESULT_DATA"):"BBG_VALUE"::VARCHAR     AS hist_bbg
             FROM (
-                SELECT "RULE_ID", "ASSET_ID", "RESULT_DATA",
-                       ROW_NUMBER() OVER (
-                           PARTITION BY "RULE_ID", "ASSET_ID"
+                SELECT "RULE_ID","ASSET_ID","RESULT_DATA",
+                       ROW_NUMBER() OVER (PARTITION BY "RULE_ID","ASSET_ID"
                            ORDER BY "EXCEPTION_DATE" DESC NULLS LAST,
-                                    "BATCH_ID"       DESC NULLS LAST
-                       ) AS rn
-                  FROM "EXCEPTION_HIST"
-            ) h
-           WHERE h.rn = 1
-      ) prev
-     WHERE e."RULE_ID"  = prev."RULE_ID"
-       AND e."ASSET_ID" = prev."ASSET_ID"
-       AND e."STATUS_ID" <> 1
+                                    "BATCH_ID"       DESC NULLS LAST) AS rn
+                  FROM "EXCEPTION_HIST") h WHERE h.rn=1) prev
+     WHERE e."RULE_ID"=prev."RULE_ID" AND e."ASSET_ID"=prev."ASSET_ID"
+       AND e."STATUS_ID"<>1
        AND e."RULE_ID" IN (
-           SELECT r."RULE_ID"
-             FROM "RULE" r
-             JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
-            WHERE rc."NAME" = 'Bloomberg Compare Differences'
-       )
-       AND (
-           NOT EQUAL_NULL(
-               TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
-               prev.hist_aladdin
-           )
-           OR NOT EQUAL_NULL(
-               TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR,
-               prev.hist_bbg
-           )
-       );
+           SELECT r."RULE_ID" FROM "RULE" r
+             JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
+            WHERE rc."NAME"='Bloomberg Compare Differences')
+       AND (NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR, prev.hist_aladdin)
+            OR NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR, prev.hist_bbg));
     drift_affected := SQLROWCOUNT;
 
-    -- Pass 2: Suppress rows whose SUPPRESS_DATE has passed. Independent
-    -- of hist so rows with no prior hist still get expired.
-    -- OPEN_DATE is intentionally NOT ratcheted here — a suppression
-    -- lapsing is not the same signal as a fresh discovery, so the
-    -- original open date is preserved to keep the aging metric honest.
-    IF (:suppress_id IS NOT NULL) THEN
+    -- Pass 2: Suppress AND Hold rows whose SUPPRESS_DATE has passed.
+    -- Hold stamps SUPPRESS_DATE = T+2 (see SP_UPDATE_EXCEPTION_STATUS)
+    -- so once the date is past, release semantics are the same.
+    IF (:suppress_id IS NOT NULL OR :hold_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
-           SET "STATUS_ID"     = 1,
-               "SUPPRESS_DATE" = NULL,
-               "MODIFIED_DATE" = :now_ts,
-               "MODIFIED_BY"   = 'system'
-         WHERE e."STATUS_ID"    = :suppress_id
-           AND e."SUPPRESS_DATE" IS NOT NULL
-           AND e."SUPPRESS_DATE" < :today
-           AND e."RULE_ID" IN (
-               SELECT r."RULE_ID"
-                 FROM "RULE" r
-                 JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
-                WHERE rc."NAME" = 'Bloomberg Compare Differences'
-           );
-        suppress_affected := SQLROWCOUNT;
+           SET "STATUS_ID"=1, "SUPPRESS_DATE"=NULL, "CLOSE_DATE"=NULL,
+               "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
+         WHERE (
+                 (:suppress_id IS NOT NULL AND e."STATUS_ID" = :suppress_id)
+                 OR
+                 (:hold_id     IS NOT NULL AND e."STATUS_ID" = :hold_id)
+               )
+           AND e."SUPPRESS_DATE" IS NOT NULL AND e."SUPPRESS_DATE" < :today
+           AND e."RULE_ID" IN (SELECT r."RULE_ID" FROM "RULE" r
+                 JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
+                WHERE rc."NAME"='Bloomberg Compare Differences');
+        expired_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected;
+    -- Pass 3: Override rows whose ALADDIN_VALUE still differs from
+    -- their BBG_VALUE.
+    IF (:override_id IS NOT NULL) THEN
+        UPDATE "EXCEPTION" e
+           SET "STATUS_ID"=1, "CLOSE_DATE"=NULL, "SUPPRESS_DATE"=NULL,
+               "OPEN_DATE"=COALESCE(e."OPEN_DATE", :today),
+               "MODIFIED_DATE"=:now_ts, "MODIFIED_BY"='system'
+         WHERE e."STATUS_ID"=:override_id
+           AND NOT EQUAL_NULL(TRY_PARSE_JSON(e."RESULT_DATA"):"ALADDIN_VALUE"::VARCHAR,
+                              TRY_PARSE_JSON(e."RESULT_DATA"):"BBG_VALUE"::VARCHAR)
+           AND e."RULE_ID" IN (SELECT r."RULE_ID" FROM "RULE" r
+                 JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID"=r."RULE_CATALOG_ID"
+                WHERE rc."NAME"='Bloomberg Compare Differences');
+        override_affected := SQLROWCOUNT;
+    END IF;
+
+    RETURN drift_affected + expired_affected + override_affected;
 END;
 $$;
 

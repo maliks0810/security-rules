@@ -7,15 +7,18 @@
 -- Three passes, mirroring the Bloomberg SP:
 --
 --   Pass 1 (condition-still-true): any non-New, non-Suppress,
---   non-Override row in the catalog whose asset still shows
---   COUNTRY_OF_RISK_CODE IS NULL is reverted to New. Suppress and
---   Override are handled by passes 2 and 3 so each status is reverted
---   through exactly one path.
+--   non-Hold, non-Override row in the catalog whose asset still
+--   shows COUNTRY_OF_RISK_CODE IS NULL is reverted to New. Suppress,
+--   Hold and Override are handled by passes 2 and 3 so each status
+--   is reverted through exactly one path.
 --
---   Pass 2 (suppress-expiry): any Suppress row whose SUPPRESS_DATE
---   has passed (< today UTC) reverts to New and the SUPPRESS_DATE is
---   cleared. Independent of the null check - an expired suppression
---   always re-evaluates.
+--   Pass 2 (defer-expiry): any Suppress OR Hold row whose
+--   SUPPRESS_DATE has passed (< today UTC) reverts to New and the
+--   SUPPRESS_DATE is cleared. Hold is treated identically to
+--   Suppress because applying a Hold stamps SUPPRESS_DATE to T+2 -
+--   once the date has passed the release semantics are the same.
+--   Independent of the null check - an expired defer always
+--   re-evaluates.
 --
 --   Pass 3 (override): any Override row whose asset still shows
 --   COUNTRY_OF_RISK_CODE IS NULL reverts. CLOSE_DATE always carried
@@ -37,17 +40,23 @@ EXECUTE AS CALLER
 AS
 $$
 DECLARE
-    today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
-    suppress_id       NUMBER        := NULL;
-    override_id       NUMBER        := NULL;
-    null_affected     NUMBER        := 0;
-    suppress_affected NUMBER        := 0;
-    override_affected NUMBER        := 0;
+    today            DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    now_ts           TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
+    suppress_id      NUMBER        := NULL;
+    hold_id          NUMBER        := NULL;
+    override_id      NUMBER        := NULL;
+    null_affected    NUMBER        := 0;
+    expired_affected NUMBER        := 0;
+    override_affected NUMBER       := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
     FROM "EXCEPTION_STATUS"
     WHERE "NAME" = 'Suppress'
+    LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID" INTO :hold_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Hold'
     LIMIT 1;
 
     SELECT "EXCEPTION_STATUS_ID" INTO :override_id
@@ -55,8 +64,8 @@ BEGIN
     WHERE "NAME" = 'Override'
     LIMIT 1;
 
-    -- Pass 1: non-New, non-Suppress, non-Override rows where the
-    -- asset's COUNTRY_OF_RISK_CODE is still NULL.
+    -- Pass 1: non-New, non-Suppress, non-Hold, non-Override rows
+    -- where the asset's COUNTRY_OF_RISK_CODE is still NULL.
     UPDATE "EXCEPTION" e
        SET "STATUS_ID"     = 1,
            "OPEN_DATE"     = COALESCE(e."OPEN_DATE", :today),
@@ -66,6 +75,7 @@ BEGIN
            "MODIFIED_BY"   = 'system'
      WHERE e."STATUS_ID" <> 1
        AND (:suppress_id IS NULL OR e."STATUS_ID" <> :suppress_id)
+       AND (:hold_id     IS NULL OR e."STATUS_ID" <> :hold_id)
        AND (:override_id IS NULL OR e."STATUS_ID" <> :override_id)
        AND e."RULE_ID" IN (
            SELECT r."RULE_ID"
@@ -81,15 +91,20 @@ BEGIN
        );
     null_affected := SQLROWCOUNT;
 
-    -- Pass 2: expired Suppress sweep.
-    IF (:suppress_id IS NOT NULL) THEN
+    -- Pass 2: expired defer sweep. Suppress AND Hold - both carry
+    -- SUPPRESS_DATE, Hold's is just set automatically to T+2.
+    IF (:suppress_id IS NOT NULL OR :hold_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
                "SUPPRESS_DATE" = NULL,
                "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = :now_ts,
                "MODIFIED_BY"   = 'system'
-         WHERE e."STATUS_ID"    = :suppress_id
+         WHERE (
+                 (:suppress_id IS NOT NULL AND e."STATUS_ID" = :suppress_id)
+                 OR
+                 (:hold_id     IS NOT NULL AND e."STATUS_ID" = :hold_id)
+               )
            AND e."SUPPRESS_DATE" IS NOT NULL
            AND e."SUPPRESS_DATE" < :today
            AND e."RULE_ID" IN (
@@ -98,7 +113,7 @@ BEGIN
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
                 WHERE rc."NAME" = 'Country Of Risk Null For Benchmark'
            );
-        suppress_affected := SQLROWCOUNT;
+        expired_affected := SQLROWCOUNT;
     END IF;
 
     -- Pass 3: Override rows where the asset's COUNTRY_OF_RISK_CODE is
@@ -127,6 +142,6 @@ BEGIN
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN null_affected + suppress_affected + override_affected;
+    RETURN null_affected + expired_affected + override_affected;
 END;
 $$;

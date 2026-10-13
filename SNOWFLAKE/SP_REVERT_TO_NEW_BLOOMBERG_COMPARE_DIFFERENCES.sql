@@ -18,15 +18,18 @@
 -- NULL-safe via EQUAL_NULL: two NULLs count as equal and do not
 -- revert; NULL against a value counts as different and does.
 --
--- Additionally, any Suppress row whose SUPPRESS_DATE has passed
--- (< today UTC) reverts to New regardless of value drift and its
--- SUPPRESS_DATE is cleared. This duplicates SP_EXPIRE_SUPPRESS_DATES's
--- global sweep but keeps the Bloomberg revert workflow self-contained
--- for callers that invoke this SP directly (Rule Catalog's
--- REVERT_TO_NEW_CRITERIA).
+-- Additionally, any Suppress OR Hold row whose SUPPRESS_DATE has
+-- passed (< today UTC) reverts to New regardless of value drift and
+-- its SUPPRESS_DATE is cleared. Hold is treated the same as Suppress
+-- here because applying a Hold sets SUPPRESS_DATE = T+2 (see
+-- SP_UPDATE_EXCEPTION_STATUS), so by the time the date is past the
+-- release semantics are identical. This duplicates
+-- SP_EXPIRE_SUPPRESS_DATES's global sweep but keeps the revert
+-- workflow self-contained for callers that invoke this SP directly
+-- (Rule Catalog's REVERT_TO_NEW_CRITERIA).
 --
--- Returns the total number of EXCEPTION rows reverted (drift + suppress
--- + override-mismatch combined).
+-- Returns the total number of EXCEPTION rows reverted (drift +
+-- expired-defer + override-mismatch combined).
 
 CREATE OR REPLACE PROCEDURE SP_REVERT_TO_NEW_BLOOMBERG_COMPARE_DIFFERENCES()
 RETURNS NUMBER
@@ -35,17 +38,23 @@ EXECUTE AS CALLER
 AS
 $$
 DECLARE
-    today             DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
-    now_ts            TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
-    suppress_id       NUMBER        := NULL;
-    override_id       NUMBER        := NULL;
-    drift_affected    NUMBER        := 0;
-    suppress_affected NUMBER        := 0;
-    override_affected NUMBER        := 0;
+    today            DATE          := TO_DATE(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP()));
+    now_ts           TIMESTAMP_NTZ := CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ;
+    suppress_id      NUMBER        := NULL;
+    hold_id          NUMBER        := NULL;
+    override_id      NUMBER        := NULL;
+    drift_affected   NUMBER        := 0;
+    expired_affected NUMBER        := 0;
+    override_affected NUMBER       := 0;
 BEGIN
     SELECT "EXCEPTION_STATUS_ID" INTO :suppress_id
     FROM "EXCEPTION_STATUS"
     WHERE "NAME" = 'Suppress'
+    LIMIT 1;
+
+    SELECT "EXCEPTION_STATUS_ID" INTO :hold_id
+    FROM "EXCEPTION_STATUS"
+    WHERE "NAME" = 'Hold'
     LIMIT 1;
 
     SELECT "EXCEPTION_STATUS_ID" INTO :override_id
@@ -109,22 +118,29 @@ BEGIN
        );
     drift_affected := SQLROWCOUNT;
 
-    -- Pass 2: Suppress rows whose SUPPRESS_DATE has passed. Independent
-    -- of hist so rows with no prior hist still get expired.
-    -- OPEN_DATE is intentionally NOT ratcheted here — a suppression
-    -- lapsing is not the same signal as a fresh discovery, so the
-    -- original open date is preserved to keep the aging metric honest.
-    IF (:suppress_id IS NOT NULL) THEN
+    -- Pass 2: Suppress AND Hold rows whose SUPPRESS_DATE has passed.
+    -- Independent of hist so rows with no prior hist still get
+    -- expired. Hold is treated identically to Suppress here because
+    -- applying a Hold stamps SUPPRESS_DATE to T+2 - once that date
+    -- has passed the semantics are the same.
+    -- OPEN_DATE is intentionally NOT ratcheted here — a lapsed defer
+    -- is not the same signal as a fresh discovery, so the original
+    -- open date is preserved to keep the aging metric honest.
+    IF (:suppress_id IS NOT NULL OR :hold_id IS NOT NULL) THEN
         UPDATE "EXCEPTION" e
            SET "STATUS_ID"     = 1,
                "SUPPRESS_DATE" = NULL,
-               -- Suppress should not carry a CLOSE_DATE anyway; cleared
-               -- defensively so this pass cannot leave the "closed iff
-               -- Accept / Override" invariant broken either.
+               -- Suppress / Hold should not carry a CLOSE_DATE anyway;
+               -- cleared defensively so this pass cannot leave the
+               -- "closed iff Accept / Override" invariant broken either.
                "CLOSE_DATE"    = NULL,
                "MODIFIED_DATE" = :now_ts,
                "MODIFIED_BY"   = 'system'
-         WHERE e."STATUS_ID"    = :suppress_id
+         WHERE (
+                 (:suppress_id IS NOT NULL AND e."STATUS_ID" = :suppress_id)
+                 OR
+                 (:hold_id IS NOT NULL AND e."STATUS_ID" = :hold_id)
+               )
            AND e."SUPPRESS_DATE" IS NOT NULL
            AND e."SUPPRESS_DATE" < :today
            AND e."RULE_ID" IN (
@@ -133,7 +149,7 @@ BEGIN
                  JOIN "RULE_CATALOG" rc ON rc."RULE_CATALOG_ID" = r."RULE_CATALOG_ID"
                 WHERE rc."NAME" = 'Bloomberg Compare Differences'
            );
-        suppress_affected := SQLROWCOUNT;
+        expired_affected := SQLROWCOUNT;
     END IF;
 
     -- Pass 3: Override rows whose ALADDIN_VALUE still differs from their
@@ -173,6 +189,6 @@ BEGIN
         override_affected := SQLROWCOUNT;
     END IF;
 
-    RETURN drift_affected + suppress_affected + override_affected;
+    RETURN drift_affected + expired_affected + override_affected;
 END;
 $$;
